@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Execution Order:** 1 → 2 → 3 → (4 ∥ 5) → 6
 
-- [ ] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU
+- [ ] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (3 plans)
 - [ ] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks
 - [ ] **Phase 3: VLA Inference Loop** - Close the loop from language prompt to rendered SOARM task video with success detection and dual-VLA support
 - [ ] **Phase 4: Dataset Collection** - Collect 100+ scripted SOARM demonstrations in robomimic HDF5 with state-based replay and normalization stats
@@ -32,7 +32,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. All simulation dependencies (robosuite 1.4.0, MuJoCo 2.3.7, gym 0.25.2, PyTorch 2.1.x, transformers 4.40.1) install in order on a fresh Colab runtime without conflicts
   2. A default LIBERO Panda environment renders non-black RGB frames using EGL headless rendering (MUJOCO_GL=egl set before any MuJoCo import)
   3. OpenVLA-OFT loads onto Colab GPU without OOM errors and returns a 7-D action output given a test image and prompt
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Notebook skeleton + Block A install cells (GPU check, apt, pip, restart)
+- [ ] 01-02-PLAN.md — Post-restart EGL bootstrap, LIBERO config, ENV-01/02 verification
+- [ ] 01-03-PLAN.md — ENV-03 OpenVLA-OFT load verification + summary table
 
 ### Phase 2: SOARM Robot Integration
 **Goal**: The SOARM SO101 robot is registered in LIBERO as a validated ManipulatorModel with stable physics, correct rendering, and at least 3 BDDL tasks configured to use it.
@@ -97,7 +101,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Colab Environment Setup | 0/TBD | Not started | - |
+| 1. Colab Environment Setup | 0/3 | Not started | - |
 | 2. SOARM Robot Integration | 0/TBD | Not started | - |
 | 3. VLA Inference Loop | 0/TBD | Not started | - |
 | 4. Dataset Collection | 0/TBD | Not started | - |
