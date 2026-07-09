@@ -70,6 +70,9 @@ Recent decisions affecting current work:
 - 01-02: numba 0.59.x chosen for numpy 1.x compat — Colab system numba compiled for numpy 2.x causes ABI crash after our numpy<2 pin
 - 01-02: ENV-01 pip check filtered to OUR_PACKAGES — Colab system conflicts (jax/cupy/opencv needing numpy>=2) are pre-existing noise
 - 01-02: torch version comparison strips build tag — "2.2.0+cu121".split('+')[0] == "2.2.0"
+- 01-03: prismatic package must come from moojink/openvla-oft repo (--no-deps) — TRI-ML prismatic-vlms lacks prismatic.training; nothing usable on PyPI
+- 01-03 (resolves RESEARCH A1): OFT checkpoint norm_stats = OXE pretraining datasets only; LIBERO stats must be overlaid from dataset_statistics.json (hf_hub_download) after from_pretrained — Phase 3 inference loop MUST replicate this
+- 01-03: OFT predict_action returns (actions, hidden_states) tuple with chunked (N, 7) actions — Phase 3 must unpack and consume chunks, not single steps
 
 ### Pending Todos
 
