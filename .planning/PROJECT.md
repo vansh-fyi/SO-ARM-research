@@ -30,12 +30,12 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 ### Out of Scope
 
 - Real-3DQA point cloud data as training input — inspiration only, not in this pipeline
-- Physical SOARM hardware integration — simulation-only for now
+- Physical SOARM hardware integration — simulation-first; real robot testing is a later milestone after sim pipeline is validated
 - Real-time interactive REPL (deferred; start with rendered output)
 
 ## Context
 
-- Existing repo has LIBERO embedded as a vendored submodule (`LIBERO/`) with MuJoCo/robosuite environments, Panda arm configs, and lifelong learning training code
+- Existing repo has LIBERO cloned as a modifiable fork (`LIBERO/`) with its own git history — will be extended with custom SOARM models, tasks, and datasets; MuJoCo/robosuite environments, Panda arm configs, and lifelong learning training code already present
 - Real-3DQA exploration scripts exist (`explorations/real3dqa/`) as a parallel research thread — not directly connected to this pipeline
 - LIBERO currently configured for Panda arm; SOARM has no existing MuJoCo description — needs to be built
 - Google Colab is the compute platform for GPU-accelerated VLA inference (π0 or OpenVLA are leading candidates — open-source, trained on robot manipulation data)
