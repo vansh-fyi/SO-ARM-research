@@ -583,22 +583,27 @@ else:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Exact `unnorm_key` for libero_spatial checkpoint**
+All three questions were empirically resolved during execution of plans 01-01..01-03 and the Phase 01 UAT run.
+
+1. **Exact `unnorm_key` for libero_spatial checkpoint** — (RESOLVED)
    - What we know: Model cards confirm checkpoints have per-suite normalization stats embedded
    - What's unclear: The exact string key name (could be `"libero_spatial"`, `"libero-spatial"`, or model-specific)
    - Recommendation: Add `print(list(model.norm_stats.keys()))` diagnostic to ENV-03 cell; use that value
+   - **Resolution:** Handled via the norm_stats overlay plus the `print(list(model.norm_stats.keys()))` diagnostic in the ENV-03 cell; UNNORM_KEY is resolved at runtime from the checkpoint's own keys (implemented in 01-03, confirmed in the notebook's ENV-03 cell).
 
-2. **Google Drive vs repo-local path for LIBERO package**
+2. **Google Drive vs repo-local path for LIBERO package** — (RESOLVED)
    - What we know: Colab Pro supports Google Drive mounting at `/content/drive`
    - What's unclear: Whether the researcher will use Drive mounting or `git clone` directly to `/content/` per session
    - Recommendation: Notebook should include both patterns with a config cell at top where researcher sets `REPO_ROOT = "/content/drive/MyDrive/SoARM-Research"` or similar
+   - **Resolution:** The `REPO_ROOT` config cell passed UAT Test 6, with a `git clone` fallback to `/content/libero` when Drive is not mounted — the clone fallback is the observed working path on fresh runtimes.
 
-3. **flash-attn compile time on Colab A100**
+3. **flash-attn compile time on Colab A100** — (RESOLVED)
    - What we know: flash-attn 2.5.5 must be compiled from source; typically takes 5-15 min on local GPU
    - What's unclear: Whether Colab A100 runtime has flash-attn pre-cached or always compiles
    - Recommendation: Add a `# This cell takes ~10 min` comment; consider conditional install: only install if `importlib.util.find_spec("flash_attn") is None`
+   - **Resolution:** The prebuilt cu123 wheel installed but failed at runtime (ABI mismatch); flash-attn was uninstalled and the standard-attention fallback was observed working during UAT. Compile-from-source was never needed — the fallback is the established configuration.
 
 ---
 
