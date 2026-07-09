@@ -1,12 +1,12 @@
 {
   "version": "1.0",
-  "timestamp": "2026-07-08T11:55:17.982Z",
+  "timestamp": "2026-07-09T04:41:52.112Z",
   "phase": "01",
   "phase_name": "colab-environment-setup",
   "phase_dir": ".planning/phases/01-colab-environment-setup",
   "plan": 1,
-  "task": 4,
-  "total_tasks": 4,
+  "task": 5,
+  "total_tasks": 9,
   "status": "paused",
   "completed_tasks": [
     {
@@ -23,94 +23,120 @@
     },
     {
       "id": 3,
-      "name": "Fix 4 T4 runtime bugs (mujoco --no-build-isolation, LIBERO clone fallback, huggingface_hub pin revert, flash-attn timing comment)",
+      "name": "Fix 4 T4 runtime bugs (mujoco --no-build-isolation, LIBERO clone fallback, huggingface_hub pin, flash-attn timing comment)",
       "status": "done",
       "commit": "05c9450"
     },
     {
       "id": 4,
-      "name": "Rewrite Cell 6 (Step 3) — conda for mujoco, relaxed numpy/opencv/gym pins",
+      "name": "Switch to mujoco 3.3.2 binary wheel + mj_step1→mj_kinematics shim + drop numpy<2 (round 3)",
       "status": "done",
-      "commit": "1eb3073"
+      "commit": "489c22a"
+    },
+    {
+      "id": 5,
+      "name": "Use pre-built flash-attn wheel (cu118+torch2.2+cp312) to avoid 90-min T4 OOM crash",
+      "status": "done",
+      "commit": "c4b0a9b"
+    },
+    {
+      "id": 6,
+      "name": "Restore numpy<2 + correct flash-attn wheel (cu118 not cu121 — no cu121 wheel exists in 2.6.3)",
+      "status": "done",
+      "commit": "336afa1"
+    },
+    {
+      "id": 7,
+      "name": "Pin opencv<4.10 + move numpy pin to last in Step 3 (prevents opencv 4.13 from upgrading numpy back to 2.x)",
+      "status": "done",
+      "commit": "8fb3e2e"
+    },
+    {
+      "id": 8,
+      "name": "Fix numpy version check: use subprocess pip-show instead of import (sys.modules caches old version)",
+      "status": "done",
+      "commit": "3a3d283"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 5,
-      "name": "Await user Colab test of Step 3 (Cell 6 mujoco+sim install) — confirm conda install works",
+      "id": 9,
+      "name": "User completes Steps 4, 5, 6 on Colab T4 — Step 3 now PASSES (numpy 1.26.4 on disk confirmed)",
       "status": "blocked_on_human"
     },
     {
-      "id": 6,
-      "name": "Execute Wave 2 (plan 01-02) — Block B cells 11-17: EGL bootstrap, LIBERO config.yaml, sys.path, ENV-01/02 verification",
+      "id": 10,
+      "name": "Execute Wave 2 (plan 01-02) — Block B cells: EGL bootstrap, LIBERO config, sys.path, ENV-01/02 verification",
       "status": "not_started"
     },
     {
-      "id": 7,
+      "id": 11,
       "name": "Execute Wave 3 (plan 01-03, autonomous) — ENV-03 OpenVLA-OFT load cell + summary table",
       "status": "not_started"
     },
     {
-      "id": 8,
+      "id": 12,
       "name": "Phase 1 verification (gsd-verifier) + ROADMAP/STATE update",
       "status": "not_started"
     }
   ],
   "blockers": [
     {
-      "description": "Step 3 (mujoco+sim install) still untested after latest fix. User ran notebook and got mujoco wheel build failure; fix just committed switches to conda-forge + relaxed numpy/opencv/gym pins. Must verify on Colab T4 before proceeding to Wave 2.",
+      "description": "Step 3 now passes (numpy 1.26.4 on disk, mujoco 3.3.2 installed). User is pausing mid-session with Step 3 confirmed passing. Steps 4, 5, 6 have not been run yet in this session (Step 5 passed previously but from a prior session).",
       "type": "human_action",
-      "workaround": "Latest fix in commit 1eb3073. User needs to re-run the notebook from Step 3 and confirm all of Steps 3-5 pass before Wave 2."
+      "workaround": "Resume by running Steps 4-6 on Colab T4, restart runtime, then run Block B."
     }
   ],
   "async_jobs": [],
   "human_actions_pending": [
     {
-      "action": "Re-run LIBERO/notebooks/01-colab-env-setup.ipynb on Colab T4 GPU, starting from Step 3 (Cell 6). Report whether Steps 3, 4, 5 all pass.",
-      "context": "Step 3 was rewritten to use conda-forge for mujoco (no cp312 pip wheel), relax numpy to >=1.24, opencv to >=4.7, gym to --prefer-binary. This addresses root cause of source-build failures on Python 3.11/3.12.",
+      "action": "Re-run LIBERO/notebooks/01-colab-env-setup.ipynb Steps 4, 5, 6 on Colab T4. Step 3 now confirmed passing. Then restart runtime. Then run Block B (ENV-01, ENV-02).",
+      "context": "Step 3 now ends with 'numpy 1.26.4 on disk (fresh after restart)'. Step 6 uses flash-attn 2.6.3+cu118torch2.2+cp312 pre-built wheel (~30 sec install). After all 6 steps pass: Runtime > Restart session > run Block B.",
       "blocking": true
     }
   ],
   "decisions": [
     {
-      "decision": "Use conda-forge for mujoco 2.3.7 instead of pip source build",
-      "rationale": "Colab Python 3.12 removed distutils; mujoco 2.3.7 setup.py uses distutils and has no cp312 pip wheel. conda-forge has pre-compiled binaries for all Python versions.",
+      "decision": "Use mujoco 3.3.2 instead of 2.3.7",
+      "rationale": "No cp312 binary wheel for mujoco 2.3.7; conda not available on Colab. mujoco 3.3.2 has binary wheel and is confirmed stable for LIBERO in upstream issues.",
       "phase": "01"
     },
     {
-      "decision": "Relax numpy pin from ==1.22.4 to >=1.24,<2",
-      "rationale": "numpy 1.22.4 has no cp311/cp312 binary wheel; source build requires Cython+Fortran. numpy 1.24+ has cp312 wheels and LIBERO is compatible.",
+      "decision": "Patch bddl_base_domain.py mj_step1 → mj_kinematics shim",
+      "rationale": "mujoco 3.x removed mj_step1. One call in LIBERO uses it for reset speed-up. hasattr shim is backward-compatible with 2.x and forward-compatible with 3.x.",
       "phase": "01"
     },
     {
-      "decision": "Relax opencv-python pin from ==4.6.0.66 to >=4.7,<5",
-      "rationale": "opencv 4.6.0.66 has no cp311/cp312 binary wheel; source build is huge. 4.7+ has cp312 wheels.",
+      "decision": "Pin numpy>=1.24,<2 LAST in Step 3 + pin opencv<4.10",
+      "rationale": "opencv 4.10+ requires numpy>=2, which breaks torch 2.2.0 (compiled against numpy 1.x). Moving numpy pin last prevents any subsequent install from upgrading it. opencv<4.10 avoids the conflict entirely.",
       "phase": "01"
     },
     {
-      "decision": "Add LIBERO clone fallback in Cell 7 (Step 4)",
-      "rationale": "LIBERO is a nested git repo inside SoARM-Research. Google Drive doesn't sync nested .git/ directories reliably, so setup.py is missing on Colab even when LIBERO/ dir exists.",
+      "decision": "Use flash-attn 2.6.3+cu118torch2.2+cp312 pre-built wheel",
+      "rationale": "flash-attn 2.5.x has no cp312 wheel. cp312 support added in 2.6.x. flash-attn 2.6.3 has no cu121 wheel but cu118 runs on CUDA 12.x via forward compatibility.",
       "phase": "01"
     },
     {
-      "decision": "Keep huggingface_hub unpinned (not >=1.2.0)",
-      "rationale": "tokenizers==0.19.1 hard-requires huggingface_hub<1.0.0; adding >=1.2.0 causes ResolutionImpossible. Advisory gradio conflict is non-blocking.",
+      "decision": "Check numpy version via subprocess pip-show, not import",
+      "rationale": "torch (imported in Cell 2) caches numpy 2.0.2 in sys.modules. After pip force-reinstall, 'import numpy' returns the cached 2.0.2 not the disk 1.26.4. subprocess pip-show reads disk version accurately.",
       "phase": "01"
     },
     {
       "decision": "Wave 2 (plan 01-02) not started — gating on Block A Colab pass",
-      "rationale": "Block B depends on Block A packages being installed. No point building verification cells if the install cell is still broken.",
+      "rationale": "Block B depends on Block A packages. No point building verification cells before install is confirmed working end-to-end.",
       "phase": "01"
     }
   ],
   "uncommitted_files": [
     ".gitignore (modified)",
+    ".planning/HANDOFF.json (modified)",
     ".planning/PROJECT.md (modified)",
     ".planning/config.json (modified)",
     "libero/explore.py (deleted)",
+    "libero/notebooks/01-colab-env-setup.ipynb (modified)",
     "real3dqa/explore.py (deleted)",
     "requirements.txt (deleted)"
   ],
-  "next_action": "Ask user for Colab test result for Step 3 (conda mujoco install). If pass: proceed to Wave 2 (spawn gsd-executor for plan 01-02). If fail: diagnose new error and fix.",
-  "context_notes": "We are in an iterative bug-fix loop on Block A. 3 rounds of fixes so far. The cell numbering discrepancy: my 'Cell N' references are 0-indexed JSON positions; Colab shows them differently. Use Step numbers (Step 1-6 of 6) when communicating with user. The notebook currently has 11 cells (0-10). Wave 2 will append cells 11-17 (Block B). Wave 3 will append cells 18-20 (ENV-03 OpenVLA load)."
+  "next_action": "Ask user for Colab result of Steps 4-6. If all pass + restart done: spawn gsd-executor for plan 01-02 (Wave 2 — Block B cells).",
+  "context_notes": "We are in an iterative Colab compatibility debug loop on Block A. 8 rounds of fixes total. Step 3 now confirmed passing. The key complexity: Colab Python 3.12 has pre-installed packages (jax, cupy, opencv 4.13) that conflict with our numpy<2 pin — these are resolver WARNINGs only (not errors) and safe to ignore. The sys.modules caching issue: torch imports numpy 2.0.2 in Cell 2 (GPU check), so any 'import numpy' later in the same session returns 2.0.2 from cache even after pip reinstall — use subprocess to check on-disk version. Step 6 flash-attn now uses cu118+torch2.2+cp312 pre-built wheel (~30 sec), NOT source compile."
 }
