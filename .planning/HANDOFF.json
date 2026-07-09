@@ -1,0 +1,116 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-08T11:55:17.982Z",
+  "phase": "01",
+  "phase_name": "colab-environment-setup",
+  "phase_dir": ".planning/phases/01-colab-environment-setup",
+  "plan": 1,
+  "task": 4,
+  "total_tasks": 4,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Create Block A install notebook (cells 0-10) — plan 01-01",
+      "status": "done",
+      "commit": "3fb1d31"
+    },
+    {
+      "id": 2,
+      "name": "Fix libosmesa6 apt error + LIBERO_PKG wrong path + Cell 10 text (round 1)",
+      "status": "done",
+      "commit": "ef50d7f"
+    },
+    {
+      "id": 3,
+      "name": "Fix 4 T4 runtime bugs (mujoco --no-build-isolation, LIBERO clone fallback, huggingface_hub pin revert, flash-attn timing comment)",
+      "status": "done",
+      "commit": "05c9450"
+    },
+    {
+      "id": 4,
+      "name": "Rewrite Cell 6 (Step 3) — conda for mujoco, relaxed numpy/opencv/gym pins",
+      "status": "done",
+      "commit": "1eb3073"
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 5,
+      "name": "Await user Colab test of Step 3 (Cell 6 mujoco+sim install) — confirm conda install works",
+      "status": "blocked_on_human"
+    },
+    {
+      "id": 6,
+      "name": "Execute Wave 2 (plan 01-02) — Block B cells 11-17: EGL bootstrap, LIBERO config.yaml, sys.path, ENV-01/02 verification",
+      "status": "not_started"
+    },
+    {
+      "id": 7,
+      "name": "Execute Wave 3 (plan 01-03, autonomous) — ENV-03 OpenVLA-OFT load cell + summary table",
+      "status": "not_started"
+    },
+    {
+      "id": 8,
+      "name": "Phase 1 verification (gsd-verifier) + ROADMAP/STATE update",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Step 3 (mujoco+sim install) still untested after latest fix. User ran notebook and got mujoco wheel build failure; fix just committed switches to conda-forge + relaxed numpy/opencv/gym pins. Must verify on Colab T4 before proceeding to Wave 2.",
+      "type": "human_action",
+      "workaround": "Latest fix in commit 1eb3073. User needs to re-run the notebook from Step 3 and confirm all of Steps 3-5 pass before Wave 2."
+    }
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {
+      "action": "Re-run LIBERO/notebooks/01-colab-env-setup.ipynb on Colab T4 GPU, starting from Step 3 (Cell 6). Report whether Steps 3, 4, 5 all pass.",
+      "context": "Step 3 was rewritten to use conda-forge for mujoco (no cp312 pip wheel), relax numpy to >=1.24, opencv to >=4.7, gym to --prefer-binary. This addresses root cause of source-build failures on Python 3.11/3.12.",
+      "blocking": true
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "Use conda-forge for mujoco 2.3.7 instead of pip source build",
+      "rationale": "Colab Python 3.12 removed distutils; mujoco 2.3.7 setup.py uses distutils and has no cp312 pip wheel. conda-forge has pre-compiled binaries for all Python versions.",
+      "phase": "01"
+    },
+    {
+      "decision": "Relax numpy pin from ==1.22.4 to >=1.24,<2",
+      "rationale": "numpy 1.22.4 has no cp311/cp312 binary wheel; source build requires Cython+Fortran. numpy 1.24+ has cp312 wheels and LIBERO is compatible.",
+      "phase": "01"
+    },
+    {
+      "decision": "Relax opencv-python pin from ==4.6.0.66 to >=4.7,<5",
+      "rationale": "opencv 4.6.0.66 has no cp311/cp312 binary wheel; source build is huge. 4.7+ has cp312 wheels.",
+      "phase": "01"
+    },
+    {
+      "decision": "Add LIBERO clone fallback in Cell 7 (Step 4)",
+      "rationale": "LIBERO is a nested git repo inside SoARM-Research. Google Drive doesn't sync nested .git/ directories reliably, so setup.py is missing on Colab even when LIBERO/ dir exists.",
+      "phase": "01"
+    },
+    {
+      "decision": "Keep huggingface_hub unpinned (not >=1.2.0)",
+      "rationale": "tokenizers==0.19.1 hard-requires huggingface_hub<1.0.0; adding >=1.2.0 causes ResolutionImpossible. Advisory gradio conflict is non-blocking.",
+      "phase": "01"
+    },
+    {
+      "decision": "Wave 2 (plan 01-02) not started — gating on Block A Colab pass",
+      "rationale": "Block B depends on Block A packages being installed. No point building verification cells if the install cell is still broken.",
+      "phase": "01"
+    }
+  ],
+  "uncommitted_files": [
+    ".gitignore (modified)",
+    ".planning/PROJECT.md (modified)",
+    ".planning/config.json (modified)",
+    "libero/explore.py (deleted)",
+    "real3dqa/explore.py (deleted)",
+    "requirements.txt (deleted)"
+  ],
+  "next_action": "Ask user for Colab test result for Step 3 (conda mujoco install). If pass: proceed to Wave 2 (spawn gsd-executor for plan 01-02). If fail: diagnose new error and fix.",
+  "context_notes": "We are in an iterative bug-fix loop on Block A. 3 rounds of fixes so far. The cell numbering discrepancy: my 'Cell N' references are 0-indexed JSON positions; Colab shows them differently. Use Step numbers (Step 1-6 of 6) when communicating with user. The notebook currently has 11 cells (0-10). Wave 2 will append cells 11-17 (Block B). Wave 3 will append cells 18-20 (ENV-03 OpenVLA load)."
+}
