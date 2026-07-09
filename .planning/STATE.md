@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: colab-environment-setup
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-07-08T09:39:19.314Z"
-last_activity: 2026-07-08
-last_activity_desc: Phase 01 execution started
+stopped_at: Plan 01-02 complete — awaiting user to rerun Step 3 and Block B on Colab
+last_updated: "2026-07-09T06:25:00.000Z"
+last_activity: 2026-07-09
+last_activity_desc: Plan 01-02 complete — numba pin + ENV-01 fixes committed
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
-  percent: 0
+  completed_plans: 2
+  percent: 11
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 ## Current Position
 
 Phase: 01 (colab-environment-setup) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 01
-Last activity: 2026-07-08 — Phase 01 execution started
+Plan: 3 of 3 (01-01 complete, 01-02 complete, 01-03 pending)
+Status: Executing Phase 01 — Plan 01-02 complete
+Last activity: 2026-07-09 — Plan 01-02 complete (numba pin + ENV-01 fixes)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 11% (plans 01-01 and 01-02 complete)
 
 ## Performance Metrics
 
@@ -67,6 +67,9 @@ Recent decisions affecting current work:
 - Research: SOARM MJCF to be derived from `so101_new_calib.xml`, not built from scratch
 - Research: Two separate Colab kernel groups needed (transformers version conflict between LIBERO training and VLA inference)
 - Research: Demo replay must be state-based (not action replay) — LIBERO issue #16
+- 01-02: numba 0.59.x chosen for numpy 1.x compat — Colab system numba compiled for numpy 2.x causes ABI crash after our numpy<2 pin
+- 01-02: ENV-01 pip check filtered to OUR_PACKAGES — Colab system conflicts (jax/cupy/opencv needing numpy>=2) are pre-existing noise
+- 01-02: torch version comparison strips build tag — "2.2.0+cu121".split('+')[0] == "2.2.0"
 
 ### Pending Todos
 
@@ -87,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-08T07:40:38.737Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-colab-environment-setup/01-CONTEXT.md
+Last session: 2026-07-09T06:25:00.000Z
+Stopped at: Plan 01-02 complete — user to rerun Step 3 (Cell 6) and Block B (Cells 14-18) on Colab
+Resume file: .planning/phases/01-colab-environment-setup/01-03-PLAN.md
