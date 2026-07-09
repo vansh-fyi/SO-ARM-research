@@ -5,10 +5,10 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: colab-environment-setup
 status: executing
-stopped_at: All 3 plans complete — awaiting user to run Block B on Colab for ENV-01/02/03 PASS
-last_updated: "2026-07-09T08:00:00.000Z"
+stopped_at: Phase 01 runtime-verified on Colab A100 — ENV-01, ENV-02, ENV-03 all PASS; ready for /gsd-verify-work
+last_updated: "2026-07-09T12:00:00.000Z"
 last_activity: 2026-07-09
-last_activity_desc: Plan 01-03 complete — ENV-03 cell + ENV-01 filter fix + ENV-02 numba stub; all plans done
+last_activity_desc: ENV-03 PASS confirmed on Colab — unnorm_key=libero_spatial_no_noops, action chunk (8,7)
 progress:
   total_phases: 6
   completed_phases: 0
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 ## Current Position
 
 Phase: 01 (colab-environment-setup) — EXECUTING
-Plan: 3 of 3 (01-01 complete, 01-02 complete, 01-03 complete)
-Status: All plans done — pending Colab runtime verification (ENV-01/02/03)
-Last activity: 2026-07-09 — Plan 01-03 complete (ENV-03 cell, ENV-01 filter, ENV-02 numba stub)
+Plan: 3 of 3 (all complete, runtime-verified on Colab A100)
+Status: ENV-01 PASS, ENV-02 PASS, ENV-03 PASS — phase goal achieved; ready for /gsd-verify-work
+Last activity: 2026-07-09 — ENV-03 PASS on Colab (unnorm_key=libero_spatial_no_noops, chunk (8,7))
 
 Progress: [██░░░░░░░░] 17% (all Phase 01 plans complete)
 
@@ -71,8 +71,9 @@ Recent decisions affecting current work:
 - 01-02: ENV-01 pip check filtered to OUR_PACKAGES — Colab system conflicts (jax/cupy/opencv needing numpy>=2) are pre-existing noise
 - 01-02: torch version comparison strips build tag — "2.2.0+cu121".split('+')[0] == "2.2.0"
 - 01-03: prismatic package must come from moojink/openvla-oft repo (--no-deps) — TRI-ML prismatic-vlms lacks prismatic.training; nothing usable on PyPI
-- 01-03 (resolves RESEARCH A1): OFT checkpoint norm_stats = OXE pretraining datasets only; LIBERO stats must be overlaid from dataset_statistics.json (hf_hub_download) after from_pretrained — Phase 3 inference loop MUST replicate this
-- 01-03: OFT predict_action returns (actions, hidden_states) tuple with chunked (N, 7) actions — Phase 3 must unpack and consume chunks, not single steps
+- 01-03 (resolves RESEARCH A1, CONFIRMED on Colab): OFT checkpoint norm_stats = OXE pretraining datasets only; LIBERO stats must be overlaid from dataset_statistics.json (hf_hub_download) after from_pretrained; actual key is "libero_spatial_no_noops" — Phase 3 inference loop MUST replicate this
+- 01-03 (CONFIRMED on Colab): OFT predict_action returns (actions, hidden_states) tuple with action chunk shape (8, 7) float64 — Phase 3 must unpack and consume 8-step chunks, not single steps
+- 01-03: prismatic import chain needs wandb (metrics.py) — included in Step 5 since openvla-oft installs with --no-deps
 
 ### Pending Todos
 

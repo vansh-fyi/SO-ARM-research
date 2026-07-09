@@ -36,7 +36,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A default LIBERO Panda environment renders non-black RGB frames using EGL headless rendering (MUJOCO_GL=egl set before any MuJoCo import)
   3. OpenVLA-OFT loads onto Colab GPU without OOM errors and returns a 7-D action output given a test image and prompt
 
-**Plans**: 1/3 plans executed
+**Plans**: 3/3 plans executed
 Plans:
 **Wave 1**
 
@@ -44,11 +44,11 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — Post-restart EGL bootstrap, LIBERO config, ENV-01/02 verification
+- [x] 01-02-PLAN.md — Post-restart EGL bootstrap, LIBERO config, ENV-01/02 verification
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03-PLAN.md — ENV-03 OpenVLA-OFT load verification + summary table
+- [x] 01-03-PLAN.md — ENV-03 OpenVLA-OFT load verification + summary table
 
 ### Phase 2: SOARM Robot Integration
 
