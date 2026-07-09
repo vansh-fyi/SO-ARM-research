@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Execution Order:** 1 → 2 → 3 → (4 ∥ 5) → 6
 
-- [ ] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (3 plans)
+- [x] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (3 plans) (completed 2026-07-09)
 - [ ] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks
 - [ ] **Phase 3: VLA Inference Loop** - Close the loop from language prompt to rendered SOARM task video with success detection and dual-VLA support
 - [ ] **Phase 4: Dataset Collection** - Collect 100+ scripted SOARM demonstrations in robomimic HDF5 with state-based replay and normalization stats
@@ -36,7 +36,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A default LIBERO Panda environment renders non-black RGB frames using EGL headless rendering (MUJOCO_GL=egl set before any MuJoCo import)
   3. OpenVLA-OFT loads onto Colab GPU without OOM errors and returns a 7-D action output given a test image and prompt
 
-**Plans**: 4 plans (3 executed + 1 gap closure)
+**Plans**: 4/4 plans complete
 Plans:
 **Wave 1**
 
@@ -52,7 +52,7 @@ Plans:
 
 **Wave 4 — gap closure** *(from 01-UAT.md blockers)*
 
-- [ ] 01-04-PLAN.md — numpy ABI gate (Block A final cell) + transformers jax/TF backend guards; closes ENV-02/ENV-03 UAT blockers
+- [x] 01-04-PLAN.md — numpy ABI gate (Block A final cell) + transformers jax/TF backend guards; closes ENV-02/ENV-03 UAT blockers
 
 ### Phase 2: SOARM Robot Integration
 
@@ -132,7 +132,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Colab Environment Setup | 1/3 | In Progress|  |
+| 1. Colab Environment Setup | 4/4 | Complete   | 2026-07-09 |
 | 2. SOARM Robot Integration | 0/TBD | Not started | - |
 | 3. VLA Inference Loop | 0/TBD | Not started | - |
 | 4. Dataset Collection | 0/TBD | Not started | - |
