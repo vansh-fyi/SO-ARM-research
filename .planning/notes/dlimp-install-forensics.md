@@ -84,6 +84,29 @@ Meta-lesson: every ENV-03 failure so far has been **disk state**, not cell order
 each fix moves the import chain one layer deeper
 (prismatic → dlimp → tensorflow_datasets → protobuf).
 
+## 6. Update (2026-07-10): the whack-a-mole root cause — openvla-oft --no-deps
+
+Next failure layer: `ModuleNotFoundError: tensorflow_graphics` (from
+`prismatic/vla/datasets/rlds/oxe/utils/droid_utils.py`). Root cause of the whole
+sequence: Block A installs openvla-oft with `--no-deps` (necessary — its dep list
+contains the unsatisfiable `tensorflow==2.15.0` and the broken dlimp git URL), so
+NONE of its declared dependencies are ever pulled, and each ENV-03 run fails at the
+first missing one.
+
+Ended the game by enumerating every third-party import in prismatic/ from source
+and diffing against Block A + Colab stock. Missing set: `tensorflow_graphics`,
+`draccus`, `jsonlines`, `wandb`, `diffusers`. Step 5b now installs any of these
+that are absent (`_OFT_DEPS` loop).
+
+`tensorflow-graphics==2021.12.3` must itself be `--no-deps`: it declares OpenEXR
+(C++ source build, fails on Colab) and tensorflow-addons (deprecated, no cp312
+wheel), but the only submodule prismatic imports (`geometry.transformation`) was
+verified from the wheel to reference neither — and its `__init__.py` gates heavy
+imports behind a docs-only flag.
+
+Sessions that "passed" before these deps were baked in had them from manual
+debugging installs — the same VM-persistence illusion as finding no. 3.
+
 ## Consequence
 
 The confirmed fix (kvablack clone + editable install) must be baked into Block A
