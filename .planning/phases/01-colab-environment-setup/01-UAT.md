@@ -1,9 +1,9 @@
 ---
-status: testing
+status: complete
 phase: 01-colab-environment-setup
 source: [01-VERIFICATION.md]
 started: 2026-07-09T18:15:00Z
-updated: 2026-07-10T09:48:00Z
+updated: 2026-07-10T09:59:00Z
 ---
 
 ## Current Test
@@ -46,11 +46,25 @@ blocked: 0
   reason: "User reported: ModuleNotFoundError: No module named 'dlimp' — prismatic/__init__.py eagerly imports the RLDS dataset chain (prismatic.vla.datasets.rlds.dataset) which requires dlimp. dlimp was listed as missing in Cell 6 pip install but was never installed. RuntimeError raised before model load."
   severity: major
   test: 4
-  root_cause: "prismatic/vla/__init__.py line 1 eagerly imports get_vla_dataset_and_collator from materialize.py, which pulls in the full dataset chain (datasets.py → rlds/dataset.py → import dlimp). dlimp is a required transitive dep (git+https://github.com/moojink/dlimp_openvla) listed in openvla-oft's pyproject.toml but never installed by Cell 8. The ENV-03 cell clones openvla-oft and adds it to sys.path, then calls importlib.import_module('prismatic.training.train_utils') which triggers the full __init__ chain — crashing on the missing dlimp before reaching model load."
+  root_cause: "prismatic/vla/__init__.py line 1 eagerly imports get_vla_dataset_and_collator from materialize.py, which pulls in the full dataset chain (datasets.py → rlds/dataset.py → import dlimp). dlimp is a required transitive dep listed in openvla-oft's pyproject.toml as 'git+https://github.com/moojink/dlimp_openvla' but that pip URL fails (non-zero exit). The clone-then-editable-install path is required."
   artifacts:
     - path: "LIBERO/notebooks/01-colab-env-setup.ipynb"
       cell_id: "98b86f1a"
-      issue: "ENV-03 cell (cell-id 98b86f1a) does not install dlimp before the prismatic import check"
+      issue: "ENV-03 cell does not install dlimp before the prismatic import check"
   missing:
-    - "Add dlimp install in ENV-03 cell (cell 98b86f1a), immediately after sys.path.insert for openvla-oft and before importlib.import_module call: subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'git+https://github.com/moojink/dlimp_openvla'], check=True)"
-  fix_note: "Cannot patch .ipynb directly — apply in Colab. In cell 98b86f1a, after the sys.path.insert block and before the try/importlib.import_module block, add: import subprocess as _sp; _sp.run([sys.executable, '-m', 'pip', 'install', '-q', 'git+https://github.com/moojink/dlimp_openvla'], check=True); print('dlimp installed'). Then re-run the ENV-03 cell."
+    - "In cell 98b86f1a, after sys.path.insert and before importlib.import_module: clone kvablack/dlimp and pip install -e it"
+  fix_confirmed: |
+    The following snippet (run in Colab before the prismatic import check) resolved the issue:
+
+      import subprocess, sys
+      subprocess.run(
+          'git clone --depth 1 https://github.com/kvablack/dlimp /content/dlimp_kvablack 2>&1 && '
+          f'{sys.executable} -m pip install -q -e /content/dlimp_kvablack',
+          shell=True, check=True
+      )
+
+    After this, ENV-03 loaded moojink/openvla-7b-oft-finetuned-libero-spatial in bfloat16
+    and printed: ENV-03: PASS — action shape: (8, 7), dtype: float64
+    unnorm_key resolved to: libero_spatial_no_noops
+    Note: pip install git+https://github.com/moojink/dlimp_openvla fails — use kvablack/dlimp instead.
+  fix_note: "Add dlimp install to Block A Cell 8 (openvla-oft install) so it is present before Block B ENV-03 runs. Use git clone kvablack/dlimp + pip install -e, NOT the moojink/dlimp_openvla pip URL (that URL returns non-zero exit)."
