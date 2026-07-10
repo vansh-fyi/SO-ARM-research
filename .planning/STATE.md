@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: colab-environment-setup
-status: executing
-stopped_at: Phase 01 runtime-verified on Colab A100 — ENV-01, ENV-02, ENV-03 all PASS; ready for /gsd-verify-work
-last_updated: "2026-07-09T17:34:44.923Z"
-last_activity: 2026-07-09
-last_activity_desc: Phase 01 execution started
+status: complete
+stopped_at: Phase 01 CLOSED — UAT 4/4 PASS on fresh A100 (ENV-01/02/03); dlimp/protobuf/eager-deps fixes baked into notebook Step 5b; ready to plan Phase 02
+last_updated: "2026-07-10T17:30:00.000Z"
+last_activity: 2026-07-10
+last_activity_desc: Phase 01 closed — ENV-03 dlimp saga resolved, all fixes baked in
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
-  percent: 0
+  completed_plans: 4
+  percent: 17
 ---
 
 # Project State
@@ -28,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 
 ## Current Position
 
-Phase: 01 (colab-environment-setup) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 01
-Last activity: 2026-07-09 — Phase 01 execution started
+Phase: 01 (colab-environment-setup) — COMPLETE (closed 2026-07-10)
+Plan: 4 of 4
+Status: Phase 01 closed — UAT 4/4 PASS; next: /gsd-plan-phase for Phase 02 (SOARM Robot Integration)
+Last activity: 2026-07-10 — Phase 01 closed (ENV-03 dependency saga resolved and baked into notebook)
 
-Progress: [██░░░░░░░░] 17% (all Phase 01 plans complete)
+Progress: [██░░░░░░░░] 17% (Phase 1 of 6 complete)
 
 ## Performance Metrics
 
@@ -74,6 +74,11 @@ Recent decisions affecting current work:
 - 01-03 (resolves RESEARCH A1, CONFIRMED on Colab): OFT checkpoint norm_stats = OXE pretraining datasets only; LIBERO stats must be overlaid from dataset_statistics.json (hf_hub_download) after from_pretrained; actual key is "libero_spatial_no_noops" — Phase 3 inference loop MUST replicate this
 - 01-03 (CONFIRMED on Colab): OFT predict_action returns (actions, hidden_states) tuple with action chunk shape (8, 7) float64 — Phase 3 must unpack and consume 8-step chunks, not single steps
 - 01-03: prismatic import chain needs wandb (metrics.py) — included in Step 5 since openvla-oft installs with --no-deps
+- 01-close: dlimp MUST install via kvablack clone + pip --no-deps — BOTH dlimp repos pin tensorflow==2.15.0 (no cp312 wheel); any deps-resolving install fails on Colab py3.12
+- 01-close: Block A installs drag protobuf below Colab's tensorflow_metadata gencode — Step 5b restores with pip install -U protobuf (must stay the cell's last pip op)
+- 01-close: openvla-oft --no-deps means its eager-chain deps must be filled explicitly — Step 5b installs tensorflow_graphics==2021.12.3 (--no-deps: OpenEXR/tf-addons unbuildable), draccus==0.8.0, jsonlines, wandb, diffusers==0.30.3 (enumerated from prismatic/ source)
+- 01-close: Colab "Restart runtime" keeps the VM disk — only "Disconnect and delete runtime" is a clean-slate test; manual debug installs persist across restarts and create false "it works" signals
+- 01-close: HF token read from Drive file (MyDrive/SoARM-Research/.hf_token) via Block B bootstrap cell — Colab secrets vault (userdata.get) blocks indefinitely from VS Code-attached sessions
 
 ### Pending Todos
 
@@ -94,6 +99,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-09T08:00:00.000Z
-Stopped at: All plans done — user to run Block B (Cells 14-22) on Colab for ENV-01/02/03 PASS
-Resume file: .planning/phases/01-colab-environment-setup/01-03-SUMMARY.md
+Last session: 2026-07-10T17:30:00.000Z
+Stopped at: Phase 01 closed — all ENV gates PASS, fixes baked into notebook; next step is planning Phase 02 (SOARM Robot Integration)
+Resume file: .planning/phases/01-colab-environment-setup/01-UAT.md

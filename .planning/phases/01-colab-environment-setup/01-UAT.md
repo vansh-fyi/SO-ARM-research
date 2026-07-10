@@ -3,7 +3,7 @@ status: complete
 phase: 01-colab-environment-setup
 source: [01-VERIFICATION.md]
 started: 2026-07-09T18:15:00Z
-updated: 2026-07-10T09:59:00Z
+updated: 2026-07-10T17:30:00Z
 ---
 
 ## Current Test
@@ -26,15 +26,22 @@ result: pass
 
 ### 4. ENV-03 — OpenVLA-OFT load + 7-D action
 expected: The ENV-03 cell (with USE_TORCH=1/USE_TF=0/USE_FLAX=0 guards active) loads moojink/openvla-7b-oft-finetuned-libero-spatial in bfloat16 and prints "ENV-03: PASS" with a 7-D per-step action. No jax or tensorflow frames in any traceback; no IPython ultratb infinite loop.
-result: issue
-reported: "ModuleNotFoundError: No module named 'dlimp' — prismatic/__init__.py eagerly imports prismatic.vla.datasets.rlds.dataset which requires dlimp (a training-time dep not installed by Cell 6). RuntimeError raised before model load."
-severity: major
+result: pass
+resolved: 2026-07-10 — Step 5b cell baked into Block A (commits 96cbb0d, b095ee6): dlimp
+  via kvablack clone + pip --no-deps (BOTH dlimp repos pin tensorflow==2.15.0, which has
+  no cp312 wheel), protobuf runtime restore, and all five missing openvla-oft eager-chain
+  deps (tensorflow_graphics --no-deps, draccus, jsonlines, wandb, diffusers). ENV-03 PASS
+  observed live on a fresh A100 VM: action shape (8, 7), dtype float64, bf16 on cuda:0,
+  unnorm_key libero_spatial_no_noops. Evidence committed in notebook outputs (1a37159).
+history: "Initially failed with ModuleNotFoundError: dlimp; then protobuf VersionError
+  (gencode 6.31.1 vs runtime 5.29.6); then ModuleNotFoundError: tensorflow_graphics.
+  Full failure-chain forensics: .planning/notes/dlimp-install-forensics.md"
 
 ## Summary
 
 total: 4
-passed: 3
-issues: 1
+passed: 4
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0
@@ -42,7 +49,23 @@ blocked: 0
 ## Gaps
 
 - truth: "ENV-03 cell loads OpenVLA-OFT in bfloat16 and prints ENV-03: PASS with a 7-D action"
-  status: failed
+  status: resolved (2026-07-10)
+  resolution: |
+    Fix baked into notebook Block A as Step 5b (cell-8b-dlimp), commits 96cbb0d + b095ee6:
+    1. dlimp: clone kvablack/dlimp + pip install --no-deps -e (both dlimp repos pin
+       tensorflow==2.15.0 — no cp312 wheel exists, so ANY deps-resolving install fails).
+    2. protobuf: pip install -U protobuf after Block A installs drag runtime below
+       tensorflow_metadata's gencode (observed 5.29.6 vs 6.31.1 → VersionError).
+    3. Remaining eager-chain deps (openvla-oft installed --no-deps never pulls them):
+       tensorflow_graphics==2021.12.3 (--no-deps), draccus==0.8.0, jsonlines, wandb,
+       diffusers==0.30.3 — enumerated from prismatic/ source, not crash-by-crash.
+    The failing Block B patch cell (pip install git+.../dlimp_openvla, always exit 1)
+    was deleted. Optional HF token bootstrap cell added to Block B (dbcf69a).
+    ENV-03 PASS verified live on a fresh A100 VM 2026-07-10; outputs committed (1a37159).
+    Residual note: the passing session applied the Step 5b dep commands manually
+    (byte-identical to the baked cell); next fresh-VM session start doubles as the
+    zero-touch validation.
+  original_status: failed
   reason: "User reported: ModuleNotFoundError: No module named 'dlimp' — prismatic/__init__.py eagerly imports the RLDS dataset chain (prismatic.vla.datasets.rlds.dataset) which requires dlimp. dlimp was listed as missing in Cell 6 pip install but was never installed. RuntimeError raised before model load."
   severity: major
   test: 4

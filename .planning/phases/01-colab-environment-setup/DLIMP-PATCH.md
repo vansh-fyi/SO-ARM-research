@@ -1,5 +1,12 @@
 # dlimp Install Patch — `01-colab-env-setup.ipynb`
 
+> **CLOSED (2026-07-10).** All fixes baked into the notebook (commits 96cbb0d, b095ee6,
+> dbcf69a); ENV-01/02/03 all PASS on a fresh Colab A100. The dlimp fix evolved beyond
+> this doc: kvablack/dlimp also pins tensorflow==2.15.0, so the working install is
+> `pip install --no-deps -e`, plus a protobuf restore and five more eager-chain deps
+> (see Step 5b in the notebook and `.planning/notes/dlimp-install-forensics.md`).
+> Kept for the historical import-chain analysis below.
+
 ## Context
 
 This repo is `SoARM-Research` — a robotics research project running OpenVLA-OFT inference + LIBERO simulation on a Colab A100 (80 GB VRAM).

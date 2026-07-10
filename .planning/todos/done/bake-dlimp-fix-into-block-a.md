@@ -5,9 +5,12 @@ priority: high
 phase: 01-colab-environment-setup
 ---
 
-> **Status (2026-07-10):** notebook edits applied — `cell-8b-dlimp` added to Block A,
-> failing cell `89cc2bac` deleted, stale guard print removed. Only the acceptance
-> criteria below (Colab clean-run verification) remain before this todo can close.
+> **CLOSED (2026-07-10):** all fixes baked into Block A Step 5b (dlimp --no-deps,
+> protobuf restore, five eager-chain deps) — commits 96cbb0d, b095ee6. ENV-01/02/03
+> all PASS on a fresh A100 VM (evidence: 1a37159). Closed with Phase 01 per user
+> decision; the passing session applied Step 5b's dep commands manually
+> (byte-identical to the baked cell) — next fresh-VM session start doubles as the
+> zero-touch validation.
 
 ## Task
 
