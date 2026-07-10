@@ -52,6 +52,20 @@ as `dlimp @ git+https://github.com/moojink/dlimp_openvla`). However:
 
 ### What Does Work
 
+> **Correction (2026-07-10):** the plain editable install below **no longer works** —
+> `kvablack/dlimp`'s `setup.py` also pins `tensorflow==2.15.0`, so dependency resolution
+> fails identically on Colab py3.12 (`CalledProcessError` observed live). The working
+> form requires `--no-deps`:
+>
+> ```bash
+> git clone --depth 1 https://github.com/kvablack/dlimp /content/dlimp_kvablack
+> pip install --no-deps -e /content/dlimp_kvablack
+> ```
+>
+> dlimp's runtime deps (tensorflow, tensorflow-datasets) come from Colab's preinstalled
+> packages — the exact combination the passing ENV-03 actually ran on. The notebook's
+> Step 5b cell verifies both are present and installs them only if missing.
+
 Cloning the **parent repo** (`kvablack/dlimp`) and installing editably:
 
 ```bash
@@ -79,8 +93,11 @@ First action step: [0.934... 0.872... 0.928... 0.103... 0.176... 0.145... 0.996.
 
 ### Where to add it
 
-In `LIBERO/notebooks/01-colab-env-setup.ipynb`, **Block A**, in the cell that installs
-`openvla-oft` (cell ID `98b86f1a`).
+In `LIBERO/notebooks/01-colab-env-setup.ipynb`, **Block A**, in or after the Step 5
+cell that installs the openvla-oft packages (cell ID `cell-8-openvla-fork`).
+
+> **Correction (2026-07-10):** this doc previously named cell ID `98b86f1a` as the
+> Block A openvla-oft install cell — that ID is actually the Block B prismatic guard.
 
 The dlimp install must happen **in Block A** (before the runtime restart), so it is present
 on disk when Block B's ENV-03 cell runs its `prismatic` import.
@@ -118,10 +135,12 @@ markdown cell.
 
 | File | Status | Action |
 |------|--------|--------|
-| `LIBERO/notebooks/01-colab-env-setup.ipynb` | ⚠️ Needs patch | Prepend dlimp install to cell `98b86f1a` (or add new cell after it) |
+| `LIBERO/notebooks/01-colab-env-setup.ipynb` | ✅ Patched (2026-07-10) | New Block A cell `cell-8b-dlimp` (Step 5b) added after `cell-8-openvla-fork`; failing Block B `pip install git+.../dlimp_openvla` cell (`89cc2bac`) deleted; stale `print("dlimp installed")` removed from the prismatic guard |
 
-> **Why not patched yet:** `.ipynb` files cannot be edited by the local agent tooling — edits
-> to `.ipynb` must be made in Colab or via `nbformat` / `jupyter nbconvert` scripting.
+> Applied via `json` scripting against the notebook. Root cause of the git-URL install
+> failure confirmed from live output: `dlimp_openvla` pins `tensorflow==2.15.0`, which has
+> no Python 3.12 wheel on Colab (TF ships cp312 wheels only from 2.16+). See
+> `.planning/notes/dlimp-install-forensics.md` for the full evidence trail.
 
 ---
 
@@ -152,4 +171,8 @@ Summary:
 - ENV-03 ✅ — OpenVLA-OFT model load + action chunk (after manual dlimp fix)
 - numpy ABI gate ✅ — numpy 1.26.4 coherent
 
-Only remaining task: bake the dlimp fix permanently into Block A of the notebook.
+~~Only remaining task: bake the dlimp fix permanently into Block A of the notebook.~~
+**Done (2026-07-10).** Remaining verification: one clean run from a **deleted** runtime
+(Runtime → Disconnect and delete runtime — a mere restart keeps the VM disk and would
+invalidate the test): Block A → restart → Block B, expecting ENV-01/02/03 all PASS with
+zero manual intervention.

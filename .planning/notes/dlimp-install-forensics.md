@@ -56,6 +56,34 @@ ENV-03 passed while the failing pip cell sat next to it taking the credit.
 Diagnostic for any live session: `import dlimp; print(dlimp.__file__)` — a path
 under `/content/dlimp_kvablack/` means the manual fix is what's active.
 
+## 4. Update (2026-07-10): kvablack/dlimp has the same pin
+
+The first baked-in Block A cell (`pip install -e /content/dlimp_kvablack`) failed live
+with `CalledProcessError` — `kvablack/dlimp`'s `setup.py` **also** declares
+`install_requires=["tensorflow==2.15.0", ...]`, so its dependency resolution dies the
+same way as the moojink URL. The doc's claim that plain editable install "was confirmed
+working" does not reproduce on current Colab py3.12.
+
+Working form: `pip install --no-deps -e /content/dlimp_kvablack`, relying on Colab's
+preinstalled tensorflow + tensorflow-datasets (which is what the passing ENV-03 actually
+ran on — dlimp needs TF importable, not TF 2.15 specifically). The Step 5b cell now does
+this and checks both runtime deps are present.
+
+## 5. Update (2026-07-10): protobuf downgrade breaks tensorflow_datasets
+
+With dlimp installing cleanly (`--no-deps`), ENV-03 progressed to the next layer and
+failed at dlimp → `tensorflow_datasets` → `tensorflow_metadata` with
+`google.protobuf.runtime_version.VersionError: gencode 6.31.1 runtime 5.29.6`.
+Colab stock ships a protobuf runtime matching its tensorflow_metadata gencode; some
+Block A install (LIBERO editable or the transformers fork resolution) drags protobuf
+down to 5.29.6. Protobuf's guarantee is runtime >= gencode, so the fix is restoring
+protobuf after the Block A installs: `pip install -U protobuf` (now baked into the
+Step 5b cell, after the dlimp install).
+
+Meta-lesson: every ENV-03 failure so far has been **disk state**, not cell order —
+each fix moves the import chain one layer deeper
+(prismatic → dlimp → tensorflow_datasets → protobuf).
+
 ## Consequence
 
 The confirmed fix (kvablack clone + editable install) must be baked into Block A

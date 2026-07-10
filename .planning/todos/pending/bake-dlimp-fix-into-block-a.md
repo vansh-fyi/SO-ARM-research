@@ -5,6 +5,10 @@ priority: high
 phase: 01-colab-environment-setup
 ---
 
+> **Status (2026-07-10):** notebook edits applied — `cell-8b-dlimp` added to Block A,
+> failing cell `89cc2bac` deleted, stale guard print removed. Only the acceptance
+> criteria below (Colab clean-run verification) remain before this todo can close.
+
 ## Task
 
 Close out the last remaining Phase 1 item from `DLIMP-PATCH.md`: make the dlimp
@@ -18,9 +22,10 @@ and remove the non-functional patch cell from Block B.
 
    ```python
    # ── dlimp install (required transitive dep of openvla-oft) ─────────────────
-   # pip install git+https://github.com/moojink/dlimp_openvla is unsatisfiable on
-   # Colab py3.12 (pins tensorflow==2.15.0; no cp312 wheel exists).
-   # Clone-then-editable of the parent repo is the confirmed fix.
+   # BOTH dlimp repos (moojink/dlimp_openvla AND parent kvablack/dlimp) pin
+   # tensorflow==2.15.0, which has no cp312 wheel — any pip run that resolves
+   # dlimp's deps fails on Colab py3.12. Install with --no-deps; tensorflow and
+   # tensorflow-datasets come from Colab's preinstalled packages.
    import subprocess as _sp, sys as _sys, pathlib as _pl
 
    _DLIMP_DIR = _pl.Path("/content/dlimp_kvablack")
@@ -28,10 +33,13 @@ and remove the non-functional patch cell from Block B.
        print("Cloning kvablack/dlimp ...")
        _sp.run(["git", "clone", "--depth", "1",
                 "https://github.com/kvablack/dlimp", str(_DLIMP_DIR)], check=True)
-   _sp.run([_sys.executable, "-m", "pip", "install", "-q", "-e", str(_DLIMP_DIR)],
+   _sp.run([_sys.executable, "-m", "pip", "install", "--no-deps", "-e", str(_DLIMP_DIR)],
            check=True)
-   print("dlimp installed from kvablack/dlimp ✓")
+   print("dlimp installed from kvablack/dlimp (--no-deps) ✓")
    ```
+
+   (Revised 2026-07-10 after the plain `-e` install failed live with
+   `CalledProcessError` — kvablack/dlimp carries the same `tensorflow==2.15.0` pin.)
 
    Block A placement matters twice over: dlimp must be on disk before Block B's
    prismatic import, and the numpy ABI gate (Block A's final cell) repairs any
