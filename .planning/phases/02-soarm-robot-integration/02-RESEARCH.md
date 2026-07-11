@@ -502,17 +502,17 @@ Cell 6: ENV-06 PASS/FAIL — loop 3 selected libero_spatial BDDLs x N random-act
 | A5 | `grip_site` at the source `gripperframe` position is a usable EEF control point | Pattern 1 item 5 | OSC control quality suffers; move site between jaw tips |
 | A6 | The three recommended libero_spatial tasks have the most robot-proximal object regions | Pattern 4 | Planner swaps in different tasks after reading region coords — zero structural impact |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does the extended home pose (gripper 0.39 m forward) interpenetrate object spawn regions at reset for the chosen tasks?**
+1. **Does the extended home pose (gripper 0.39 m forward) interpenetrate object spawn regions at reset for the chosen tasks?** — RESOLVED: addressed by plan 02-03 Task 1 (stable-reset iteration per D-11; reads candidate BDDL region ranges, tucks init_qpos if needed per D-07).
    - What we know: home pose FK measured; object regions are per-BDDL and near table center; init noise is disabled by LIBERO default (`initialization_noise=None`).
    - What's unclear: exact overlap depends on the tuned base x-position and per-task regions.
    - Recommendation: plan a local iteration task that reads each candidate BDDL's region ranges and checks them against the arm's swept home volume before Colab verification; tuck init_qpos if needed (D-07 allows).
-2. **Will OSC torque clipping at ±2.94 Nm cause MuJoCo instability warnings under random actions?**
+2. **Will OSC torque clipping at ±2.94 Nm cause MuJoCo instability warnings under random actions?** — RESOLVED: addressed by plan 02-03 Task 2 (500-step × 3-seed random-action soak, D-11 iteration).
    - What we know: torques are clipped to actuator ctrlrange; damping 0.6 per joint is the hardware-derived value.
    - What's unclear: interaction of kp=150 OSC gains with tiny link inertias at control_freq=20.
    - Recommendation: local random-action soak test (500 steps × 3 seeds) as an explicit plan task before the Colab run.
-3. **Eye-in-hand camera pose** — needs a tune-by-render loop; no ground truth exists for SO101.
+3. **Eye-in-hand camera pose** — RESOLVED: addressed by plan 02-04 Task 1 (tune-by-render loop; acceptance = gripper jaws visible at frame bottom, workspace centered).
    - Recommendation: dedicate a local render-check iteration; acceptance = gripper jaws visible at frame bottom, workspace centered.
 
 ## Environment Availability
