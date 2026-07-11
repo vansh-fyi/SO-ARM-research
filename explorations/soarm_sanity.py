@@ -32,6 +32,14 @@ import numpy as np
 LIBERO_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "LIBERO"))
 sys.path.insert(0, LIBERO_PATH)
 
+# Repo root too: parts of the LIBERO fork's working tree import via the
+# absolute "LIBERO.libero..." package prefix, which only resolves when the
+# repo root (the LIBERO dir's parent) is on sys.path as a namespace-package
+# anchor. python -c snippets get this for free via cwd (''); a script's
+# sys.path[0] is explorations/, so insert it explicitly.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, REPO_ROOT)
+
 os.environ["MUJOCO_GL"] = "glfw"               # macOS headless via GLFW
 
 import matplotlib
