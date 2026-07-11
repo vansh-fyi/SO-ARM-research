@@ -1,4 +1,5 @@
-explorations/
+explorations/*
+!explorations/soarm_sanity.py
 .agents/
 .claude/
 .codex/
