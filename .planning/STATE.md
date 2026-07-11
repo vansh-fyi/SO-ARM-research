@@ -6,14 +6,14 @@ current_phase: 02
 current_phase_name: soarm-robot-integration
 status: executing
 stopped_at: Phase 02 context gathered
-last_updated: "2026-07-11T13:47:04.522Z"
+last_updated: "2026-07-11T13:54:11.600Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 02 execution resumed (wave continue)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 9
-  completed_plans: 6
+  completed_plans: 7
   percent: 17
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 ## Current Position
 
 Phase: 02 (soarm-robot-integration) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-07-11 — Phase 02 execution resumed (wave continue)
 
@@ -56,6 +56,7 @@ Progress: [██░░░░░░░░] 17% (Phase 1 of 6 complete)
 
 *Updated after each plan completion*
 | Phase 02 P02 | 10min | 3 tasks | 6 files |
+| Phase 02 P03 | 10min | 2 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-02: Gripper actuator keeps source servo values (kp 998.22, ctrlrange -0.17453..1.74533, forcerange ±3.35); kv stripped for MuJoCo 2.3.7
 - [Phase ?]: 02-02: Harness (and any fork-importing script) must insert the repo ROOT on sys.path — LIBERO working tree carries uncommitted LIBERO.-prefix absolute imports
 - [Phase ?]: 02-02: reset (0.024 N) and render checks already GREEN with untuned starting values — 02-03 tunes from a working baseline
+- [Phase 02]: 02-03: Generic OSC_POSE config suffices for SOARM soak stability — no custom controller_configs kwarg for 02-05 notebook or Phase 3
+- [Phase 02]: 02-03: All 02-02 starting values final (damping 0.6x5, base offset -0.38/0/0.90, init_qpos zeros(5), gripper speed 0.10 / jaw 0.8); A4 primitive-collision fallback not needed; reset peak 0.024 N
 
 ### Pending Todos
 
@@ -104,6 +107,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-11T13:46:15.813Z
+Last session: 2026-07-11T13:53:36.233Z
 Stopped at: Phase 02 context gathered
 Resume file: .planning/phases/02-soarm-robot-integration/02-CONTEXT.md
