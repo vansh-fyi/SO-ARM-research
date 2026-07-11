@@ -54,12 +54,18 @@ GRIPPER_XML = os.path.join(
 BDDL_DIR = os.path.join(LIBERO_PATH, "libero/libero/bddl_files/libero_spatial")
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
 
-# Candidate libero_spatial tasks (02-RESEARCH.md Pattern 4; finalized in
-# plan 02-04 per D-03) — the three with the most robot-proximal regions.
+# Final libero_spatial tasks (D-03 resolved in plan 02-04): the three whose
+# akita_black_bowl_1 init regions sit inside SO101's 0.479 m horizontal reach
+# from the tuned base (-0.38, 0) with the most margin:
+#   table_center           (-0.075, 0.00) -> 0.305 m (margin +0.174)
+#   between_plate_ramekin  (-0.050, 0.20) -> 0.386 m (margin +0.093)
+#   ramekin_region         (-0.200, 0.20) -> 0.269 m (margin +0.210)
+# The 02-01 candidate next_to_the_plate was swapped out: its bowl region
+# (0.01, 0.31) is 0.498 m from the base — beyond the 0.479 m reach.
 TASKS = [
     "pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate.bddl",
-    "pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate.bddl",
     "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate.bddl",
+    "pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate.bddl",
 ]
 
 
