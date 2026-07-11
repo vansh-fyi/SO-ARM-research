@@ -12,8 +12,8 @@ Requirements for initial research pipeline. Each maps to roadmap phases.
 - [ ] **ENV-01**: Colab notebook installs all dependencies in correct order (robosuite 1.4.0, MuJoCo 2.3.7, gym 0.25.2, PyTorch 2.1.x) without conflicts
 - [ ] **ENV-02**: EGL headless rendering is configured (MUJOCO_GL=egl set before any MuJoCo import) and produces non-black frames
 - [ ] **ENV-03**: OpenVLA-OFT model loads successfully on Colab GPU (A100/T4) via HuggingFace
-- [ ] **ENV-04**: SOARM SO101 MJCF (from TheRobotStudio/SO-ARM100) is adapted for robosuite 1.4 and registered as a ManipulatorModel subclass
-- [ ] **ENV-05**: SOARM robot is registered in LIBERO's ROBOT_CLASS_MAPPING and can be instantiated in a LIBERO environment
+- [x] **ENV-04**: SOARM SO101 MJCF (from TheRobotStudio/SO-ARM100) is adapted for robosuite 1.4 and registered as a ManipulatorModel subclass
+- [x] **ENV-05**: SOARM robot is registered in LIBERO's ROBOT_CLASS_MAPPING and can be instantiated in a LIBERO environment
 - [ ] **ENV-06**: At least 3 BDDL tasks are configured to use SOARM (replacing Panda arm)
 - [ ] **ENV-07**: Rendered frames from SOARM environment are visually correct (right-side-up, correct camera angle, physics stable)
 
@@ -86,8 +86,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENV-01 | Phase 1 | Pending |
 | ENV-02 | Phase 1 | Pending |
 | ENV-03 | Phase 1 | Pending |
-| ENV-04 | Phase 2 | Pending |
-| ENV-05 | Phase 2 | Pending |
+| ENV-04 | Phase 2 | Complete |
+| ENV-05 | Phase 2 | Complete |
 | ENV-06 | Phase 2 | Pending |
 | ENV-07 | Phase 2 | Pending |
 | VLA-01 | Phase 3 | Pending |
@@ -109,6 +109,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TUNE-04 | Phase 6 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 24 total
 - Mapped to phases: 24
 - Unmapped: 0 ✓

@@ -6,14 +6,14 @@ current_phase: 02
 current_phase_name: soarm-robot-integration
 status: executing
 stopped_at: Phase 02 context gathered
-last_updated: "2026-07-11T13:31:05.798Z"
+last_updated: "2026-07-11T13:47:04.522Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 02 execution resumed (wave continue)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 9
-  completed_plans: 4
+  completed_plans: 6
   percent: 17
 ---
 
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 ## Current Position
 
 Phase: 02 (soarm-robot-integration) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 02
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-07-11 — Phase 02 execution resumed (wave continue)
 
 Progress: [██░░░░░░░░] 17% (Phase 1 of 6 complete)
@@ -55,6 +55,7 @@ Progress: [██░░░░░░░░] 17% (Phase 1 of 6 complete)
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 02 P02 | 10min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Recent decisions affecting current work:
 - 01-close: Colab "Restart runtime" keeps the VM disk — only "Disconnect and delete runtime" is a clean-slate test; manual debug installs persist across restarts and create false "it works" signals
 - 01-close: HF token read from Drive file (MyDrive/SoARM-Research/.hf_token) via Block B bootstrap cell — Colab secrets vault (userdata.get) blocks indefinitely from VS Code-attached sessions
 - 01-close: **REQUIRED READING for phases 2-6 before touching the Colab environment:** `.planning/phases/01-colab-environment-setup/01-DEBUG-HISTORY.md` — the environment contract (7 invariants), full ENV-03 failure timeline, and debugging meta-lessons (restart ≠ clean slate, --no-deps contract, source enumeration over whack-a-mole)
+- [Phase ?]: 02-02: Gripper actuator keeps source servo values (kp 998.22, ctrlrange -0.17453..1.74533, forcerange ±3.35); kv stripped for MuJoCo 2.3.7
+- [Phase ?]: 02-02: Harness (and any fork-importing script) must insert the repo ROOT on sys.path — LIBERO working tree carries uncommitted LIBERO.-prefix absolute imports
+- [Phase ?]: 02-02: reset (0.024 N) and render checks already GREEN with untuned starting values — 02-03 tunes from a working baseline
 
 ### Pending Todos
 
@@ -100,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-11T05:39:51.832Z
+Last session: 2026-07-11T13:46:15.813Z
 Stopped at: Phase 02 context gathered
 Resume file: .planning/phases/02-soarm-robot-integration/02-CONTEXT.md

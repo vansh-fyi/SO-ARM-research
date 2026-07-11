@@ -67,7 +67,7 @@ Plans:
   3. SOARM is selectable by name in LIBERO's ROBOT_CLASS_MAPPING exactly as Panda is today
   4. At least 3 BDDL tasks run end-to-end with the SOARM robot without crashing
 
-**Plans**: 1/5 plans executed
+**Plans**: 2/5 plans executed
 
 Plans:
 **Wave 1**
@@ -76,7 +76,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 02-02-PLAN.md — Gripper MJCF + MountedSoarm101/SoarmGripper classes + LIBERO registration (ENV-04, ENV-05)
+- [x] 02-02-PLAN.md — Gripper MJCF + MountedSoarm101/SoarmGripper classes + LIBERO registration (ENV-04, ENV-05)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -154,7 +154,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Colab Environment Setup | 4/4 | Complete   | 2026-07-09 |
-| 2. SOARM Robot Integration | 1/5 | In Progress|  |
+| 2. SOARM Robot Integration | 2/5 | In Progress|  |
 | 3. VLA Inference Loop | 0/TBD | Not started | - |
 | 4. Dataset Collection | 0/TBD | Not started | - |
 | 5. Spatial Awareness | 0/TBD | Not started | - |
