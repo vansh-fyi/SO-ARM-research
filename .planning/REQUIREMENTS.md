@@ -14,8 +14,8 @@ Requirements for initial research pipeline. Each maps to roadmap phases.
 - [ ] **ENV-03**: OpenVLA-OFT model loads successfully on Colab GPU (A100/T4) via HuggingFace
 - [x] **ENV-04**: SOARM SO101 MJCF (from TheRobotStudio/SO-ARM100) is adapted for robosuite 1.4 and registered as a ManipulatorModel subclass
 - [x] **ENV-05**: SOARM robot is registered in LIBERO's ROBOT_CLASS_MAPPING and can be instantiated in a LIBERO environment
-- [ ] **ENV-06**: At least 3 BDDL tasks are configured to use SOARM (replacing Panda arm)
-- [ ] **ENV-07**: Rendered frames from SOARM environment are visually correct (right-side-up, correct camera angle, physics stable)
+- [x] **ENV-06**: At least 3 BDDL tasks are configured to use SOARM (replacing Panda arm)
+- [x] **ENV-07**: Rendered frames from SOARM environment are visually correct (right-side-up, correct camera angle, physics stable)
 
 ### VLA Inference Pipeline
 
@@ -88,8 +88,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENV-03 | Phase 1 | Pending |
 | ENV-04 | Phase 2 | Complete |
 | ENV-05 | Phase 2 | Complete |
-| ENV-06 | Phase 2 | Pending |
-| ENV-07 | Phase 2 | Pending |
+| ENV-06 | Phase 2 | Complete |
+| ENV-07 | Phase 2 | Complete |
 | VLA-01 | Phase 3 | Pending |
 | VLA-02 | Phase 3 | Pending |
 | VLA-03 | Phase 3 | Pending |
