@@ -1,9 +1,9 @@
 ---
 phase: 3
 slug: vla-inference-loop
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: planned
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-07-18
 ---
 
@@ -73,11 +73,11 @@ created: 2026-07-18
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < ~30 min (one full Colab notebook run)
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies — 03-01's tasks resolve all Wave 0 gaps; 03-02/03-03 auto tasks carry `<automated>` verify (ast.parse / pytest mock suites)
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references — interface.py, oft_backend.py, pi0_backend.py, eval_loop.py all created in 03-01; notebooks created in 03-02/03-03
+- [x] No watch-mode flags
+- [x] Feedback latency < ~30 min (one full Colab notebook run)
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-07-18 (via gsd-plan-checker VERIFICATION PASSED)
