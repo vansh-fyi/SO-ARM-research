@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Execution Order:** 1 → 2 → 3 → (4 ∥ 5) → 6
 
 - [x] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (4 plans) (closed 2026-07-10 — UAT 4/4 PASS after ENV-03 dependency fixes baked into notebook)
-- [ ] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks
+- [x] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks (completed 2026-07-18)
 - [ ] **Phase 3: VLA Inference Loop** - Close the loop from language prompt to rendered SOARM task video with success detection and dual-VLA support
 - [ ] **Phase 4: Dataset Collection** - Collect 100+ scripted SOARM demonstrations in robomimic HDF5 with state-based replay and normalization stats
 - [ ] **Phase 5: Spatial Awareness** - Add multi-camera perception, depth-based 3D localization, and spatial language BDDL task variants
@@ -67,7 +67,7 @@ Plans:
   3. SOARM is selectable by name in LIBERO's ROBOT_CLASS_MAPPING exactly as Panda is today
   4. At least 3 BDDL tasks run end-to-end with the SOARM robot without crashing
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans complete
 
 Plans:
 **Wave 1**
@@ -88,7 +88,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 02-05-PLAN.md — Colab verification notebook (ENV-04..07 PASS/FAIL) + blocking human sign-off (D-10)
+- [x] 02-05-PLAN.md — Colab verification notebook (ENV-04..07 PASS/FAIL) + blocking human sign-off (D-10)
 
 ### Phase 3: VLA Inference Loop
 
@@ -154,7 +154,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Colab Environment Setup | 4/4 | Complete   | 2026-07-09 |
-| 2. SOARM Robot Integration | 4/5 | In Progress|  |
+| 2. SOARM Robot Integration | 5/5 | Complete   | 2026-07-18 |
 | 3. VLA Inference Loop | 0/TBD | Not started | - |
 | 4. Dataset Collection | 0/TBD | Not started | - |
 | 5. Spatial Awareness | 0/TBD | Not started | - |
