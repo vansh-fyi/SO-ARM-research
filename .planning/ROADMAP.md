@@ -102,7 +102,17 @@ Plans:
   2. Task success or failure is detected and printed after each episode using LIBERO's BDDL evaluation protocol
   3. The pi0 (openpi) VLA backend can be swapped in via the same `predict(image, language) -> action` interface without changing downstream pipeline code
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Shared VLABackend interface + OFTBackend + eval_loop module (VLA-01, VLA-02, VLA-03)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03-02-PLAN.md — Notebook A: OFT full eval loop, 3 tasks x 5-10 episodes (VLA-01, VLA-02, VLA-03)
+- [ ] 03-03-PLAN.md — Pi0Backend + Notebook B: π0 smoke test, separate kernel (VLA-04)
 
 ### Phase 4: Dataset Collection
 
@@ -155,7 +165,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Colab Environment Setup | 4/4 | Complete   | 2026-07-09 |
 | 2. SOARM Robot Integration | 5/5 | Complete    | 2026-07-18 |
-| 3. VLA Inference Loop | 0/TBD | Not started | - |
+| 3. VLA Inference Loop | 0/3 | Not started | - |
 | 4. Dataset Collection | 0/TBD | Not started | - |
 | 5. Spatial Awareness | 0/TBD | Not started | - |
 | 6. Fine-Tuning & Evaluation | 0/TBD | Not started | - |
