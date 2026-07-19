@@ -1,60 +1,46 @@
 {
   "version": "1.0",
-  "timestamp": "2026-07-09T05:34:52.422Z",
-  "phase": "01",
-  "phase_name": "colab-environment-setup",
-  "phase_dir": ".planning/phases/01-colab-environment-setup",
-  "plan": 2,
-  "task": 1,
-  "total_tasks": 2,
+  "timestamp": "2026-07-19T18:22:33.846Z",
+  "phase": "3",
+  "phase_name": "VLA Inference Loop",
+  "phase_dir": ".planning/phases/03-vla-inference-loop",
+  "plan": "03-03",
+  "task": 3,
+  "total_tasks": 4,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "Plan 01-01: Block A install notebook — CONFIRMED FULLY PASSING on Colab T4 (all 6 steps)", "status": "done", "commit": "8cb18c6"}
+    {"id": 1, "name": "03-01: Shared VLABackend interface + OFTBackend + eval_loop", "status": "done", "commit": "267395e..a339303 (merged 72fad84..cd23dc5)"},
+    {"id": 2, "name": "03-02: Notebook A (OFT full eval loop) — Colab A100 sign-off", "status": "done", "commit": "e4f918f, 42642f9, 1071538, 7b2c1d6, c45a813"},
+    {"id": 3, "name": "03-03 Task 1: Pi0Backend — websocket client implementing VLABackend", "status": "done", "commit": "ead3563"},
+    {"id": 4, "name": "03-03 Task 2: Notebook B — openpi install + serve_policy.py server + client smoke test", "status": "done", "commit": "fa4d072"}
   ],
   "remaining_tasks": [
-    {"id": 2, "name": "Plan 01-02: Build Block B verification cells (ENV-01/ENV-02) — NOT YET IMPLEMENTED", "status": "not_started"},
-    {"id": 3, "name": "Plan 01-03: Build ENV-03 OpenVLA-OFT load cell", "status": "not_started"},
-    {"id": 4, "name": "Phase 1 verification (gsd-verifier) + ROADMAP/STATE update", "status": "not_started"}
+    {"id": 5, "name": "03-03 Task 3: checkpoint:human-verify (gate=blocking-human) — openpi-client PyPI package-legitimacy check", "status": "awaiting_human"},
+    {"id": 6, "name": "03-03 Task 4: checkpoint:human-verify (gate=blocking) — live Colab GPU π0 smoke-test run + sign-off", "status": "not_started"},
+    {"id": 7, "name": "Finalize 03-03-SUMMARY.md once both checkpoints resolve", "status": "not_started"},
+    {"id": 8, "name": "Phase-level verify_phase_goal (spawn gsd-verifier) + update_roadmap phase completion", "status": "not_started"}
   ],
-  "blockers": [],
+  "blockers": [
+    {"description": "openpi-client PyPI package legitimacy unverified (flagged SUS by 03-RESEARCH.md's automated heuristic — sparse registry metadata; believed to be Physical Intelligence's own companion package, same org as Physical-Intelligence/openpi)", "type": "human_action", "workaround": "User checks https://pypi.org/project/openpi-client/ and confirms Author/Home-page fields reference Physical-Intelligence/openpi before pip installing it on Colab"},
+    {"description": "π0 (openpi) smoke-test notebook (03b-pi0-inference-smoketest.ipynb) has never been run on live Colab GPU — this project has no local GPU", "type": "human_action", "workaround": "User runs Notebook B on Colab in its own separate kernel (D-06: openpi's torch==2.7.1/transformers==4.53.2/jax stack conflicts with OFT's torch==2.2.0/transformers==4.40.1) after the package-legitimacy checkpoint clears"}
+  ],
   "async_jobs": [],
-  "human_actions_pending": [],
+  "human_actions_pending": [
+    {"action": "Check https://pypi.org/project/openpi-client/ for Physical Intelligence origin (Author/Home-page fields reference Physical-Intelligence/openpi), then reply 'approved' or 'blocked'", "context": "03-03 Task 3 checkpoint — blocking-human gate, never auto-approvable", "blocking": true},
+    {"action": "Run LIBERO/notebooks/03b-pi0-inference-smoketest.ipynb on Colab (separate kernel from Notebook A per D-06): clone openpi, uv sync, start serve_policy.py --env=pi0_fast_libero bound to localhost only, run the 1-task x 2-episode smoke test via Pi0Backend, confirm the same run_suite/eval_loop code from Plan 01 drives it with zero downstream changes (VLA-04)", "context": "03-03 Task 4 checkpoint — after Task 3 clears", "blocking": true},
+    {"action": "Optional: decide whether to commit your own local Colab-run notebook outputs in libero/notebooks/01-colab-env-setup.ipynb and libero/notebooks/03a-oft-inference-eval.ipynb (currently uncommitted, large diffs — these are your own execution-output artifacts, left untouched since I don't commit on your behalf without asking)", "context": "Not required for phase completion, purely optional evidence/cleanup", "blocking": false}
+  ],
   "decisions": [
-    {
-      "decision": "Use mujoco 3.3.2 instead of 2.3.7",
-      "rationale": "No cp312 binary wheel for mujoco 2.3.7; conda not available on Colab. mujoco 3.3.2 confirmed stable for LIBERO.",
-      "phase": "01"
-    },
-    {
-      "decision": "Use flash-attn 2.6.3+cu123 wheel (not cu118)",
-      "rationale": "cu118 wheel requires libcudart.so.11.0 which does not exist on CUDA 12.x. cu121 wheel does not exist at v2.6.3. cu123 CONFIRMED WORKING on CUDA 12.1.",
-      "phase": "01"
-    },
-    {
-      "decision": "Pin numpy>=1.24,<2 LAST in Step 3 + pin opencv<4.10",
-      "rationale": "opencv 4.10+ requires numpy>=2, breaking torch 2.2.0. numpy pin last prevents any subsequent install from upgrading it.",
-      "phase": "01"
-    },
-    {
-      "decision": "Check numpy version via subprocess pip-show, not import",
-      "rationale": "torch imported in Cell 2 caches numpy 2.0.2 in sys.modules. subprocess pip-show reads the on-disk version accurately.",
-      "phase": "01"
-    },
-    {
-      "decision": "Google Drive does not sync .git — git pull from Drive path always fails",
-      "rationale": "Colab Drive mount strips .git directories. Must paste cell updates manually or clone to /content/.",
-      "phase": "01"
-    }
+    {"decision": "OFT consumes its 8-step action chunk via full open-loop replay (no re-inference until the chunk completes)", "rationale": "Confirmed via research as the standard/default in OFT's own run_libero_eval.py (num_open_loop_steps = NUM_ACTIONS_CHUNK), not a research-paper optimization needed for this MVP (resolves CONTEXT.md D-03)", "phase": "3"},
+    {"decision": "π0 (openpi) runs in a separate Colab notebook/kernel from OpenVLA-OFT, communicating via openpi's own documented serve_policy.py + WebsocketClientPolicy remote-inference pattern, bound to localhost only", "rationale": "Confirmed real dependency conflict: openpi pins torch==2.7.1/transformers==4.53.2/jax[cuda12]==0.5.3 vs. OFT's torch==2.2.0/transformers==4.40.1 (resolves CONTEXT.md D-06)", "phase": "3"},
+    {"decision": "LIBERO's standard eval horizon for libero_spatial is max_steps=600 — confirmed from this project's own LIBERO/libero/configs/eval/default.yaml rather than an externally-cited number", "rationale": "Resolves CONTEXT.md D-13; keeps VLA-03's success-rate metric consistent with this project's existing config, not an arbitrary cutoff", "phase": "3"},
+    {"decision": "0% OFT-on-SOARM task success rate (Plan 03-02's Colab A100 run) is accepted as an expected, correctly-measured zero-shot cross-embodiment result — not a pipeline defect", "rationale": "This OFT checkpoint was fine-tuned on Panda-arm LIBERO demos, not SOARM; SOARM's gripper/kinematics differ. Spot-checked videos show sensible partial behavior (approach + gripper open, no grasp completion), not corrupted/random output. Closing this gap is explicitly Phase 6's job (fine-tuning on SOARM demos), not Phase 3's.", "phase": "3"},
+    {"decision": "Both Wave 2 worktrees (03-02, 03-03) were merged into master early, mid-checkpoint, at the user's explicit request", "rationale": "User wanted the notebooks visible in their main checkout to run on Colab before the checkpoints fully resolved. Deviates from execute-phase's standard 'merge only after wave completes' flow — was a deliberate, explicit user override, not an automatic default.", "phase": "3"}
   ],
   "uncommitted_files": [
-    ".gitignore (modified)",
-    ".planning/PROJECT.md (modified)",
-    ".planning/config.json (modified)",
-    "libero/explore.py (deleted)",
-    "libero/notebooks/01-colab-env-setup.ipynb (modified)",
-    "real3dqa/explore.py (deleted)",
-    "requirements.txt (deleted)"
+    "libero/notebooks/01-colab-env-setup.ipynb (user's own local Colab-run cell outputs — intentionally left uncommitted)",
+    "libero/notebooks/03a-oft-inference-eval.ipynb (user's own local Colab-run cell outputs, including the approved VLA-01/02/03 run — intentionally left uncommitted)"
   ],
-  "next_action": "Run /gsd-execute-phase 01 to execute plan 01-02 (Block B cells: EGL bootstrap, LIBERO config.yaml, sys.path, ENV-01/ENV-02 verification).",
-  "context_notes": "Block A (plan 01-01) is fully confirmed passing on Colab T4 after 10 rounds of fixes. The notebook is at libero/notebooks/01-colab-env-setup.ipynb. Block B (plan 01-02) has NOT been implemented yet — it needs to append cells 11-17 to the notebook. The plan is fully specced at .planning/phases/01-colab-environment-setup/01-02-PLAN.md. Run /gsd-execute-phase 01 to build Block B."
+  "next_action": "Wait for user to complete 03-03 Task 3 (openpi-client PyPI legitimacy check) and Task 4 (Colab π0 smoke-test run). On approval of each, do NOT resume the original worktree — the worktree at .claude/worktrees/agent-a4d3f2c600b0e64f5 (branch worktree-agent-a4d3f2c600b0e64f5) is still alive with Tasks 1-2 committed (ead3563, fa4d072) and already merged into master early per user request. Spawn a continuation agent (or finish inline, matching the 03-02 pattern) to record the approved verification into 03-03-SUMMARY.md, mark Plan 03-03 complete via roadmap.update-plan-progress, then run the phase-level verify_phase_goal step (spawn gsd-verifier) before declaring Phase 3 complete.",
+  "context_notes": "Phase 3 (VLA Inference Loop) is functionally very close to done — the hard engineering (shared VLABackend interface, OFTBackend, eval_loop, Pi0Backend, both notebooks, two real bugs found+fixed via live Colab debugging) is complete and verified for the OFT path. Only π0's two remaining checkpoints stand between here and phase completion. Discovered mid-session: this repo's LIBERO/ is its own nested git repo, entirely gitignored by the main repo, but on case-insensitive macOS a pre-existing (Phase 1) convention has files landing under a lowercase 'libero/' path tracked by the MAIN repo's git (not LIBERO's own git) — this is accepted/pre-existing, not something to 'fix' mid-phase. Also discovered: Colab kernels cache Python module imports across cell re-runs — re-syncing a fixed source file via the unzip cell does NOT reload already-imported modules; a genuine Runtime > Restart session is required, not just re-running cells. This caused one confusing false-repeat-error round-trip during debugging; flagged as advisory below for any future Colab debugging in this project."
 }
