@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from huggingface_hub import hf_hub_download
+from PIL import Image
 from transformers import AutoModelForVision2Seq, AutoProcessor
 
 CHECKPOINT = "moojink/openvla-7b-oft-finetuned-libero-spatial"
@@ -126,7 +127,12 @@ class OFTBackend:
         method returns the full chunk, not just actions[0].
         """
         prompt = f"In: What action should the robot take to {language}?\nOut:"
-        inputs = self.processor(prompt, images["eye_in_hand"]).to(
+        # Prismatic's image_processor calls img.convert("RGB") on each image
+        # (processing_prismatic.py) — it expects PIL.Image, not a raw ndarray.
+        # Phase 1's proven pattern (01-colab-env-setup.ipynb cell 23) always
+        # wraps the frame with Image.fromarray before calling the processor.
+        pil_image = Image.fromarray(images["eye_in_hand"])
+        inputs = self.processor(prompt, pil_image).to(
             self.device, dtype=torch.bfloat16
         )
 
