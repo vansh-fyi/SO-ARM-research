@@ -35,7 +35,7 @@ key-decisions:
 patterns-established:
   - "Committed at the lowercase libero/ path prefix (git add -f), matching Wave 1's precedent for force-adding into the gitignored, case-insensitive-collapsed LIBERO/libero tree"
 
-requirements-completed: []  # VLA-01/02/03 code shipped but NOT yet requirement-complete — human Colab sign-off (Task 4) is outstanding; see Next Phase Readiness
+requirements-completed: [VLA-01, VLA-02, VLA-03]  # Colab A100 sign-off complete 2026-07-19 (see Next Phase Readiness)
 
 coverage:
   - id: D1
@@ -67,7 +67,7 @@ coverage:
 
 # Metrics
 duration: 20min
-completed: 2026-07-18
+completed: 2026-07-19
 status: complete
 ---
 
@@ -119,25 +119,32 @@ None.
 
 None for building this notebook. However, **Task 4 (blocking human-verify checkpoint) requires the user to actually run this notebook on Google Colab with an A100 GPU runtime** — this project has no local GPU, so VLA-01/02/03's real behavioral verification cannot happen in this execution environment. See "Next Phase Readiness" below for the exact steps required.
 
+## Task 4: Colab A100 Sign-Off (2026-07-19)
+
+**Result: APPROVED.** The user ran the full notebook on Colab A100 and confirmed:
+- `VLA-01: PASS — action shape (8, 7), dtype float64`
+- VLA-02/VLA-03 full eval loop ran to completion across both exercised tasks × 8 episodes each — every episode printed `FAIL (steps=600)` (0% success), with one video saved per episode
+- Human visually spot-checked saved videos: SOARM correctly approaches the target object and opens the gripper (sensible, coherent partial behavior — not black/corrupted frames, not random motion), but never completes the close-grasp-lift-place sequence
+
+**Interpretation — 0% success is an accepted, expected result, not a pipeline defect:** this OpenVLA-OFT checkpoint was fine-tuned on Panda-arm LIBERO demonstrations, not SOARM. SOARM's gripper actuation range and kinematics differ from Panda's (Phase 2's physics tuning: `gripper speed 0.10 / jaw 0.8`, different reach/workspace). A policy that generalizes reach-and-approach but fails to complete a precise grasp on an unfamiliar embodiment is the expected zero-shot cross-embodiment transfer result — closing this gap is explicitly Phase 6's job (fine-tuning OFT on SOARM-specific demonstrations), not this phase's. Phase 3's requirements are about the loop working and measuring correctly (VLA-01/02/03), not about OFT achieving a high task success rate.
+
+### Two real bugs found and fixed during sign-off
+
+1. **`fix(03): add -o to unzip cell`** (commit `1071538`) — `unzip -q` alone still interactively prompts on existing files ("replace X? [y]es..."), which a Colab cell can't answer, hanging the run. Added `-o` to both `03a-oft-inference-eval.ipynb` and `03b-pi0-inference-smoketest.ipynb`'s sync cells.
+2. **`fix(03-01): wrap eye_in_hand frame in PIL.Image before OFTBackend.predict()`** (commit `7b2c1d6`) — `oft_backend.py` passed a raw numpy ndarray straight to Prismatic's processor, which calls `img.convert("RGB")` internally and expects a `PIL.Image`. Phase 1's proven pattern (`01-colab-env-setup.ipynb` cell 23) always wraps the frame with `Image.fromarray()` first; `oft_backend.py` had skipped this step. Fixed in Plan 01's shared `vla/oft_backend.py`.
+
+Both fixes are committed to `master` and were re-synced into `SoARM-Research-colab.zip` on the user's Drive before the passing run above.
+
 ## Next Phase Readiness
 
-- **Not yet ready to close this plan.** Task 4 is a `checkpoint:human-verify` (gate="blocking") requiring the user to:
-  1. Upload/sync `SoARM-Research-colab.zip` to `MyDrive` (existing Phase 1/2 convention).
-  2. Open `LIBERO/notebooks/03a-oft-inference-eval.ipynb` in Colab with an A100 runtime.
-  3. Run Block A cells, then Runtime > Restart session (not "Disconnect and delete runtime").
-  4. Re-run the path-constants cell, then run Block B cells in order.
-  5. Confirm `VLA-01: PASS` with action shape `(8, 7)`.
-  6. Run the full eval-loop cell to completion (~15-30 min), confirm per-episode PASS/FAIL and the aggregated success-rate table print.
-  7. Spot-check 2-3 saved videos under `VIDEO_DIR` for visual correctness (not black/corrupted).
-  8. Fill in the Phase 3a Summary table's Status column with actual results.
-- Once the human reports "approved" (or describes issues to fix), this plan's Task 4 `done` criteria are satisfied and the phase can proceed to closure for the OFT backend (ROADMAP Phase 3 success criteria #1 and #2).
-- Plan 03 (π0 smoke-test notebook, same wave) can proceed independently — it does not depend on this plan's Colab sign-off, only on Plan 01's shared `vla` package.
-- No blockers for Plan 03. The one open item for this plan is exclusively the human Colab run.
+- **Plan 03-02 is now complete.** VLA-01, VLA-02, VLA-03 all verified on Colab A100 (ROADMAP Phase 3 success criteria #1 and #2 satisfied for the OFT backend).
+- Plan 03-03 (π0 smoke-test notebook, same wave) proceeds independently — it does not depend on this plan's Colab sign-off, only on Plan 01's shared `vla` package. It has its own pending checkpoints (openpi-client package-legitimacy check, then its own Colab GPU smoke-test sign-off).
+- Phase 6 (fine-tuning) should treat this plan's 0%-success OFT-on-SOARM baseline as the pre-fine-tuning reference point.
 
 ## Self-Check: PASSED
 
-`LIBERO/notebooks/03a-oft-inference-eval.ipynb` verified present on disk (18 cells, valid JSON, nbformat 4). Commit `e4f918f` verified present in `git log --oneline -3`.
+`LIBERO/notebooks/03a-oft-inference-eval.ipynb` verified present on disk (18 cells, valid JSON, nbformat 4). Commit `e4f918f` verified present in `git log --oneline`. Task 4 human-verify checkpoint approved 2026-07-19 with two bugs found and fixed (`1071538`, `7b2c1d6`).
 
 ---
 *Phase: 03-vla-inference-loop*
-*Completed: 2026-07-18 (code); Colab human sign-off pending*
+*Completed: 2026-07-19*
