@@ -378,6 +378,8 @@ action_chunk = policy_client.infer(example_obs)["actions"]
 
 **If this table is empty:** N/A — see entries above; all three should be spot-checked once Colab access is available, per this project's established "verify claims against artifacts, not docs" meta-lesson (01-DEBUG-HISTORY.md §3.5).
 
+**A1 materialized (2026-07-26):** This exact anticipated risk occurred on the first real Colab run of Notebook B — the originally-researched config name (`pi0_fast_libero`) is not a valid `serve_policy.py --env` value and has no published checkpoint on openpi's current `main`. Resolution: serve via plain `--env=LIBERO`, which resolves to `pi05_libero`. See `03-CONTEXT.md`'s D-07 amendment for the full rationale. `libero/notebooks/03b-pi0-inference-smoketest.ipynb` was updated accordingly.
+
 ## Open Questions
 
 1. **Exact commit/tag of `openpi` to pin for reproducibility**
