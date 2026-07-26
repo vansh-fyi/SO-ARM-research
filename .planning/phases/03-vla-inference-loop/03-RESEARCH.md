@@ -317,6 +317,8 @@ print(f"Episode {ep_idx}: {'PASS' if done else 'FAIL'} (steps={step+1})")
 **How to avoid:** Set `OPENPI_DATA_HOME` to a Drive-backed path (mirroring Phase 1's Drive-based HF token pattern) so a successful download persists across Colab session restarts; add an explicit timeout/retry or at least a visible progress print in Notebook B.
 **Warning signs:** Notebook B hangs with no output during first `serve_policy.py` invocation; subsequent runs redownload the full checkpoint every time (indicates the cache path isn't persisting).
 
+**Resolved (2026-07-26):** This exact pitfall materialized on a real Colab run: the Drive-backed `OPENPI_DATA_HOME` path recommended above in "How to avoid" failed with `gsutil`'s composite-object transfer error (`CommandException: 6 files/objects could not be transferred`) while downloading `pi05_libero`'s 11.6 GiB, 16-sharded checkpoint. Resolution: `OPENPI_DATA_HOME` now points to local Colab disk (`/content/openpi_data`), plus a `crcmod` C-extension reinstall cell per gsutil's own recommendation. See `03-03-PLAN.md`'s T-3-08 amendment for the full threat-model-level rationale and accepted trade-off (loss of restart-persistence).
+
 ## Code Examples
 
 ### LIBERO's existing per-episode video-saving pattern
