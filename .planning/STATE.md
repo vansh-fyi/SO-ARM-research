@@ -102,6 +102,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260726-epz | Fix Notebook B serve_policy.py: pi0_fast_libero deprecated on openpi main, switched to --env=LIBERO (pi05_libero) | 2026-07-26 | 4a7b8f2 | [260726-epz-fix-libero-notebooks-03b-pi0-inference-s](./quick/260726-epz-fix-libero-notebooks-03b-pi0-inference-s/) |
+| 260726-gj6 | Fix Notebook B checkpoint download: pi05_libero (11.6GB) via gsutil to Drive-mounted OPENPI_DATA_HOME failed ("6 files/objects could not be transferred"); switched to local disk (/content/openpi_data) + compiled crcmod, dropping T-3-08 restart-persistence | 2026-07-26 | 54f7585 | [260726-gj6-fix-libero-notebooks-03b-pi0-inference-s](./quick/260726-gj6-fix-libero-notebooks-03b-pi0-inference-s/) |
 
 ## Deferred Items
 
@@ -113,6 +114,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-26T05:05:58.369Z
-Stopped at: Phase 3 (03-03) still paused on the same two human-verify checkpoints — Task 3 (openpi-client PyPI legitimacy) approved by user; Task 4 (Colab π0 smoke test) hit config-name drift (pi0_fast_libero deprecated), fixed via quick task 260726-epz. Awaiting user's next Colab re-run of the fixed Notebook B.
+Last session: 2026-07-26T06:33:13Z
+Stopped at: Phase 3 (03-03) Task 4 (Colab π0 smoke test) has now hit and fixed two separate real bugs on live Colab: (1) config-name drift (pi0_fast_libero deprecated, fixed via 260726-epz), (2) checkpoint download to Drive FUSE mount unreliable at 11.6GB (fixed via 260726-gj6, switched to local disk). Awaiting user's next Colab re-run. Also flagged to user: an unexplained local sync is writing Colab-side notebook state directly into this git checkout's libero/notebooks/03b-pi0-inference-smoketest.ipynb (com.apple.provenance xattr present, no active mount/symlink found) — stashed twice (see `git stash list`) rather than discarded; source still unidentified.
 Resume file: .planning/HANDOFF.json
