@@ -97,6 +97,12 @@ None yet.
 - Phase 2 research flag: SOARM robosuite 1.4 ManipulatorModel integration is novel — budget 1-2 days of iterative MJCF editing; reference TechLabs Aachen SO100+robosuite as prior art
 - Phase 5 research flag: Spatial VLA input representation (multi-camera RGB vs RGB+depth vs auxiliary 3D annotations) is an open question — study SpatialVLA, VEGA, cVLA before committing
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260726-epz | Fix Notebook B serve_policy.py: pi0_fast_libero deprecated on openpi main, switched to --env=LIBERO (pi05_libero) | 2026-07-26 | 4a7b8f2 | [260726-epz-fix-libero-notebooks-03b-pi0-inference-s](./quick/260726-epz-fix-libero-notebooks-03b-pi0-inference-s/) |
+
 ## Deferred Items
 
 | Category | Item | Status | Deferred At |
@@ -107,6 +113,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-18T06:13:35.275Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-vla-inference-loop/03-CONTEXT.md
+Last session: 2026-07-26T05:05:58.369Z
+Stopped at: Phase 3 (03-03) still paused on the same two human-verify checkpoints — Task 3 (openpi-client PyPI legitimacy) approved by user; Task 4 (Colab π0 smoke test) hit config-name drift (pi0_fast_libero deprecated), fixed via quick task 260726-epz. Awaiting user's next Colab re-run of the fixed Notebook B.
+Resume file: .planning/HANDOFF.json
