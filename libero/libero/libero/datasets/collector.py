@@ -48,6 +48,8 @@ PLACE_Z_OFFSET = 0.06    # m above the plate the bowl is released from
 KP_POS = 25.0            # proportional gain: metric error (m) -> normalized action
 XY_TOL = 0.020           # m horizontal tolerance for phase transitions
 Z_TOL = 0.025            # m vertical tolerance for phase transitions
+GRASP_HOLD_STEPS = 20    # extra steps held at the bowl so the jaw finishes closing
+RELEASE_HOLD_STEPS = 10  # extra steps held above the plate so the jaw finishes opening
 
 # Phases in which the gripper is commanded CLOSED (holding the bowl).
 _CLOSED_PHASES = ("grasp", "lift", "transport", "place_descend")
@@ -156,3 +158,212 @@ def compute_waypoint_action(phase, eef_pos, bowl_pos, plate_pos, gripper_closed)
     gripper_cmd = CLOSE_CMD if next_phase in _CLOSED_PHASES else OPEN_CMD
     action = _pose_action(target, eef_pos, gripper_cmd)
     return action, next_phase, gripper_closed
+
+
+def run_scripted_episode(
+    env,
+    bowl_body="akita_black_bowl_1",
+    plate_body="plate_1",
+    max_steps=300,
+    success_hold=10,
+):
+    """Drive one scripted episode through the waypoint FSM on a real env.
+
+    Reset is the CALLER's responsibility (mirrors ``vla/eval_loop.run_episode``'s
+    contract inverted — here ``collect_task`` resets in a loop so it can count
+    attempts). Reads ground-truth bowl/plate positions off the env each step,
+    feeds them + the live eef position to ``compute_waypoint_action``, steps the
+    env, and tracks a robosuite-style ``task_completion_hold_count`` (success must
+    hold for ``success_hold`` consecutive steps) as the primary exit condition.
+
+    Args:
+        env: a DataCollectionWrapper-wrapped SOARM env, freshly ``reset()`` by
+            the caller. ``obj_body_id`` / ``sim`` / ``_check_success`` /
+            ``_get_observations`` are reachable through robosuite's Wrapper proxy.
+        bowl_body (str): MuJoCo body name of the bowl to pick.
+        plate_body (str): MuJoCo body name of the target plate.
+        max_steps (int): hard per-episode step cap (fail-safe against a stuck FSM).
+        success_hold (int): consecutive ``_check_success()`` steps that latch a win.
+
+    Returns:
+        bool: True iff success held for ``success_hold`` consecutive steps.
+    """
+    # Initial obs after the caller's reset (Wrapper proxies to the base env).
+    obs = env._get_observations()
+
+    phase = "approach"
+    gripper_closed = False
+    grasp_hold = 0
+    release_hold = 0
+    task_completion_hold_count = -1
+
+    # Frozen bowl reference: once the bowl is grasped it rises WITH the eef, so a
+    # live bowl+HOVER lift target would chase the eef forever. Track the bowl
+    # only through the grasp; freeze it for lift onward.
+    bowl_ref = np.array(env.sim.data.body_xpos[env.obj_body_id[bowl_body]])
+
+    for _ in range(max_steps):
+        eef_pos = np.array(obs["robot0_eef_pos"])
+        if phase in ("approach", "descend", "grasp"):
+            bowl_ref = np.array(env.sim.data.body_xpos[env.obj_body_id[bowl_body]])
+        plate_pos = np.array(env.sim.data.body_xpos[env.obj_body_id[plate_body]])
+
+        action, next_phase, gripper_closed = compute_waypoint_action(
+            phase, eef_pos, bowl_ref, plate_pos, gripper_closed
+        )
+
+        # Hold grasp/release a few physics steps so the 1-DOF jaw (speed 0.10/step)
+        # finishes moving before the arm advances — otherwise the bowl slips.
+        if phase == "grasp" and next_phase == "lift" and grasp_hold < GRASP_HOLD_STEPS:
+            grasp_hold += 1
+            next_phase = "grasp"
+            gripper_closed = True
+        if (
+            phase == "release"
+            and next_phase == "retreat"
+            and release_hold < RELEASE_HOLD_STEPS
+        ):
+            release_hold += 1
+            next_phase = "release"
+            gripper_closed = False
+
+        obs, _, _, _ = env.step(action)
+        phase = next_phase
+
+        # robosuite success-hold state machine (collect_demonstration.py lines 84-94):
+        # require `success_hold` consecutive successful steps before latching a win.
+        if task_completion_hold_count == 0:
+            return True
+        if env._check_success():
+            if task_completion_hold_count > 0:
+                task_completion_hold_count -= 1
+            else:
+                task_completion_hold_count = success_hold
+        else:
+            task_completion_hold_count = -1
+
+    return False
+
+
+def collect_task(
+    bddl_file_name,
+    hdf5_path,
+    target_successes=40,
+    max_attempts=200,
+    tmp_directory=None,
+):
+    """Collect ``target_successes`` scripted demos for one task -> one HDF5.
+
+    Builds ONE headless recording env (reused across all attempts — cheaper than
+    rebuilding per attempt), loops reset + ``run_scripted_episode`` until the
+    success target is met or ``max_attempts`` is exhausted, then gathers the
+    recorded npz episodes into a robomimic-schema HDF5 exactly once.
+
+    Args:
+        bddl_file_name (str): Path to the task's BDDL file (fail-loudly validated).
+        hdf5_path (str): Output HDF5 path for this task's demos.
+        target_successes (int): Stop once this many episodes succeed.
+        max_attempts (int): Hard cap on reset attempts (T-04-02-01: prevents an
+            unreachable target from looping forever — surfaces as a low return).
+        tmp_directory (str | None): DataCollectionWrapper scratch dir; defaults to
+            ``<hdf5 dir>/tmp/<task_slug>``.
+
+    Returns:
+        int: Number of demos actually written to the HDF5 (``data.attrs['total']``).
+    """
+    from .raw_recorder import build_recording_env
+    from .hdf5_writer import gather_demonstrations_as_hdf5
+
+    assert os.path.exists(
+        bddl_file_name
+    ), f"[error] {bddl_file_name} does not exist!"
+
+    if tmp_directory is None:
+        task_slug = os.path.basename(bddl_file_name).replace(".bddl", "")
+        tmp_directory = os.path.join(
+            os.path.dirname(os.path.abspath(hdf5_path)), "tmp", task_slug
+        )
+    os.makedirs(os.path.dirname(os.path.abspath(hdf5_path)), exist_ok=True)
+
+    env = build_recording_env(bddl_file_name, tmp_directory, has_renderer=False)
+
+    successes = 0
+    attempts = 0
+    try:
+        while successes < target_successes and attempts < max_attempts:
+            env.reset()
+            attempts += 1
+            if run_scripted_episode(env):
+                successes += 1
+    finally:
+        env.close()
+
+    print(
+        f"[collect_task] {os.path.basename(bddl_file_name)}: "
+        f"{successes} successes / {attempts} attempts"
+    )
+
+    # Gather ALL recorded episodes; gather re-derives success per episode from the
+    # OR-accumulated npz flag (intentionally redundant with the attempt count).
+    written = gather_demonstrations_as_hdf5(tmp_directory, hdf5_path, bddl_file_name)
+    return written
+
+
+def collect_all(target_per_task=40, output_dir=None, max_attempts_per_task=200):
+    """Collect the full 3-task scripted dataset (the phase's primary DATA-01 output).
+
+    Args:
+        target_per_task (int): Success target per task (D-04: ~40/task, 120 total,
+            a 20% buffer over the 100+ requirement).
+        output_dir (str | None): Where the per-task HDF5s land. Defaults to
+            ``LIBERO/libero/datasets/soarm_spatial`` — NOT ``get_libero_path``
+            (the local ~/.libero/config.yaml is stale; this project's convention
+            avoids it, see soarm_sanity.py).
+        max_attempts_per_task (int): Per-task hard attempt cap.
+
+    Returns:
+        dict: {task_slug: demos_written} for the 3 frozen tasks.
+    """
+    if output_dir is None:
+        output_dir = os.path.normpath(
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "..",
+                "..",
+                "datasets",
+                "soarm_spatial",
+            )
+        )
+    os.makedirs(output_dir, exist_ok=True)
+
+    results = {}
+    for task in TASKS:
+        task_slug = task.replace(".bddl", "")
+        hdf5_path = os.path.join(output_dir, f"{task_slug}_demo.hdf5")
+        tmp_directory = os.path.join(output_dir, "tmp", task_slug)
+        count = collect_task(
+            os.path.join(BDDL_DIR, task),
+            hdf5_path,
+            target_successes=target_per_task,
+            max_attempts=max_attempts_per_task,
+            tmp_directory=tmp_directory,
+        )
+        results[task_slug] = count
+    return results
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="SOARM scripted waypoint demo collector (Phase 4, DATA-01)."
+    )
+    parser.add_argument("--target-per-task", type=int, default=40)
+    parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--max-attempts-per-task", type=int, default=200)
+    args = parser.parse_args()
+
+    out = collect_all(
+        target_per_task=args.target_per_task,
+        output_dir=args.output_dir,
+        max_attempts_per_task=args.max_attempts_per_task,
+    )
+    print(out)

@@ -30,3 +30,21 @@ try:
     from .hdf5_writer import gather_demonstrations_as_hdf5
 except Exception:
     gather_demonstrations_as_hdf5 = None
+
+try:
+    # collector drives the scripted waypoint FSM against a real SOARM env;
+    # same robosuite/MuJoCo sim-dependency risk as the modules above. The pure
+    # compute_waypoint_action FSM has no sim dependency but shares this module.
+    from .collector import (
+        compute_waypoint_action,
+        run_scripted_episode,
+        collect_task,
+        collect_all,
+        TASKS,
+    )
+except Exception:
+    compute_waypoint_action = None
+    run_scripted_episode = None
+    collect_task = None
+    collect_all = None
+    TASKS = None
