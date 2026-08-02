@@ -1,7 +1,11 @@
 *~
 .hydra
 *pyc
-datasets
+# Anchored (leading slash) so this only ignores upstream's binary demo-download
+# directory LIBERO/libero/datasets/ — NOT the source package this repo adds at
+# LIBERO/libero/libero/datasets/ (one level deeper). The former bare `datasets`
+# matched at any depth and silently swallowed the new source package (Phase 4).
+/libero/datasets
 results
 outputs/*
 /MUJOCO_LOG.TXT

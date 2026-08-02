@@ -36,8 +36,11 @@ os.environ.setdefault("MUJOCO_GL", "glfw")
 
 import h5py
 
-from ..envs import OffScreenRenderEnv
-from ..envs.bddl_utils import get_problem_info
+# LIBERO-anchored absolute import (repo ROOT on sys.path, per 02-02 STATE.md
+# decision), NOT a relative ``from ..envs`` — see raw_recorder.py for the full
+# rationale (relative import binds a separate, unregistered TASK_MAPPING copy).
+from LIBERO.libero.libero.envs import OffScreenRenderEnv
+from LIBERO.libero.libero.envs.bddl_utils import get_problem_info
 
 # Copied verbatim from LIBERO/libero/configs/data/default.yaml's obs_key_mapping.
 # Maps LIBERO's schema key (written into the HDF5) -> raw robosuite obs-dict key
@@ -156,9 +159,15 @@ def gather_demonstrations_as_hdf5(
                     key, data=np.array(obs_acc[key], dtype=np.uint8)
                 )
             for key in _STATE_KEYS:
-                obs_grp.create_dataset(
-                    key, data=np.array(obs_acc[key], dtype=np.float64)
+                # Coerce each per-step proprio value to at least 1-D before
+                # stacking so the dataset is 2-D (N, D) as robomimic's obs schema
+                # expects. SOARM's 1-DOF gripper returns robot0_gripper_qpos as a
+                # 0-d scalar (unlike Panda's (2,)); without atleast_1d it would
+                # stack to a malformed (N,) instead of (N, 1).
+                stacked = np.array(
+                    [np.atleast_1d(v) for v in obs_acc[key]], dtype=np.float64
                 )
+                obs_grp.create_dataset(key, data=stacked)
 
         grp.attrs["total"] = num_eps
         grp.attrs["env_args"] = json.dumps(

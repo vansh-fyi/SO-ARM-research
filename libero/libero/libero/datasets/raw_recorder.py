@@ -25,8 +25,15 @@ os.environ.setdefault("MUJOCO_GL", "glfw")
 import robosuite as suite
 from robosuite.wrappers import DataCollectionWrapper, VisualizationWrapper
 
-from ..envs import TASK_MAPPING
-from ..envs.bddl_utils import get_problem_info
+# Import via the LIBERO-anchored absolute path (repo ROOT on sys.path, per the
+# 02-02 STATE.md decision), NOT a relative ``from ..envs``. LIBERO's problem
+# classes register themselves into TASK_MAPPING via
+# ``from LIBERO.libero.libero.envs.bddl_base_domain import register_problem`` —
+# a relative import here would bind a SEPARATE, unregistered copy of the dict
+# (empty), causing a KeyError at env construction. The whole repo (env_wrapper,
+# collect_demonstration, create_scene) uses this same LIBERO-anchored path.
+from LIBERO.libero.libero.envs import TASK_MAPPING
+from LIBERO.libero.libero.envs.bddl_utils import get_problem_info
 
 
 def build_recording_env(
