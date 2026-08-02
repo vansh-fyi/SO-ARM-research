@@ -127,7 +127,25 @@ Plans:
   3. SOARM-specific action and observation normalization statistics are computed from the collected dataset (not copied from Panda)
   4. A human operator can record SOARM demonstrations using the teleoperation interface and they land in the same HDF5 format
 
-**Plans**: TBD
+**Plans**: 0/5 plans complete
+
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Recording infra (raw_recorder.py env builder) + hdf5_writer.py (robomimic-schema HDF5 with regenerated obs), proven by real local-sim integration test (DATA-01 partial)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 04-02-PLAN.md — Scripted waypoint collector (D-01) + full 100+-demo collection run across the 3 corrected frozen tasks (DATA-01 complete)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 04-03-PLAN.md — State-based determinism verification: states-only + sampled obs-regeneration tiers (D-06), run against the real collected dataset (DATA-02)
+- [ ] 04-04-PLAN.md — SOARM-specific normalization statistics (OpenVLA q01/q99 schema), run against the real collected dataset (DATA-03)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 04-05-PLAN.md — Keyboard-only teleoperation interface (D-02) + schema-convergence proof + blocking human-operated session, closes DATA-02's determinism guarantee for the teleop path too (DATA-04)
 
 ### Phase 5: Spatial Awareness
 
