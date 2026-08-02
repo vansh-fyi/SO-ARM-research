@@ -1,0 +1,123 @@
+"""Real (no-mock) local-sim integration proof for hdf5_writer.py.
+
+Classified in 04-RESEARCH.md's Validation Architecture as "integration, real
+local sim, small N": these tests exercise the real headless SOARM env and the
+real ``set_init_state()`` obs-regeneration path end-to-end, because the whole
+point is to prove the writer's plumbing — HDF5 schema correctness, LIBERO obs
+key renaming, the off-by-one alignment fix, and genuine per-episode success
+gating — not to mock it. A mock would prove none of those.
+
+Two tests:
+  * ``test_schema_and_obs_key_naming`` — a successful (manually flagged) episode
+    produces a robomimic-schema demo group with LIBERO's renamed obs keys and
+    correct SOARM-specific shapes.
+  * ``test_unsuccessful_episode_not_written`` — an episode that never reports
+    success is excluded from the HDF5 (total == 0), proving the success-gate.
+
+Import-path note (mirrors vla/test_eval_loop.py): pytest's prepend import mode
+puts LIBERO/libero on sys.path (nearest test ancestor without __init__.py),
+so ``libero.datasets.*`` resolves. We additionally insert the repo root so the
+``LIBERO.libero.libero.envs`` ABSOLUTE imports inside env_wrapper.py resolve
+when the real env is constructed.
+"""
+
+import os
+import sys
+
+os.environ.setdefault("MUJOCO_GL", "glfw")
+
+# repo root = four levels up from this file's dir
+# (datasets -> libero -> libero -> LIBERO -> repo root)
+_REPO_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+# also anchor LIBERO/libero so `libero.*` resolves regardless of invocation dir
+_LIBERO_LIBERO = os.path.join(_REPO_ROOT, "LIBERO", "libero")
+if _LIBERO_LIBERO not in sys.path:
+    sys.path.insert(0, _LIBERO_LIBERO)
+
+import numpy as np
+import h5py
+import pytest
+
+from libero.datasets.raw_recorder import build_recording_env
+from libero.datasets.hdf5_writer import gather_demonstrations_as_hdf5
+
+# TASKS[0] verbatim from explorations/soarm_sanity.py (do NOT invent a name).
+BDDL_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "bddl_files",
+    "libero_spatial",
+    "pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate.bddl",
+)
+
+
+@pytest.fixture
+def paths(tmp_path):
+    """pytest tmp_path-backed tmp_dir + hdf5_path to avoid cross-run collisions."""
+    tmp_dir = str(tmp_path / "raw")
+    os.makedirs(tmp_dir, exist_ok=True)
+    hdf5_path = str(tmp_path / "demo.hdf5")
+    return tmp_dir, hdf5_path
+
+
+def test_schema_and_obs_key_naming(paths):
+    tmp_dir, hdf5_path = paths
+
+    env = build_recording_env(BDDL_PATH, tmp_dir, has_renderer=False)
+    env.reset()
+    for _ in range(5):
+        env.step(np.zeros(7))
+    # Plumbing test: zero actions won't complete the task, so flag success
+    # manually to exercise the WRITE path. Test 2 exercises the gate honestly.
+    env.successful = True
+    env.close()
+
+    n = gather_demonstrations_as_hdf5(tmp_dir, hdf5_path, BDDL_PATH)
+    assert n == 1
+
+    with h5py.File(hdf5_path, "r") as f:
+        assert "demo_1" in f["data"]
+        obs_keys = set(f["data"]["demo_1"]["obs"].keys())
+        # LIBERO's renamed keys present; raw robosuite names absent.
+        assert obs_keys == {
+            "agentview_rgb",
+            "eye_in_hand_rgb",
+            "gripper_states",
+            "joint_states",
+        }
+        assert "agentview_image" not in obs_keys
+        assert "robot0_gripper_qpos" not in obs_keys
+
+        assert f["data"]["demo_1"]["obs"]["agentview_rgb"].shape[1:] == (128, 128, 3)
+        # SOARM's 1-DOF gripper, not Panda's 2.
+        assert f["data"]["demo_1"]["obs"]["gripper_states"].shape[1] == 1
+        # off-by-one fix verified
+        assert len(f["data"]["demo_1"]["states"]) == len(
+            f["data"]["demo_1"]["actions"]
+        )
+        assert f["data"].attrs["total"] == 1
+        assert isinstance(f["data"].attrs["bddl_file_name"], str)
+        assert len(f["data"].attrs["bddl_file_name"]) > 0
+
+
+def test_unsuccessful_episode_not_written(paths):
+    tmp_dir, hdf5_path = paths
+
+    env = build_recording_env(BDDL_PATH, tmp_dir, has_renderer=False)
+    env.reset()
+    for _ in range(3):
+        env.step(np.zeros(7))
+    # Leave env.successful at its real default (False) — a couple of zero-action
+    # steps never complete the task, so this episode must be excluded.
+    env.close()
+
+    n = gather_demonstrations_as_hdf5(tmp_dir, hdf5_path, BDDL_PATH)
+    assert n == 0
+
+    with h5py.File(hdf5_path, "r") as f:
+        assert f["data"].attrs["total"] == 0
+        assert "demo_1" not in f["data"]
