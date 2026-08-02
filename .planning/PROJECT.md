@@ -12,13 +12,13 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 
 ### Validated
 
-- [x] SOARM MuJoCo/robosuite model (MJCF) integrated into LIBERO environment — Validated in Phase 2: SOARM Robot Integration (Colab T4 sign-off 2026-07-18)
-- [x] LIBERO task suite configured for SOARM (replacing default Panda arm) — Validated in Phase 2: 3 libero_spatial tasks run crash-free with `robots=["Soarm101"]`
+- [X] SOARM MuJoCo/robosuite model (MJCF) integrated into LIBERO environment — Validated in Phase 2: SOARM Robot Integration (Colab T4 sign-off 2026-07-18)
+- [X] LIBERO task suite configured for SOARM (replacing default Panda arm) — Validated in Phase 2: 3 libero_spatial tasks run crash-free with `robots=["Soarm101"]`
+- [X] Google Colab notebook that loads π0/OpenVLA and runs inference on GPU — Validated in Phase 3: VLA Inference Loop (Colab A100/L4 sign-off, OFT 2026-07-19, π0 2026-08-02)
+- [X] End-to-end pipeline: text prompt → VLA → SOARM joint actions → rendered simulation output — Validated in Phase 3: both OFT and π0 backends drive the shared eval_loop/run_suite unmodified, producing per-episode video and success-rate tables
 
 ### Active
 
-- [ ] Google Colab notebook that loads π0/OpenVLA and runs inference on GPU
-- [ ] End-to-end pipeline: text prompt → VLA → SOARM joint actions → rendered simulation output
 - [ ] Dataset collection infrastructure: scripted/teleoperated SOARM demonstrations in LIBERO
 - [ ] Spatial awareness: multi-camera views fed to VLA during task execution
 - [ ] Spatial awareness: 3D scene understanding (object positions in space)
@@ -51,18 +51,19 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 
 ## Key Decisions
 
-| Decision | Rationale | Outcome |
-|----------|-----------|---------|
-| π0 / OpenVLA as VLA backbone | Open-source, trained on robot manipulation data, closer to drop-in for LIBERO | — Pending |
-| LIBERO as simulation framework | Already in repo, MuJoCo-based, has task suite infrastructure | — Pending |
-| Google Colab for compute | GPU access without local hardware investment | — Pending |
-| Simulation-only scope | Derisk by validating pipeline in sim before physical robot | — Pending |
+| Decision                       | Rationale                                                                     | Outcome    |
+| ------------------------------ | ----------------------------------------------------------------------------- | ---------- |
+| π0 / OpenVLA as VLA backbone  | Open-source, trained on robot manipulation data, closer to drop-in for LIBERO | — Pending |
+| LIBERO as simulation framework | Already in repo, MuJoCo-based, has task suite infrastructure                  | — Pending |
+| Google Colab for compute       | GPU access without local hardware investment                                  | — Pending |
+| Simulation-only scope          | Derisk by validating pipeline in sim before physical robot                    | — Pending |
 
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
 
 **After each phase transition** (via `/gsd-transition`):
+
 1. Requirements invalidated? → Move to Out of Scope with reason
 2. Requirements validated? → Move to Validated with phase reference
 3. New requirements emerged? → Add to Active
@@ -70,10 +71,12 @@ This document evolves at phase transitions and milestone boundaries.
 5. "What This Is" still accurate? → Update if drifted
 
 **After each milestone** (via `/gsd-complete-milestone`):
+
 1. Full review of all sections
 2. Core Value check — still the right priority?
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
 ---
+
 *Last updated: 2026-07-18 after Phase 2 completion*

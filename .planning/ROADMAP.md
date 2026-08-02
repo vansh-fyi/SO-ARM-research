@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (4 plans) (closed 2026-07-10 — UAT 4/4 PASS after ENV-03 dependency fixes baked into notebook)
 - [x] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks (completed 2026-07-18)
-- [ ] **Phase 3: VLA Inference Loop** - Close the loop from language prompt to rendered SOARM task video with success detection and dual-VLA support
+- [x] **Phase 3: VLA Inference Loop** - Close the loop from language prompt to rendered SOARM task video with success detection and dual-VLA support (completed 2026-08-02)
 - [ ] **Phase 4: Dataset Collection** - Collect 100+ scripted SOARM demonstrations in robomimic HDF5 with state-based replay and normalization stats
 - [ ] **Phase 5: Spatial Awareness** - Add multi-camera perception, depth-based 3D localization, and spatial language BDDL task variants
 - [ ] **Phase 6: Fine-Tuning & Evaluation** - Fine-tune OpenVLA-OFT on SOARM demonstrations and benchmark spatial vs. non-spatial task success
@@ -102,7 +102,7 @@ Plans:
   2. Task success or failure is detected and printed after each episode using LIBERO's BDDL evaluation protocol
   3. The pi0 (openpi) VLA backend can be swapped in via the same `predict(image, language) -> action` interface without changing downstream pipeline code
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -112,7 +112,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1)*
 
 - [x] 03-02-PLAN.md — Notebook A: OFT full eval loop, 3 tasks x 5-10 episodes (VLA-01, VLA-02, VLA-03)
-- [ ] 03-03-PLAN.md — Pi0Backend + Notebook B: π0 smoke test, separate kernel (VLA-04)
+- [x] 03-03-PLAN.md — Pi0Backend + Notebook B: π0 smoke test, separate kernel (VLA-04)
 
 ### Phase 4: Dataset Collection
 
@@ -165,7 +165,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Colab Environment Setup | 4/4 | Complete   | 2026-07-09 |
 | 2. SOARM Robot Integration | 5/5 | Complete    | 2026-07-18 |
-| 3. VLA Inference Loop | 2/3 | In Progress|  |
+| 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
 | 4. Dataset Collection | 0/TBD | Not started | - |
 | 5. Spatial Awareness | 0/TBD | Not started | - |
 | 6. Fine-Tuning & Evaluation | 0/TBD | Not started | - |
