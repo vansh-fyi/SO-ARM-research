@@ -5,10 +5,10 @@ milestone_name: milestone
 current_phase: 3
 current_phase_name: VLA Inference Loop
 status: complete
-stopped_at: Phase 3 complete — VLA-04 approved 2026-08-02, ready for Phase 4 planning
-last_updated: "2026-08-02T00:00:00Z"
+stopped_at: Phase 4 context gathered
+last_updated: "2026-08-02T10:24:25.077Z"
 last_activity: 2026-08-02
-last_activity_desc: Phase 3 (VLA Inference Loop) closed out — all 3 plans complete
+last_activity_desc: VLA-04 approved, Phase 3 closed out
 progress:
   total_phases: 6
   completed_phases: 3
@@ -128,6 +128,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-02
-Stopped at: Phase 3 (VLA Inference Loop) is CLOSED OUT (VLA-04 approved, see 03-03-SUMMARY.md). Post-close-out infra change, same session: LIBERO/ is now tracked directly in the main repo (no longer a nested git repo / blanket-gitignored / Drive-zip-delivered) — see 260802-ijb. All 4 Colab notebooks now clone/pull from this private GitHub repo via a Colab-Secrets token; the orchestrator's manual "re-zip and swap into Drive" step after every code change is retired. **User setup required before the next Colab run:** create a GitHub fine-grained PAT scoped to `vansh-fyi/SO-ARM-research` (Contents: Read-only) and add it to Colab Secrets as `GITHUB_TOKEN` (repeat per Colab account used). Repo remains PRIVATE — explicit user decision, reversed from an earlier lean toward public, over research-sensitivity concerns. Next: user will run phase execution/progress command to move into Phase 4 (Dataset Collection) planning. No formal gsd-verifier phase-goal check has been run for Phase 3 yet — worth doing if a stricter close-out is wanted, but the phase's own success criteria (VLA-01 through VLA-04) are all directly evidenced by the two Colab sign-offs. Mystery-sync on libero/notebooks/03b-pi0-inference-smoketest.ipynb (6 sightings, 5 stashes across the phase — see `git stash list`) remains unexplained; ask the user before assuming any future dirty-state on that file is safe to override.
-Resume file: .planning/STATE.md (this file)
+Last session: 2026-08-02T10:24:25.068Z
+Stopped at: Phase 4 context gathered
+Resume file: .planning/phases/04-dataset-collection/04-CONTEXT.md
