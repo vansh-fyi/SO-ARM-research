@@ -6,14 +6,14 @@ current_phase: 04
 current_phase_name: Dataset Collection
 status: executing
 stopped_at: Phase 4 context gathered
-last_updated: "2026-08-02T17:48:37.606Z"
+last_updated: "2026-08-02T18:49:03.617Z"
 last_activity: 2026-08-02
 last_activity_desc: Phase 04 execution started
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 17
-  completed_plans: 13
+  completed_plans: 14
   percent: 50
 ---
 
@@ -103,6 +103,7 @@ None yet.
 - Phase 2 research flag: SOARM robosuite 1.4 ManipulatorModel integration is novel — budget 1-2 days of iterative MJCF editing; reference TechLabs Aachen SO100+robosuite as prior art
 - Phase 5 research flag: Spatial VLA input representation (multi-camera RGB vs RGB+depth vs auxiliary 3D annotations) is an open question — study SpatialVLA, VEGA, cVLA before committing
 - Colab delivery mechanism (260802-ijb/itm): now GitHub-clone + getpass() token prompt, replacing the old Drive-zip delivery. **Unproven on a live Colab run as of 2026-08-02** — the prior notebook edits this session were pushed but not yet re-tested end-to-end. **User's explicit fallback: if this doesn't work, revert to the Drive-zip method** (drive.mount() + unzip SoARM-Research-colab.zip, which was working reliably through all of Phase 3). Don't treat this fallback as a last resort to avoid — if the GitHub/getpass approach hits friction on the next real run, ask the user whether to debug it further or just revert, rather than assuming it must be pushed through.
+- 04-02 BLOCKER (Rule 4): SOARM gripper cannot grasp/lift the akita_black_bowl (vertical reach ~0.02m short of settled bowl rim; jaw ~0.03m << bowl ~0.09m). Real 50-attempt run = 0 successes; ~5 grasp strategies fail. DATA-01 100+ demos unattainable with current robot. Collector code complete+tested. Needs decision: (a) redesign gripper+reach, (b) swap task set, (c) state-inject demos, (d) descope. 04-03/04/05 depend on this dataset.
 
 ### Quick Tasks Completed
 
@@ -128,6 +129,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-02T17:48:37.601Z
+Last session: 2026-08-02T18:49:03.612Z
 Stopped at: Phase 4 context gathered
 Resume file: .planning/phases/04-dataset-collection/04-CONTEXT.md

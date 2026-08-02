@@ -127,7 +127,7 @@ Plans:
   3. SOARM-specific action and observation normalization statistics are computed from the collected dataset (not copied from Panda)
   4. A human operator can record SOARM demonstrations using the teleoperation interface and they land in the same HDF5 format
 
-**Plans**: 1/5 plans executed
+**Plans**: 2/5 plans executed
 
 Plans:
 **Wave 1**
@@ -136,7 +136,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 04-02-PLAN.md — Scripted waypoint collector (D-01) + full 100+-demo collection run across the 3 corrected frozen tasks (DATA-01 complete)
+- [x] 04-02-PLAN.md — Scripted waypoint collector (D-01) + full 100+-demo collection run across the 3 corrected frozen tasks (DATA-01 complete)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -184,6 +184,6 @@ Plans:
 | 1. Colab Environment Setup | 4/4 | Complete   | 2026-07-09 |
 | 2. SOARM Robot Integration | 5/5 | Complete    | 2026-07-18 |
 | 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
-| 4. Dataset Collection | 1/5 | In Progress|  |
+| 4. Dataset Collection | 2/5 | In Progress|  |
 | 5. Spatial Awareness | 0/TBD | Not started | - |
 | 6. Fine-Tuning & Evaluation | 0/TBD | Not started | - |
