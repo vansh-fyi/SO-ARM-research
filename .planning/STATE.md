@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 3
 current_phase_name: VLA Inference Loop
-status: executing
-stopped_at: Phase 3 context gathered
-last_updated: "2026-07-18T17:59:44.627Z"
-last_activity: 2026-07-18
-last_activity_desc: Phase 3 execution started
+status: complete
+stopped_at: Phase 3 complete — VLA-04 approved 2026-08-02, ready for Phase 4 planning
+last_updated: "2026-08-02T00:00:00Z"
+last_activity: 2026-08-02
+last_activity_desc: Phase 3 (VLA Inference Loop) closed out — all 3 plans complete
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 12
-  completed_plans: 9
-  percent: 33
+  completed_plans: 12
+  percent: 50
 ---
 
 # Project State
@@ -28,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 
 ## Current Position
 
-Phase: 3 (VLA Inference Loop) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 3
-Last activity: 2026-07-18 — Phase 3 execution started
+Phase: 3 (VLA Inference Loop) — COMPLETE
+Plan: 3 of 3
+Status: Phase 3 complete; Phase 4 (Dataset Collection) not yet started
+Last activity: 2026-08-02 — VLA-04 approved, Phase 3 closed out
 
-Progress: [██░░░░░░░░] 17% (Phase 1 of 6 complete)
+Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 
 ## Performance Metrics
 
@@ -87,6 +87,12 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-02: reset (0.024 N) and render checks already GREEN with untuned starting values — 02-03 tunes from a working baseline
 - [Phase 02]: 02-03: Generic OSC_POSE config suffices for SOARM soak stability — no custom controller_configs kwarg for 02-05 notebook or Phase 3
 - [Phase 02]: 02-03: All 02-02 starting values final (damping 0.6x5, base offset -0.38/0/0.90, init_qpos zeros(5), gripper speed 0.10 / jaw 0.8); A4 primitive-collision fallback not needed; reset peak 0.024 N
+- [Phase 03]: 03-02: OFT-on-SOARM 0% task success is the accepted zero-shot cross-embodiment baseline, not a defect — Phase 6 fine-tuning closes this gap
+- [Phase 03]: 03-03: π0 served via `serve_policy.py --env=LIBERO` (pi05_libero) — original D-07 choice (pi0_fast_libero) was deprecated upstream between plan-time and first live run; π0-on-SOARM also lands at 0% success, same accepted baseline as OFT
+- [Phase 03]: 03-03: gsutil (Cloud SDK) uses its own bundled, isolated Python — `pip install` in a Colab kernel never reaches it; CLOUDSDK_PYTHON_SITEPACKAGES=1 is required whenever gsutil needs a kernel-installed package (gsutil#1429)
+- [Phase 03]: 03-03: never route large (multi-GB) gsutil/GCS downloads through a Google Drive FUSE mount on Colab — local disk only, copy to Drive afterward if persistence is needed
+- [Phase 03]: 03-03: openpi-client's WebsocketClientPolicy hardcodes websockets' 20s/20s keepalive with no tuning knobs — any Colab-side stall (e.g. a JAX recompile) longer than that needs client-side reconnect-retry, not a server-side fix
+- [Phase 03]: 03-03: defensive optional-import guards (`except ImportError:`) must catch the real class of failure a broken-but-present dependency can raise (e.g. numpy ABI ValueError), not just literal absence — `except Exception` for cross-kernel package guards
 
 ### Pending Todos
 
@@ -120,5 +126,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-08-02
-Stopped at: Phase 3 (03-03) Task 4 — the reconnect-retry fix (260802-gqt) for episode 1's keepalive-timeout failure is COMMITTED and locally verified (10/10 tests); Drive zip re-synced. Awaiting the user's next Colab run of Notebook B (full top-to-bottom; server startup and episode 0 already proven on the 2026-07-26 L4 run). If the same stall recurs, predict() now rides through it, printing '[Pi0Backend] connection lost ... reconnecting'; if the server actually dies, it fails fast pointing at /content/serve_policy.log. On a clean 2-episode run: sign off VLA-04, finalize 03-03-SUMMARY.md, verify phase, close Phase 3. Fallback if it fails differently: episode 0's completed run already substantively satisfies D-10's 1-2-episode smoke test — accepting it is a legitimate sign-off option. Mystery-sync on libero/notebooks/03b (6 sightings, 5 stashes) still unexplained.
-Resume file: .planning/HANDOFF.json
+Stopped at: Phase 3 (VLA Inference Loop) is CLOSED OUT. VLA-04 approved — the L4 smoke test completed both episodes end-to-end via the reconnect-retry fix (260802-gqt), matching OFT's 03-02 pattern exactly. 03-03-SUMMARY.md written, ROADMAP.md and PROJECT.md updated (Phase 3 marked complete, 2 requirements moved to Validated), stale worktree `agent-a4d3f2c600b0e64f5` removed (commits confirmed already merged into master), commit `2bddb1b`. HANDOFF.json retired (its Task 4 checkpoint is resolved) — this STATE.md is now the authoritative resume source. Next: user will run phase execution/progress command to move into Phase 4 (Dataset Collection) planning. No formal gsd-verifier phase-goal check has been run yet — worth doing if a stricter close-out is wanted, but the phase's own success criteria (VLA-01 through VLA-04) are all directly evidenced by the two Colab sign-offs. Mystery-sync on libero/notebooks/03b-pi0-inference-smoketest.ipynb (6 sightings, 5 stashes across the phase — see `git stash list`) remains unexplained; ask the user before assuming any future dirty-state on that file is safe to override.
+Resume file: .planning/STATE.md (this file)
