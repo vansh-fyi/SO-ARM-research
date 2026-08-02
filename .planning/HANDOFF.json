@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-07-26T12:30:48Z",
+  "timestamp": "2026-08-02T00:00:00Z",
   "phase": "3",
   "phase_name": "VLA Inference Loop",
   "phase_dir": ".planning/phases/03-vla-inference-loop",
@@ -9,43 +9,171 @@
   "total_tasks": 4,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "03-01: Shared VLABackend interface + OFTBackend + eval_loop", "status": "done", "commit": "267395e..a339303 (merged 72fad84..cd23dc5)"},
-    {"id": 2, "name": "03-02: Notebook A (OFT full eval loop) — Colab A100 sign-off", "status": "done", "commit": "e4f918f, 42642f9, 1071538, 7b2c1d6, c45a813"},
-    {"id": 3, "name": "03-03 Task 1: Pi0Backend — websocket client implementing VLABackend", "status": "done", "commit": "ead3563"},
-    {"id": 4, "name": "03-03 Task 2: Notebook B — openpi install + serve_policy.py server + client smoke test", "status": "done", "commit": "fa4d072"},
-    {"id": 5, "name": "03-03 Task 3: checkpoint:human-verify (gate=blocking-human) — openpi-client PyPI package-legitimacy check", "status": "done", "note": "User confirmed via PyPI screenshot 2026-07-26 — approved"},
-    {"id": 9, "name": "Quick task 260726-epz: fix serve_policy.py config-name drift (pi0_fast_libero deprecated on openpi main, switched to --env=LIBERO / pi05_libero)", "status": "done", "commit": "03a3dd7, 4314889, merged 4a7b8f2"},
-    {"id": 10, "name": "Quick task 260726-gj6: fix checkpoint download reliability attempt #1 (pi05_libero 11.6GB via gsutil to Drive FUSE mount failed — '6 files/objects could not be transferred'; switched OPENPI_DATA_HOME to local disk + compiled crcmod)", "status": "done_but_insufficient", "commit": "67899e7, 66b94ed, merged 54f7585", "note": "Live re-run after this fix showed the IDENTICAL failure even on local disk — this fix's root-cause theory (Drive FUSE unreliability) was wrong or at best a minor contributing factor, not the actual cause."},
-    {"id": 11, "name": "Quick task 260726-hbb: fix checkpoint download reliability attempt #2 (real root cause) — gsutil's bundled Cloud SDK Python is isolated from the Colab kernel's pip-installed crcmod (GoogleCloudPlatform/gsutil#1429), so the crcmod C-extension fix from 260726-gj6 never actually reached gsutil. Added CLOUDSDK_PYTHON_SITEPACKAGES=1 + check_hashes=if_fast_else_skip boto fallback + a gsutil version -l pre-flight verification cell", "status": "done_confirmed_working", "commit": "c6ba5f6, 48bfd38, merged 81035c9", "note": "User re-ran live: serve_policy.py started successfully (~130s). This fix's root-cause diagnosis was correct."},
-    {"id": 12, "name": "Quick task 260726-hw8: fix vla/__init__.py — after 260726-hbb got the server running, the very next cell (the literal VLA-04 proof) crashed importing Pi0Backend because OFTBackend's `except ImportError` guard didn't catch a numpy binary-ABI ValueError raised deep in transformers/torch's import chain in Notebook B's kernel. Broadened both OFTBackend's and Pi0Backend's guards to `except Exception`", "status": "done_confirmed_working", "commit": "ffc3616, merged 90d7e7e", "note": "User re-ran live: the numpy-ABI crash is gone, Pi0Backend/run_suite import succeeded. This fix was correct."},
-    {"id": 13, "name": "Quick task 260726-io0: add Block A2 (LIBERO simulation stack) to Notebook B — after 260726-hw8's import-guard fix cleared, the same cell crashed one line later with ModuleNotFoundError: robosuite. Root cause: Notebook B's kernel was NEVER given robosuite/mujoco/bddl/gym at all, only openpi's own stack — a genuine 03-03-PLAN.md planning gap, not a live-environment quirk. Added a new Block A2 (EGL apt packages, robosuite==1.4.0/mujoco==3.3.2/bddl==1.0.1/gym==0.25.2 pip install, numpy==1.26.4 purge+pin+ABI-gate) mirroring Notebook A's already-proven Block A pattern exactly, plus a mandatory runtime restart", "status": "done_confirmed_working", "commit": "0268dec, 141f2e5, merged 96abb60", "note": "User's live A100 run confirmed: robosuite/mujoco installed, OffScreenRenderEnv imported, Pi0Backend connected, VLA-04 smoke test started running."},
-    {"id": 14, "name": "Quick task 260726-p0o: harden Notebook B — (1) serve_policy.py stdout=subprocess.PIPE with no reader (suspected cause of the observed 95-minute silent hang mid-smoke-test: textbook pipe-buffer deadlock once ~64KB of server logs accumulate; NOT traceback-confirmed, the A100 session ended before the interrupt diagnostic ran) → redirected to /content/serve_policy.log with a tail hint in the success print; (2) openpi-client editable-install .pth finder only processed at interpreter startup (CONFIRMED live: pip show saw it, import failed, user's site.addsitedir test fixed it on the spot — Pi0Backend went from None to a real class) → install cell now runs site.addsitedir + inline import verification. Executed INLINE by the orchestrator: the planner subagent was killed by the monthly spend limit; edits were already fully specified so they were applied directly, with PLAN/SUMMARY artifacts written to keep the trail complete", "status": "done_unverified_live", "commit": "596bcd9"}
+    {
+      "id": 1,
+      "name": "03-01: Shared VLABackend interface + OFTBackend + eval_loop",
+      "status": "done",
+      "commit": "267395e..a339303 (merged 72fad84..cd23dc5)"
+    },
+    {
+      "id": 2,
+      "name": "03-02: Notebook A (OFT full eval loop) — Colab A100 sign-off",
+      "status": "done",
+      "commit": "e4f918f, 42642f9, 1071538, 7b2c1d6, c45a813"
+    },
+    {
+      "id": 3,
+      "name": "03-03 Task 1: Pi0Backend — websocket client implementing VLABackend",
+      "status": "done",
+      "commit": "ead3563"
+    },
+    {
+      "id": 4,
+      "name": "03-03 Task 2: Notebook B — openpi install + serve_policy.py server + client smoke test",
+      "status": "done",
+      "commit": "fa4d072"
+    },
+    {
+      "id": 5,
+      "name": "03-03 Task 3: checkpoint:human-verify (gate=blocking-human) — openpi-client PyPI package-legitimacy check",
+      "status": "done",
+      "note": "User confirmed via PyPI screenshot 2026-07-26 — approved"
+    },
+    {
+      "id": 9,
+      "name": "Quick task 260726-epz: fix serve_policy.py config-name drift (pi0_fast_libero deprecated on openpi main, switched to --env=LIBERO / pi05_libero)",
+      "status": "done",
+      "commit": "03a3dd7, 4314889, merged 4a7b8f2"
+    },
+    {
+      "id": 10,
+      "name": "Quick task 260726-gj6: fix checkpoint download reliability attempt #1 (pi05_libero 11.6GB via gsutil to Drive FUSE mount failed — '6 files/objects could not be transferred'; switched OPENPI_DATA_HOME to local disk + compiled crcmod)",
+      "status": "done_but_insufficient",
+      "commit": "67899e7, 66b94ed, merged 54f7585",
+      "note": "Live re-run after this fix showed the IDENTICAL failure even on local disk — this fix's root-cause theory (Drive FUSE unreliability) was wrong or at best a minor contributing factor, not the actual cause."
+    },
+    {
+      "id": 11,
+      "name": "Quick task 260726-hbb: fix checkpoint download reliability attempt #2 (real root cause) — gsutil's bundled Cloud SDK Python is isolated from the Colab kernel's pip-installed crcmod (GoogleCloudPlatform/gsutil#1429), so the crcmod C-extension fix from 260726-gj6 never actually reached gsutil. Added CLOUDSDK_PYTHON_SITEPACKAGES=1 + check_hashes=if_fast_else_skip boto fallback + a gsutil version -l pre-flight verification cell",
+      "status": "done_confirmed_working",
+      "commit": "c6ba5f6, 48bfd38, merged 81035c9",
+      "note": "User re-ran live: serve_policy.py started successfully (~130s). This fix's root-cause diagnosis was correct."
+    },
+    {
+      "id": 12,
+      "name": "Quick task 260726-hw8: fix vla/__init__.py — after 260726-hbb got the server running, the very next cell (the literal VLA-04 proof) crashed importing Pi0Backend because OFTBackend's `except ImportError` guard didn't catch a numpy binary-ABI ValueError raised deep in transformers/torch's import chain in Notebook B's kernel. Broadened both OFTBackend's and Pi0Backend's guards to `except Exception`",
+      "status": "done_confirmed_working",
+      "commit": "ffc3616, merged 90d7e7e",
+      "note": "User re-ran live: the numpy-ABI crash is gone, Pi0Backend/run_suite import succeeded. This fix was correct."
+    },
+    {
+      "id": 13,
+      "name": "Quick task 260726-io0: add Block A2 (LIBERO simulation stack) to Notebook B — after 260726-hw8's import-guard fix cleared, the same cell crashed one line later with ModuleNotFoundError: robosuite. Root cause: Notebook B's kernel was NEVER given robosuite/mujoco/bddl/gym at all, only openpi's own stack — a genuine 03-03-PLAN.md planning gap, not a live-environment quirk. Added a new Block A2 (EGL apt packages, robosuite==1.4.0/mujoco==3.3.2/bddl==1.0.1/gym==0.25.2 pip install, numpy==1.26.4 purge+pin+ABI-gate) mirroring Notebook A's already-proven Block A pattern exactly, plus a mandatory runtime restart",
+      "status": "done_confirmed_working",
+      "commit": "0268dec, 141f2e5, merged 96abb60",
+      "note": "User's live A100 run confirmed: robosuite/mujoco installed, OffScreenRenderEnv imported, Pi0Backend connected, VLA-04 smoke test started running."
+    },
+    {
+      "id": 14,
+      "name": "Quick task 260726-p0o: harden Notebook B — (1) serve_policy.py stdout=subprocess.PIPE with no reader (suspected cause of the observed 95-minute silent hang mid-smoke-test: textbook pipe-buffer deadlock once ~64KB of server logs accumulate; NOT traceback-confirmed, the A100 session ended before the interrupt diagnostic ran) → redirected to /content/serve_policy.log with a tail hint in the success print; (2) openpi-client editable-install .pth finder only processed at interpreter startup (CONFIRMED live: pip show saw it, import failed, user's site.addsitedir test fixed it on the spot — Pi0Backend went from None to a real class) → install cell now runs site.addsitedir + inline import verification. Executed INLINE by the orchestrator: the planner subagent was killed by the monthly spend limit; edits were already fully specified so they were applied directly, with PLAN/SUMMARY artifacts written to keep the trail complete",
+      "status": "done_unverified_live",
+      "commit": "596bcd9"
+    }
   ],
   "remaining_tasks": [
-    {"id": 6, "name": "03-03 Task 4: checkpoint:human-verify (gate=blocking) — live Colab GPU π0 smoke-test run + sign-off", "status": "awaiting_human", "note": "MAJOR PROGRESS on the 2026-07-26 L4 run (full top-to-bottom with all 6 fixes applied): EVERY prior failure mode is now confirmed fixed — Block A2 sim stack installed, numpy ABI gate PASSED, openpi installed (commit 15a9616a00943ada6c20a0f158e3adb39df2ccac), openpi-client imported via the .pth activation fix, gsutil pre-flight reported 'compiled crcmod: True', checkpoint downloaded, server started in ~150s with logs at /content/serve_policy.log, Pi0Backend connected, AND EPISODE 0 RAN END-TO-END with video saved to outputs/videos_pi0/..._ep0 — the unmodified run_suite/eval_loop drove π0 through a full episode, which is substantively the VLA-04 interface-swap proof. NEW FAILURE on episode 1: ConnectionClosedError 'sent 1011 (internal error) keepalive ping timeout; no close frame received' raised from websockets sync client inside Pi0Backend.predict -> WebsocketClientPolicy.infer -> ws.recv — the CLIENT closed the socket because the SERVER stopped answering keepalive pings. See the new diagnostic entry in human_actions_pending for exactly what to check next session."},
-    {"id": 7, "name": "Finalize 03-03-SUMMARY.md once both checkpoints resolve", "status": "not_started"},
-    {"id": 8, "name": "Phase-level verify_phase_goal (spawn gsd-verifier) + update_roadmap phase completion", "status": "not_started"}
+    {
+      "id": 6,
+      "name": "03-03 Task 4: checkpoint:human-verify (gate=blocking) — live Colab GPU π0 smoke-test run + sign-off",
+      "status": "awaiting_human",
+      "note": "MAJOR PROGRESS on the 2026-07-26 L4 run (full top-to-bottom with all 6 fixes applied): EVERY prior failure mode is now confirmed fixed — Block A2 sim stack installed, numpy ABI gate PASSED, openpi installed (commit 15a9616a00943ada6c20a0f158e3adb39df2ccac), openpi-client imported via the .pth activation fix, gsutil pre-flight reported 'compiled crcmod: True', checkpoint downloaded, server started in ~150s with logs at /content/serve_policy.log, Pi0Backend connected, AND EPISODE 0 RAN END-TO-END with video saved to outputs/videos_pi0/..._ep0 — the unmodified run_suite/eval_loop drove π0 through a full episode, which is substantively the VLA-04 interface-swap proof. NEW FAILURE on episode 1: ConnectionClosedError 'sent 1011 (internal error) keepalive ping timeout; no close frame received' raised from websockets sync client inside Pi0Backend.predict -> WebsocketClientPolicy.infer -> ws.recv — the CLIENT closed the socket because the SERVER stopped answering keepalive pings. See the new diagnostic entry in human_actions_pending for exactly what to check next session."
+    },
+    {
+      "id": 7,
+      "name": "Finalize 03-03-SUMMARY.md once both checkpoints resolve",
+      "status": "not_started"
+    },
+    {
+      "id": 8,
+      "name": "Phase-level verify_phase_goal (spawn gsd-verifier) + update_roadmap phase completion",
+      "status": "not_started"
+    }
   ],
   "blockers": [
-    {"description": "π0 smoke test is ONE episode from done: episode 0 completed end-to-end on the 2026-07-26 L4 run (video saved — all seven prior fixes confirmed working), but episode 1 died with a websocket keepalive timeout (ConnectionClosedError 1011 — server stopped answering pings; client closed). The server log at /content/serve_policy.log holds the deciding evidence (server crash vs stall) but lives only as long as the VM; user was asked to capture its tail before closing the session — check whether they did. Separately: an unexplained local sync keeps writing live Colab-side notebook state directly into this git checkout's libero/notebooks/03b-pi0-inference-smoketest.ipynb between sessions — stashed FIVE times now (see 'git stash list'), source not yet identified; ask the user what's syncing this folder before assuming any future dirty-file state there is safe to stash-and-override again.", "type": "human_action", "workaround": "Next session: read the diagnostic entry in human_actions_pending (evidence checklist + likely causes + candidate fixes), decide between (a) hardening Pi0Backend with reconnect-retry, (b) tuning client keepalive if openpi-client exposes it, or (c) accepting the completed episode 0 as satisfying the VLA-04 smoke test (D-10 allows 1-2 episodes) and signing off; separately, user should identify what's writing to libero/notebooks/03b-... locally"}
+    {
+      "description": "π0 smoke test is ONE episode from done: episode 0 completed end-to-end on the 2026-07-26 L4 run (video saved — all seven prior fixes confirmed working), but episode 1 died with a websocket keepalive timeout (ConnectionClosedError 1011 — server stopped answering pings; client closed). The server log at /content/serve_policy.log holds the deciding evidence (server crash vs stall) but lives only as long as the VM; user was asked to capture its tail before closing the session — check whether they did. Separately: an unexplained local sync keeps writing live Colab-side notebook state directly into this git checkout's libero/notebooks/03b-pi0-inference-smoketest.ipynb between sessions — stashed FIVE times now (see 'git stash list'), source not yet identified; ask the user what's syncing this folder before assuming any future dirty-file state there is safe to stash-and-override again.",
+      "type": "human_action",
+      "workaround": "Next session: read the diagnostic entry in human_actions_pending (evidence checklist + likely causes + candidate fixes), decide between (a) hardening Pi0Backend with reconnect-retry, (b) tuning client keepalive if openpi-client exposes it, or (c) accepting the completed episode 0 as satisfying the VLA-04 smoke test (D-10 allows 1-2 episodes) and signing off; separately, user should identify what's writing to libero/notebooks/03b-... locally"
+    }
   ],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "DIAGNOSTIC for the episode-1 websocket failure (ConnectionClosedError 1011 keepalive ping timeout, L4 run 2026-07-26). What happened: episode 0 completed fully (video saved), then during episode 1 the client's keepalive pings went unanswered long enough that the websockets sync client closed the connection with 1011 (client-side close; 'no close frame received' means the server never even responded to the close). What to check FIRST next session, in order: (1) /content/serve_policy.log tail — if the user captured it before the VM died it shows whether the server crashed (OOM/exception traceback at the end) or was still alive-but-stalled (log just stops or shows a long JAX recompile); if not captured, it is lost with the VM and the next run should watch it live. (2) Whether server_proc was still alive at failure time (server_proc.poll() is None). LIKELY CAUSES, most probable first: (a) server-side stall long enough to blow the websockets default keepalive (ping_interval=20s, ping_timeout=20s) — e.g. a JAX recompilation triggered by episode 1's first inference (different padding/shape), or L4's slower compute + GIL-held stretches preventing pong replies; (b) server process death (host-RAM OOM during ep1, or GPU OOM — L4 has 23.7GB vs A100 40GB; ep0 working makes hard-OOM slightly less likely but Colab's OOM killer leaves evidence in dmesg: !dmesg | tail -30); (c) genuine server exception mid-inference (would show as a traceback at the end of serve_policy.log). CANDIDATE FIXES depending on evidence: reconnect-and-retry logic in Pi0Backend.predict (catch ConnectionClosed, rebuild WebsocketClientPolicy once, retry the infer — cheap and robust against transient stalls); raising the client's keepalive tolerance if openpi's WebsocketClientPolicy exposes ping_interval/ping_timeout kwargs (check /content/openpi/packages/openpi-client/src/openpi_client/websocket_client_policy.py for what it passes to websockets.sync.client.connect); or accepting episodes_per_task=1 as sufficient for the VLA-04 smoke test (D-10 says 1-2 episodes; episode 0 ALREADY completed end-to-end, so one clean episode arguably satisfies the checkpoint — user's call at sign-off time).", "context": "03-03 Task 4 checkpoint — episode 0 of the smoke test is DONE and proves the interface swap; only multi-episode stability remains", "blocking": true},
-    {"action": "Identify what is syncing libero/notebooks/03b-pi0-inference-smoketest.ipynb's live Colab execution state back into this local git checkout (com.apple.provenance xattr present, no active mount/symlink/open-file-handle found by the agent) — needed so future merges don't have to guess whether to stash-and-override it again", "context": "Discovered four times now (260726-epz, 260726-gj6, 260726-hbb, 260726-io0 worktree merges)", "blocking": false},
-    {"action": "Optional: decide whether to commit your own local Colab-run notebook outputs in libero/notebooks/01-colab-env-setup.ipynb and libero/notebooks/03a-oft-inference-eval.ipynb (currently uncommitted, large diffs — these are your own execution-output artifacts, left untouched since I don't commit on your behalf without asking)", "context": "Not required for phase completion, purely optional evidence/cleanup", "blocking": false}
+    {
+      "action": "Re-sync done (Drive zip updated 2026-08-02 with the 260802-gqt reconnect-retry fix). Run Notebook B full top-to-bottom and confirm the 1-task x 2-episode smoke test completes. The episode-1 keepalive failure is now handled in code: Pi0Backend.predict catches connection drops, backs off 30s/60s, probes the server port, rebuilds the client, and re-sends — watch for '[Pi0Backend] connection lost ... reconnecting' in the cell output, which is the fix working as designed, not an error. If it instead raises RuntimeError, the message says exactly what to grab (tail of /content/serve_policy.log — crash traceback or stall evidence; plus !dmesg | tail -30 for OOM). Root cause context: openpi-client's WebsocketClientPolicy hardcodes websockets' ping_interval=20/ping_timeout=20 (confirmed from source at commit 15a9616 — no kwargs exposed), and ep1's first inference most plausibly triggers a JAX recompile stall that outlives that window; the retry succeeds because the compile cache is warm. Fallback option at sign-off: episode 0 already completed end-to-end on 2026-07-26 (video saved), which arguably satisfies D-10's 1-2-episode smoke test on its own — accepting that and signing off VLA-04 without a further run is a legitimate user call.",
+      "context": "03-03 Task 4 checkpoint — final retry with the reconnect fix; episode 0 already proves the interface swap",
+      "blocking": true
+    },
+    {
+      "action": "Identify what is syncing libero/notebooks/03b-pi0-inference-smoketest.ipynb's live Colab execution state back into this local git checkout (com.apple.provenance xattr present, no active mount/symlink/open-file-handle found by the agent) — needed so future merges don't have to guess whether to stash-and-override it again",
+      "context": "Discovered four times now (260726-epz, 260726-gj6, 260726-hbb, 260726-io0 worktree merges)",
+      "blocking": false
+    },
+    {
+      "action": "Optional: decide whether to commit your own local Colab-run notebook outputs in libero/notebooks/01-colab-env-setup.ipynb and libero/notebooks/03a-oft-inference-eval.ipynb (currently uncommitted, large diffs — these are your own execution-output artifacts, left untouched since I don't commit on your behalf without asking)",
+      "context": "Not required for phase completion, purely optional evidence/cleanup",
+      "blocking": false
+    }
   ],
   "decisions": [
-    {"decision": "OFT consumes its 8-step action chunk via full open-loop replay (no re-inference until the chunk completes)", "rationale": "Confirmed via research as the standard/default in OFT's own run_libero_eval.py (num_open_loop_steps = NUM_ACTIONS_CHUNK), not a research-paper optimization needed for this MVP (resolves CONTEXT.md D-03)", "phase": "3"},
-    {"decision": "π0 (openpi) runs in a separate Colab notebook/kernel from OpenVLA-OFT, communicating via openpi's own documented serve_policy.py + WebsocketClientPolicy remote-inference pattern, bound to localhost only", "rationale": "Confirmed real dependency conflict: openpi pins torch==2.7.1/transformers==4.53.2/jax[cuda12]==0.5.3 vs. OFT's torch==2.2.0/transformers==4.40.1 (resolves CONTEXT.md D-06)", "phase": "3"},
-    {"decision": "LIBERO's standard eval horizon for libero_spatial is max_steps=600 — confirmed from this project's own LIBERO/libero/configs/eval/default.yaml rather than an externally-cited number", "rationale": "Resolves CONTEXT.md D-13; keeps VLA-03's success-rate metric consistent with this project's existing config, not an arbitrary cutoff", "phase": "3"},
-    {"decision": "0% OFT-on-SOARM task success rate (Plan 03-02's Colab A100 run) is accepted as an expected, correctly-measured zero-shot cross-embodiment result — not a pipeline defect", "rationale": "This OFT checkpoint was fine-tuned on Panda-arm LIBERO demos, not SOARM; SOARM's gripper/kinematics differ. Spot-checked videos show sensible partial behavior (approach + gripper open, no grasp completion), not corrupted/random output. Closing this gap is explicitly Phase 6's job (fine-tuning on SOARM demos), not Phase 3's.", "phase": "3"},
-    {"decision": "Both Wave 2 worktrees (03-02, 03-03) were merged into master early, mid-checkpoint, at the user's explicit request", "rationale": "User wanted the notebooks visible in their main checkout to run on Colab before the checkpoints fully resolved. Deviates from execute-phase's standard 'merge only after wave completes' flow — was a deliberate, explicit user override, not an automatic default.", "phase": "3"},
-    {"decision": "D-07 amended 2026-07-26: pi0_fast_libero has no published inference checkpoint on openpi's current main branch — switched to pi05_libero (openpi's current default for --env=LIBERO)", "rationale": "Confirmed by fetching openpi's live serve_policy.py/README/config.py source: pi0_fast_libero was never a valid --env value (--env is a coarse EnvMode enum) and its TrainConfig now only serves as a fine-tuning starting point, not a ready inference checkpoint. VLA-04's intent (proving the Pi0Backend interface swap) is unaffected since that code is checkpoint-agnostic. This is exactly the risk 03-RESEARCH.md's Open Question A1 flagged as needing re-verification before the first real Colab run.", "phase": "3"},
-    {"decision": "T-3-08 threat-model mitigation amended 2026-07-26 (attempt #1, later found insufficient): OPENPI_DATA_HOME moved from a Drive-backed path to local Colab disk (/content/openpi_data); the checkpoint no longer survives a runtime restart", "rationale": "Live Colab run showed gsutil -m cp -r of pi05_libero's 11.6GB/16-shard composite object to a Google Drive FUSE mount failing ('6 files/objects could not be transferred'). This fix was applied and re-tested live — the IDENTICAL failure recurred on local disk too, proving Drive-FUSE-unreliability was not the actual root cause (see next decision). The local-disk destination change itself is still kept (no reason to revert it), but it did not solve the problem alone.", "phase": "3"},
-    {"decision": "T-3-08 threat-model mitigation amended 2026-07-26 (attempt #2, actual root cause, CONFIRMED WORKING live): added CLOUDSDK_PYTHON_SITEPACKAGES=1 env var + check_hashes=if_fast_else_skip boto config fallback + a gsutil version -l pre-flight verification cell", "rationale": "Confirmed via GoogleCloudPlatform/gsutil GitHub issue #1429: gsutil (part of Google Cloud SDK) runs its own bundled, isolated Python interpreter, completely separate from the Colab kernel's Python. The earlier crcmod reinstall (260726-gj6) succeeded in the KERNEL's Python but was invisible to gsutil's bundled interpreter, so the CRC32C hash computation stayed on the slow pure-Python path regardless of destination — explaining why moving off Drive didn't help. CLOUDSDK_PYTHON_SITEPACKAGES=1 makes gsutil's bundled interpreter fall back to the kernel's site-packages where crcmod's C extension actually landed. As a safety net (the GitHub issue notes this fallback can fail on Python ABI mismatches), check_hashes=if_fast_else_skip (gsutil's own officially-sanctioned partial integrity-check skip, only triggers when the C extension is genuinely unavailable) was also configured via a /content/.boto file. A pre-flight cell running gsutil version -l lets the user confirm success BEFORE attempting the full 11.6GB download again. User's live re-run confirmed serve_policy.py now starts successfully (~130s) — this diagnosis was correct.", "phase": "3"},
-    {"decision": "vla/__init__.py's optional-import guards broadened from except ImportError to except Exception for both OFTBackend and Pi0Backend (2026-07-26, quick task 260726-hw8, CONFIRMED WORKING live)", "rationale": "With the server now starting successfully, the very next cell (the literal VLA-04 proof, `from libero.libero.vla import Pi0Backend, run_suite`) crashed with `ValueError: numpy.dtype size changed, may indicate binary incompatibility` raised deep inside transformers/torch's import chain while importing OFTBackend — not an ImportError, so the existing `except ImportError:` guard (whose own comment already claimed to 'degrade gracefully' across kernels with incompatible dependency stacks, per D-06) did not catch it, crashing the whole package import including the unrelated Pi0Backend the cell actually needed. Broadened both guards (not just OFTBackend's) since they share the identical documented intent and the same class of failure could symmetrically hit Pi0Backend's guard in Notebook A's kernel. Verified via the existing local pytest suite (7 passed) AND the user's live re-run, which got past this crash entirely.", "phase": "3"},
-    {"decision": "D-06 amended 2026-07-26 (quick task 260726-io0, NOT yet verified live): Notebook B gained a new Block A2 installing robosuite==1.4.0/mujoco==3.3.2/bddl==1.0.1/gym==0.25.2 + EGL apt packages + a numpy==1.26.4 purge+pin+ABI-gate, followed by a mandatory runtime restart, positioned before the existing openpi install Block A", "rationale": "After 260726-hw8 cleared the numpy-ABI crash, the same VLA-04 cell failed one line later with ModuleNotFoundError: robosuite — 03-03-PLAN.md's original Notebook B task description never specified installing LIBERO's simulation stack at all (only openpi + openpi_client), a genuine planning gap, not a D-06 conflict (D-06 is specifically about torch/transformers/jax incompatibility, which robosuite/mujoco/bddl don't participate in). Confirmed safe by fetching openpi's live pyproject.toml: it pins numpy>=1.22.4,<2.0.0, satisfied by the same numpy==1.26.4 pin Notebook A already proved works with robosuite/mujoco on live Colab A100; openpi's actual conflicting stack (torch==2.7.1/transformers==4.53.2/jax) is isolated in its own `uv`-managed venv at /content/openpi, invisible to this kernel's numpy/robosuite/mujoco. New Block A2 mirrors Notebook A's exact proven install-then-restart pattern (install everything, purge+pin+ABI-probe numpy LAST, then restart) specifically to avoid repeating the 'mixed numpy ABI' failure mode already hit twice today in this same phase. User explicitly chose this properly-structured fix (with a restart step) over a faster no-restart attempt, given the real risk of a third numpy-ABI incident.", "phase": "3"}
+    {
+      "decision": "OFT consumes its 8-step action chunk via full open-loop replay (no re-inference until the chunk completes)",
+      "rationale": "Confirmed via research as the standard/default in OFT's own run_libero_eval.py (num_open_loop_steps = NUM_ACTIONS_CHUNK), not a research-paper optimization needed for this MVP (resolves CONTEXT.md D-03)",
+      "phase": "3"
+    },
+    {
+      "decision": "π0 (openpi) runs in a separate Colab notebook/kernel from OpenVLA-OFT, communicating via openpi's own documented serve_policy.py + WebsocketClientPolicy remote-inference pattern, bound to localhost only",
+      "rationale": "Confirmed real dependency conflict: openpi pins torch==2.7.1/transformers==4.53.2/jax[cuda12]==0.5.3 vs. OFT's torch==2.2.0/transformers==4.40.1 (resolves CONTEXT.md D-06)",
+      "phase": "3"
+    },
+    {
+      "decision": "LIBERO's standard eval horizon for libero_spatial is max_steps=600 — confirmed from this project's own LIBERO/libero/configs/eval/default.yaml rather than an externally-cited number",
+      "rationale": "Resolves CONTEXT.md D-13; keeps VLA-03's success-rate metric consistent with this project's existing config, not an arbitrary cutoff",
+      "phase": "3"
+    },
+    {
+      "decision": "0% OFT-on-SOARM task success rate (Plan 03-02's Colab A100 run) is accepted as an expected, correctly-measured zero-shot cross-embodiment result — not a pipeline defect",
+      "rationale": "This OFT checkpoint was fine-tuned on Panda-arm LIBERO demos, not SOARM; SOARM's gripper/kinematics differ. Spot-checked videos show sensible partial behavior (approach + gripper open, no grasp completion), not corrupted/random output. Closing this gap is explicitly Phase 6's job (fine-tuning on SOARM demos), not Phase 3's.",
+      "phase": "3"
+    },
+    {
+      "decision": "Both Wave 2 worktrees (03-02, 03-03) were merged into master early, mid-checkpoint, at the user's explicit request",
+      "rationale": "User wanted the notebooks visible in their main checkout to run on Colab before the checkpoints fully resolved. Deviates from execute-phase's standard 'merge only after wave completes' flow — was a deliberate, explicit user override, not an automatic default.",
+      "phase": "3"
+    },
+    {
+      "decision": "D-07 amended 2026-07-26: pi0_fast_libero has no published inference checkpoint on openpi's current main branch — switched to pi05_libero (openpi's current default for --env=LIBERO)",
+      "rationale": "Confirmed by fetching openpi's live serve_policy.py/README/config.py source: pi0_fast_libero was never a valid --env value (--env is a coarse EnvMode enum) and its TrainConfig now only serves as a fine-tuning starting point, not a ready inference checkpoint. VLA-04's intent (proving the Pi0Backend interface swap) is unaffected since that code is checkpoint-agnostic. This is exactly the risk 03-RESEARCH.md's Open Question A1 flagged as needing re-verification before the first real Colab run.",
+      "phase": "3"
+    },
+    {
+      "decision": "T-3-08 threat-model mitigation amended 2026-07-26 (attempt #1, later found insufficient): OPENPI_DATA_HOME moved from a Drive-backed path to local Colab disk (/content/openpi_data); the checkpoint no longer survives a runtime restart",
+      "rationale": "Live Colab run showed gsutil -m cp -r of pi05_libero's 11.6GB/16-shard composite object to a Google Drive FUSE mount failing ('6 files/objects could not be transferred'). This fix was applied and re-tested live — the IDENTICAL failure recurred on local disk too, proving Drive-FUSE-unreliability was not the actual root cause (see next decision). The local-disk destination change itself is still kept (no reason to revert it), but it did not solve the problem alone.",
+      "phase": "3"
+    },
+    {
+      "decision": "T-3-08 threat-model mitigation amended 2026-07-26 (attempt #2, actual root cause, CONFIRMED WORKING live): added CLOUDSDK_PYTHON_SITEPACKAGES=1 env var + check_hashes=if_fast_else_skip boto config fallback + a gsutil version -l pre-flight verification cell",
+      "rationale": "Confirmed via GoogleCloudPlatform/gsutil GitHub issue #1429: gsutil (part of Google Cloud SDK) runs its own bundled, isolated Python interpreter, completely separate from the Colab kernel's Python. The earlier crcmod reinstall (260726-gj6) succeeded in the KERNEL's Python but was invisible to gsutil's bundled interpreter, so the CRC32C hash computation stayed on the slow pure-Python path regardless of destination — explaining why moving off Drive didn't help. CLOUDSDK_PYTHON_SITEPACKAGES=1 makes gsutil's bundled interpreter fall back to the kernel's site-packages where crcmod's C extension actually landed. As a safety net (the GitHub issue notes this fallback can fail on Python ABI mismatches), check_hashes=if_fast_else_skip (gsutil's own officially-sanctioned partial integrity-check skip, only triggers when the C extension is genuinely unavailable) was also configured via a /content/.boto file. A pre-flight cell running gsutil version -l lets the user confirm success BEFORE attempting the full 11.6GB download again. User's live re-run confirmed serve_policy.py now starts successfully (~130s) — this diagnosis was correct.",
+      "phase": "3"
+    },
+    {
+      "decision": "vla/__init__.py's optional-import guards broadened from except ImportError to except Exception for both OFTBackend and Pi0Backend (2026-07-26, quick task 260726-hw8, CONFIRMED WORKING live)",
+      "rationale": "With the server now starting successfully, the very next cell (the literal VLA-04 proof, `from libero.libero.vla import Pi0Backend, run_suite`) crashed with `ValueError: numpy.dtype size changed, may indicate binary incompatibility` raised deep inside transformers/torch's import chain while importing OFTBackend — not an ImportError, so the existing `except ImportError:` guard (whose own comment already claimed to 'degrade gracefully' across kernels with incompatible dependency stacks, per D-06) did not catch it, crashing the whole package import including the unrelated Pi0Backend the cell actually needed. Broadened both guards (not just OFTBackend's) since they share the identical documented intent and the same class of failure could symmetrically hit Pi0Backend's guard in Notebook A's kernel. Verified via the existing local pytest suite (7 passed) AND the user's live re-run, which got past this crash entirely.",
+      "phase": "3"
+    },
+    {
+      "decision": "D-06 amended 2026-07-26 (quick task 260726-io0, NOT yet verified live): Notebook B gained a new Block A2 installing robosuite==1.4.0/mujoco==3.3.2/bddl==1.0.1/gym==0.25.2 + EGL apt packages + a numpy==1.26.4 purge+pin+ABI-gate, followed by a mandatory runtime restart, positioned before the existing openpi install Block A",
+      "rationale": "After 260726-hw8 cleared the numpy-ABI crash, the same VLA-04 cell failed one line later with ModuleNotFoundError: robosuite — 03-03-PLAN.md's original Notebook B task description never specified installing LIBERO's simulation stack at all (only openpi + openpi_client), a genuine planning gap, not a D-06 conflict (D-06 is specifically about torch/transformers/jax incompatibility, which robosuite/mujoco/bddl don't participate in). Confirmed safe by fetching openpi's live pyproject.toml: it pins numpy>=1.22.4,<2.0.0, satisfied by the same numpy==1.26.4 pin Notebook A already proved works with robosuite/mujoco on live Colab A100; openpi's actual conflicting stack (torch==2.7.1/transformers==4.53.2/jax) is isolated in its own `uv`-managed venv at /content/openpi, invisible to this kernel's numpy/robosuite/mujoco. New Block A2 mirrors Notebook A's exact proven install-then-restart pattern (install everything, purge+pin+ABI-probe numpy LAST, then restart) specifically to avoid repeating the 'mixed numpy ABI' failure mode already hit twice today in this same phase. User explicitly chose this properly-structured fix (with a restart step) over a faster no-restart attempt, given the real risk of a third numpy-ABI incident.",
+      "phase": "3"
+    }
   ],
   "uncommitted_files": [
     "libero/notebooks/01-colab-env-setup.ipynb (user's own local Colab-run cell outputs — intentionally left uncommitted)",
