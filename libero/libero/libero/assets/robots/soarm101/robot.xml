@@ -1,0 +1,120 @@
+<?xml version="1.0" ?>
+<!-- SOARM SO101 arm MJCF, adapted for robosuite 1.4 / MuJoCo 2.3.7.
+     Derived from so101_new_calib.source.xml (TheRobotStudio/SO-ARM100,
+     pinned commit in VENDOR.txt) per the Phase 2 adaptation checklist:
+     - kv attribute stripped (MuJoCo 3.x only — the 2.3.7 schema blocker)
+     - all <default> classes inlined onto elements (robosuite merge() drops
+       default blocks; inlining also shields values from RobotModel.__init__)
+     - 5 arm joints driven by <motor> torque actuators (SingleArm.control
+       writes raw torques into ctrl), ctrlrange = STS3215 forcerange
+     - body split at the wrist_roll->gripper boundary: the source "gripper"
+       body is renamed "right_hand" (matches ManipulatorModel._eef_name);
+       jaw geoms, the moving_jaw body/joint, and the gripper actuator are
+       excluded — they live in the plan 02-02 gripper XML
+     - eye_in_hand camera in right_hand + robotview camera on base (LIBERO
+       default camera_names requires robot0_eye_in_hand)
+     - meshes named explicitly with file="assets/<name>.stl"; meshdir removed
+       (robosuite resolve_asset_dependency ignores meshdir)
+     - base body stays collision-free so it sits flush on the tabletop
+     - no keyframe: qpos=0 IS the documented new-calib home pose (D-07) -->
+<mujoco model="soarm101">
+    <compiler angle="radian"/>
+    <actuator>
+        <!-- STS3215 servo torque limits (±2.94 Nm). -->
+        <motor ctrllimited="true" ctrlrange="-2.94 2.94" joint="shoulder_pan" name="torq_shoulder_pan"/>
+        <motor ctrllimited="true" ctrlrange="-2.94 2.94" joint="shoulder_lift" name="torq_shoulder_lift"/>
+        <motor ctrllimited="true" ctrlrange="-2.94 2.94" joint="elbow_flex" name="torq_elbow_flex"/>
+        <motor ctrllimited="true" ctrlrange="-2.94 2.94" joint="wrist_flex" name="torq_wrist_flex"/>
+        <motor ctrllimited="true" ctrlrange="-2.94 2.94" joint="wrist_roll" name="torq_wrist_roll"/>
+    </actuator>
+    <asset>
+        <mesh name="base_motor_holder_so101_v1" file="assets/base_motor_holder_so101_v1.stl"/>
+        <mesh name="base_so101_v2" file="assets/base_so101_v2.stl"/>
+        <mesh name="sts3215_03a_v1" file="assets/sts3215_03a_v1.stl"/>
+        <mesh name="sts3215_03a_no_horn_v1" file="assets/sts3215_03a_no_horn_v1.stl"/>
+        <mesh name="waveshare_mounting_plate_so101_v2" file="assets/waveshare_mounting_plate_so101_v2.stl"/>
+        <mesh name="motor_holder_so101_base_v1" file="assets/motor_holder_so101_base_v1.stl"/>
+        <mesh name="motor_holder_so101_wrist_v1" file="assets/motor_holder_so101_wrist_v1.stl"/>
+        <mesh name="rotation_pitch_so101_v1" file="assets/rotation_pitch_so101_v1.stl"/>
+        <mesh name="upper_arm_so101_v1" file="assets/upper_arm_so101_v1.stl"/>
+        <mesh name="under_arm_so101_v1" file="assets/under_arm_so101_v1.stl"/>
+        <mesh name="wrist_roll_pitch_so101_v2" file="assets/wrist_roll_pitch_so101_v2.stl"/>
+        <material name="base_motor_holder_so101_v1_material" rgba="1 0.82 0.12 1"/>
+        <material name="base_so101_v2_material" rgba="1 0.82 0.12 1"/>
+        <material name="sts3215_03a_v1_material" rgba="0.1 0.1 0.1 1"/>
+        <material name="sts3215_03a_no_horn_v1_material" rgba="0.1 0.1 0.1 1.0"/>
+        <material name="waveshare_mounting_plate_so101_v2_material" rgba="1 0.82 0.12 1"/>
+        <material name="motor_holder_so101_base_v1_material" rgba="1 0.82 0.12 1"/>
+        <material name="motor_holder_so101_wrist_v1_material" rgba="1 0.82 0.12 1"/>
+        <material name="rotation_pitch_so101_v1_material" rgba="1 0.82 0.12 1"/>
+        <material name="upper_arm_so101_v1_material" rgba="1 0.82 0.12 1"/>
+        <material name="under_arm_so101_v1_material" rgba="1 0.82 0.12 1"/>
+        <material name="wrist_roll_pitch_so101_v2_material" rgba="1 0.82 0.12 1"/>
+    </asset>
+    <worldbody>
+        <!-- Link base (visual-only geoms: sits flush on the tabletop) -->
+        <body name="base" pos="0 0 0" quat="1 0 0 0">
+            <!-- robot view (mirrors Panda robot.xml) -->
+            <camera mode="fixed" name="robotview" pos="1.0 0 0.4" quat="0.653 0.271 0.271 0.653"/>
+            <inertial pos="0.0137179 -5.19711e-05 0.0334843" mass="0.147" fullinertia="0.000114686 0.000136117 0.000130364 -4.59787e-07 4.97151e-06 9.75275e-08"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.00636471 -9.94414e-05 -0.0024" quat="0.5 0.5 0.5 0.5" mesh="base_motor_holder_so101_v1" material="base_motor_holder_so101_v1_material"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.00636471 -8.97657e-09 -0.0024" quat="0.5 0.5 0.5 0.5" mesh="base_so101_v2" material="base_so101_v2_material"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="1" pos="0.0263353 -8.97657e-09 0.0437" quat="1 -2.85511e-16 -9.64433e-17 6.12908e-16" mesh="sts3215_03a_v1" material="sts3215_03a_v1_material"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.0309827 -0.000199441 0.0474" quat="0.5 0.5 0.5 0.5" mesh="waveshare_mounting_plate_so101_v2" material="waveshare_mounting_plate_so101_v2_material"/>
+            <!-- Link shoulder -->
+            <body name="shoulder" pos="0.0388353 -8.97657e-09 0.0624" quat="3.56167e-16 1.22818e-15 -1 -4.14635e-16">
+                <joint axis="0 0 1" name="shoulder_pan" type="hinge" limited="true" range="-1.9198621771937616 1.9198621771937634" damping="0.60" frictionloss="0.052" armature="0.028"/>
+                <inertial pos="-0.0307604 -1.66727e-05 -0.0252713" mass="0.100006" fullinertia="8.3759e-05 8.10403e-05 2.39783e-05 7.55525e-08 -1.16342e-06 1.54663e-07"/>
+                <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.0303992 0.000422241 -0.0417" quat="0.5 0.5 0.5 -0.5" mesh="sts3215_03a_v1" material="sts3215_03a_v1_material"/>
+                <geom type="mesh" group="0" pos="-0.0303992 0.000422241 -0.0417" quat="0.5 0.5 0.5 -0.5" mesh="sts3215_03a_v1" name="shoulder_servo_collision"/>
+                <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.0675992 -0.000177759 0.0158499" quat="0.5 0.5 -0.5 0.5" mesh="motor_holder_so101_base_v1" material="motor_holder_so101_base_v1_material"/>
+                <geom type="mesh" group="0" pos="-0.0675992 -0.000177759 0.0158499" quat="0.5 0.5 -0.5 0.5" mesh="motor_holder_so101_base_v1" name="shoulder_motor_holder_collision"/>
+                <geom type="mesh" contype="0" conaffinity="0" group="1" pos="0.0122008 2.22413e-05 0.0464" quat="0.707107 -0.707107 -0 8.3163e-34" mesh="rotation_pitch_so101_v1" material="rotation_pitch_so101_v1_material"/>
+                <geom type="mesh" group="0" pos="0.0122008 2.22413e-05 0.0464" quat="0.707107 -0.707107 -0 8.3163e-34" mesh="rotation_pitch_so101_v1" name="shoulder_rotation_pitch_collision"/>
+                <!-- Link upper_arm -->
+                <body name="upper_arm" pos="-0.0303992 -0.0182778 -0.0542" quat="0.5 -0.5 -0.5 -0.5">
+                    <joint axis="0 0 1" name="shoulder_lift" type="hinge" limited="true" range="-1.7453292519943224 1.7453292519943366" damping="0.60" frictionloss="0.052" armature="0.028"/>
+                    <inertial pos="-0.0898471 -0.00838224 0.0184089" mass="0.103" fullinertia="4.08002e-05 0.000147318 0.000142487 -1.97819e-05 -4.03016e-08 8.97326e-09"/>
+                    <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.11257 -0.0155 0.0187" quat="4.56308e-16 -0.707107 0.707107 -1.37383e-16" mesh="sts3215_03a_v1" material="sts3215_03a_v1_material"/>
+                    <geom type="mesh" group="0" pos="-0.11257 -0.0155 0.0187" quat="4.56308e-16 -0.707107 0.707107 -1.37383e-16" mesh="sts3215_03a_v1" name="upper_arm_servo_collision"/>
+                    <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.065085 0.012 0.0182" quat="0 1 0 0" mesh="upper_arm_so101_v1" material="upper_arm_so101_v1_material"/>
+                    <geom type="mesh" group="0" pos="-0.065085 0.012 0.0182" quat="0 1 0 0" mesh="upper_arm_so101_v1" name="upper_arm_collision"/>
+                    <!-- Link lower_arm -->
+                    <body name="lower_arm" pos="-0.11257 -0.028 1.73763e-16" quat="0.707107 -5.98613e-17 -2.58051e-17 0.707107">
+                        <!-- Note: 5-degree calibration offset applied to joint range (upstream) -->
+                        <joint axis="0 0 1" name="elbow_flex" type="hinge" limited="true" range="-1.69 1.69" damping="0.60" frictionloss="0.052" armature="0.028"/>
+                        <inertial pos="-0.0980701 0.00324376 0.0182831" mass="0.104" fullinertia="2.87438e-05 0.000159844 0.00014529 7.41152e-06 1.26409e-06 -4.90188e-08"/>
+                        <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.0648499 -0.032 0.0182" quat="0 1 0 0" mesh="under_arm_so101_v1" material="under_arm_so101_v1_material"/>
+                        <geom type="mesh" group="0" pos="-0.0648499 -0.032 0.0182" quat="0 1 0 0" mesh="under_arm_so101_v1" name="lower_arm_collision"/>
+                        <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.0648499 -0.032 0.018" quat="3.92687e-16 -1 -1.9186e-15 -6.38378e-16" mesh="motor_holder_so101_wrist_v1" material="motor_holder_so101_wrist_v1_material"/>
+                        <geom type="mesh" group="0" pos="-0.0648499 -0.032 0.018" quat="3.92687e-16 -1 -1.9186e-15 -6.38378e-16" mesh="motor_holder_so101_wrist_v1" name="lower_arm_motor_holder_collision"/>
+                        <geom type="mesh" contype="0" conaffinity="0" group="1" pos="-0.1224 0.0052 0.0187" quat="7.21645e-16 1.56949e-15 1 -3.33067e-16" mesh="sts3215_03a_v1" material="sts3215_03a_v1_material"/>
+                        <geom type="mesh" group="0" pos="-0.1224 0.0052 0.0187" quat="7.21645e-16 1.56949e-15 1 -3.33067e-16" mesh="sts3215_03a_v1" name="lower_arm_servo_collision"/>
+                        <!-- Link wrist -->
+                        <body name="wrist" pos="-0.1349 0.0052 3.62355e-17" quat="0.707107 9.58722e-16 -7.51313e-16 -0.707107">
+                            <joint axis="0 0 1" name="wrist_flex" type="hinge" limited="true" range="-1.6580628494556928 1.6580627293335335" damping="0.60" frictionloss="0.052" armature="0.028"/>
+                            <inertial pos="-0.000103312 -0.0386143 0.0281156" mass="0.079" fullinertia="3.68263e-05 2.5391e-05 2.1e-05 1.7893e-08 -5.28128e-08 3.6412e-06"/>
+                            <geom type="mesh" contype="0" conaffinity="0" group="1" pos="8.32667e-17 -0.0424 0.0306" quat="0.5 0.5 0.5 -0.5" mesh="sts3215_03a_no_horn_v1" material="sts3215_03a_no_horn_v1_material"/>
+                            <geom type="mesh" group="0" pos="8.32667e-17 -0.0424 0.0306" quat="0.5 0.5 0.5 -0.5" mesh="sts3215_03a_no_horn_v1" name="wrist_servo_collision"/>
+                            <geom type="mesh" contype="0" conaffinity="0" group="1" pos="0 -0.028 0.0181" quat="0.5 -0.5 -0.5 -0.5" mesh="wrist_roll_pitch_so101_v2" material="wrist_roll_pitch_so101_v2_material"/>
+                            <geom type="mesh" group="0" pos="0 -0.028 0.0181" quat="0.5 -0.5 -0.5 -0.5" mesh="wrist_roll_pitch_so101_v2" name="wrist_roll_pitch_collision"/>
+                            <!-- Terminal body: source "gripper" body renamed right_hand
+                                 (matches ManipulatorModel._eef_name). Jaw geoms, the
+                                 moving_jaw body, and the gripper actuator live in the
+                                 plan 02-02 gripper XML. -->
+                            <body name="right_hand" pos="5.55112e-17 -0.0611 0.0181" quat="0.0172091 -0.0172091 0.706897 0.706897">
+                                <joint axis="0 0 1" name="wrist_roll" type="hinge" limited="true" range="-2.7438472969992493 2.841206309382605" damping="0.60" frictionloss="0.052" armature="0.028"/>
+                                <inertial pos="0.000213627 0.000245138 -0.025187" mass="0.087" fullinertia="2.75087e-05 4.33657e-05 3.45059e-05 -3.35241e-07 -5.7352e-06 -5.17847e-08"/>
+                                <!-- This camera points out from the eef (starting pose from Panda; tuned in plan 02-04). -->
+                                <camera mode="fixed" name="eye_in_hand" pos="0.14 0 0.02" quat="0.664463 -0.241845 0.241845 -0.664463" fovy="75"/>
+                                <geom type="mesh" contype="0" conaffinity="0" group="1" pos="0.0077 0.0001 -0.0234" quat="0.707107 -0.707107 1.66015e-15 6.45094e-15" mesh="sts3215_03a_v1" material="sts3215_03a_v1_material"/>
+                                <geom type="mesh" group="0" pos="0.0077 0.0001 -0.0234" quat="0.707107 -0.707107 1.66015e-15 6.45094e-15" mesh="sts3215_03a_v1" name="right_hand_servo_collision"/>
+                                <!-- to add gripper -->
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+</mujoco>

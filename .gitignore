@@ -6,4 +6,5 @@ explorations/*
 .opencode/
 .github/
 **/.env
-LIBERO/
+**/__pycache__/
+**/.pytest_cache/
