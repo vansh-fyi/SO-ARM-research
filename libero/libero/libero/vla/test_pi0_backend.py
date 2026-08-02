@@ -142,3 +142,75 @@ def test_predict_returns_actions_from_infer_unchanged(fake_openpi_client):
 
     assert isinstance(result, np.ndarray)
     np.testing.assert_array_equal(result, expected_actions)
+
+
+def test_predict_reconnects_and_retries_on_connection_loss(fake_openpi_client):
+    """Test 4 (regression, 2026-07-26 L4 run): a transient connection drop is
+    retried transparently — a NEW WebsocketClientPolicy is constructed and the
+    same observation is re-sent — instead of crashing run_episode mid-suite
+    (observed live as ConnectionClosedError 1011 keepalive ping timeout on
+    episode 1's first inference)."""
+    _, _, mock_wcp_cls = fake_openpi_client
+    mod = _import_pi0_backend()
+
+    expected_actions = np.zeros((10, 7))
+    # First client: infer raises a retryable connection error.
+    first_client = mock.MagicMock(name="first_client")
+    first_client.infer.side_effect = ConnectionError("keepalive ping timeout")
+    # Second client (built by _reconnect): infer succeeds.
+    second_client = mock.MagicMock(name="second_client")
+    second_client.infer.return_value = {"actions": expected_actions}
+    mock_wcp_cls.side_effect = [first_client, second_client]
+
+    backend = mod.Pi0Backend(host="localhost", port=8000, retry_backoffs=(0,))
+    backend._wait_for_port = lambda timeout_s=30.0: True  # no real socket probe
+
+    fake_image = np.zeros((256, 256, 3), dtype=np.uint8)
+    result = backend.predict({"eye_in_hand": fake_image}, "pick up the black bowl")
+
+    np.testing.assert_array_equal(result, expected_actions)
+    assert mock_wcp_cls.call_count == 2  # original + reconnect
+    assert backend.client is second_client
+    assert first_client.infer.call_count == 1
+    assert second_client.infer.call_count == 1
+
+
+def test_predict_raises_runtime_error_after_exhausted_retries(fake_openpi_client):
+    """Test 5 (regression): when every attempt fails with a connection error,
+    predict() raises an actionable RuntimeError (pointing at the server log)
+    rather than leaking the raw websocket exception."""
+    _, _, mock_wcp_cls = fake_openpi_client
+    mod = _import_pi0_backend()
+
+    dead_client = mock.MagicMock(name="dead_client")
+    dead_client.infer.side_effect = ConnectionError("keepalive ping timeout")
+    mock_wcp_cls.side_effect = None
+    mock_wcp_cls.return_value = dead_client
+
+    backend = mod.Pi0Backend(host="localhost", port=8000, retry_backoffs=(0,))
+    backend._wait_for_port = lambda timeout_s=30.0: True
+
+    fake_image = np.zeros((256, 256, 3), dtype=np.uint8)
+    with pytest.raises(RuntimeError, match="serve_policy.log"):
+        backend.predict({"eye_in_hand": fake_image}, "pick up the black bowl")
+
+
+def test_predict_fails_fast_when_server_port_dead(fake_openpi_client):
+    """Test 6 (regression): if the port-liveness probe fails after a drop, the
+    error names a dead server process instead of blocking forever inside
+    WebsocketClientPolicy._wait_for_server()."""
+    _, _, mock_wcp_cls = fake_openpi_client
+    mod = _import_pi0_backend()
+
+    dead_client = mock.MagicMock(name="dead_client")
+    dead_client.infer.side_effect = ConnectionError("keepalive ping timeout")
+    mock_wcp_cls.return_value = dead_client
+
+    backend = mod.Pi0Backend(host="localhost", port=8000, retry_backoffs=(0,))
+    backend._wait_for_port = lambda timeout_s=30.0: False  # server died
+
+    fake_image = np.zeros((256, 256, 3), dtype=np.uint8)
+    with pytest.raises(RuntimeError, match="died"):
+        backend.predict({"eye_in_hand": fake_image}, "pick up the black bowl")
+    # No reconnect attempt was made past the dead-port check.
+    assert mock_wcp_cls.call_count == 1
