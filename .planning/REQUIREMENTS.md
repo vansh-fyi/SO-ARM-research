@@ -29,7 +29,7 @@ Requirements for initial research pipeline. Each maps to roadmap phases.
 - [x] **DATA-01**: Scripted demonstration collector records SOARM task completions to robomimic HDF5 format
 - [x] **DATA-02**: Recorded demonstrations replay deterministically via state-setting (not action playback)
 - [x] **DATA-03**: SOARM-specific action and observation normalization statistics are computed from the collected dataset
-- [ ] **DATA-04**: Teleoperation interface allows human-controlled SOARM demonstration recording
+- [x] **DATA-04**: Teleoperation interface allows human-controlled SOARM demonstration recording
 
 ### Spatial Awareness
 
@@ -97,7 +97,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DATA-01 | Phase 4 | Complete |
 | DATA-02 | Phase 4 | Complete |
 | DATA-03 | Phase 4 | Complete |
-| DATA-04 | Phase 4 | Pending |
+| DATA-04 | Phase 4 | Complete |
 | SPAT-01 | Phase 5 | Pending |
 | SPAT-02 | Phase 5 | Pending |
 | SPAT-03 | Phase 5 | Pending |

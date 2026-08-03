@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 04
-current_phase_name: Dataset Collection
-status: executing
-stopped_at: "Phase 4 UNBLOCKED: DATA-01 dataset now exists (120 demos, put_the_cream_cheese_in_the_bowl_demo.hdf5, commit 6ecd160). The 'vertical reach' finding was a misdiagnosis (corrected) — real cause was the bowl sitting in the arm's forward sweep corridor, causing a genuine collision; fixed by repositioning both objects + tightening Z_TOL. Proceeding to Wave 3 (04-03 replay verification)."
-last_updated: "2026-08-03T16:23:53.353Z"
+current_phase: 5
+current_phase_name: Spatial Awareness
+status: paused
+stopped_at: "Phase 4 UNBLOCKED. 04-02 fully resolved (commit `6ecd160`): DATA-01"
+last_updated: "2026-08-03T18:02:06.980Z"
 last_activity: 2026-08-03
-last_activity_desc: "04-02 resolved: repositioned put_the_cream_cheese_in_the_bowl.bddl's objects out of the arm's forward sweep corridor, tightened collector.py's Z_TOL, validated zero unwanted collisions across 20 episodes, ran the full 120-demo collection (78% success rate)"
+last_activity_desc: Phase 04 complete, transitioned to Phase 5
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 17
-  completed_plans: 16
-  percent: 50
+  completed_plans: 17
+  percent: 67
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 
 ## Current Position
 
-Phase: 04 (Dataset Collection) — EXECUTING (04-01/02/03/04 COMPLETE; 04-05 Tasks 1-2 of 3 done)
-Plan: 4.67 of 5 (04-01/02/03/04 done; 04-05 Task 1 [teleop.py, commit d2a607d] and Task 2 [test_schema_matches_across_sources, commit e165ca7] done and committed, plus a docs fix retargeting Task 3's stale instructions to the real cream_cheese/bowl task [commit 5e5d8ef]; 04-05 Task 3 — a real human-operated keyboard teleop session — is a blocking human-action checkpoint, NOT yet attempted)
+Phase: 5 of 3 (Spatial Awareness)
+Plan: Not started
 Status: PAUSED at 04-05 Task 3 (human-action checkpoint). Awaiting the user to run the corrected teleop command from 04-05-PLAN.md's Task 3 how-to-verify against `LIBERO/libero/libero/bddl_files/libero_goal/put_the_cream_cheese_in_the_bowl.bddl` and report the `demos written:` line + `verify_states_only` result. Do NOT mark 04-05 or Phase 4 complete until that checkpoint resolves.
-Last activity: 2026-08-03 — 04-05 Tasks 1-2 executed (keyboard-only teleop.py + cross-source schema test) and Task 3's plan instructions corrected for the D-07/D-08 retargeting; execution paused for the human teleop checkpoint.
+Last activity: 2026-08-03 — Phase 04 complete, transitioned to Phase 5
 
 Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 
@@ -39,7 +39,7 @@ Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 10
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -48,6 +48,7 @@ Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 02 | 5 | - | - |
+| 04 | 5 | - | - |
 
 **Recent Trend:**
 

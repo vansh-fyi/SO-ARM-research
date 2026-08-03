@@ -185,6 +185,6 @@ Plans:
 | 1. Colab Environment Setup | 4/4 | Complete   | 2026-07-09 |
 | 2. SOARM Robot Integration | 5/5 | Complete    | 2026-07-18 |
 | 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
-| 4. Dataset Collection | 5/5 | Complete   | 2026-08-03 |
+| 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
 | 5. Spatial Awareness | 0/TBD | Not started | - |
 | 6. Fine-Tuning & Evaluation | 0/TBD | Not started | - |
