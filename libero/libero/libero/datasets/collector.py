@@ -18,11 +18,38 @@ This module has two layers:
 The 8 phases: approach -> descend -> grasp -> lift -> transport -> place_descend
 -> release -> retreat -> done.
 
-Coordinate/tuning notes (empirically measured against the real SOARM env, per
-RESEARCH.md Open Question 1 — these are the tuned starting values, iterate here
-if a task's success rate is low):
-  * eef starts high (z~1.13); bowls sit on the table at z~0.97 (the ramekin
-    task's bowl at z~1.08); plates at z~0.97.
+RETARGETED (2026-08-03, D-07/D-08): the original 3 frozen bowl->plate
+``libero_spatial`` tasks are DROPPED (stock/faithful-84mm gripper can't grasp
+the 11cm bowl, and the plate place-target is out of reach). This module now
+targets ``libero_goal/put_the_cream_cheese_in_the_bowl.bddl`` — pick
+``cream_cheese_1`` (sub-84mm), place into ``akita_black_bowl_1`` (goal:
+``On(cream_cheese_1, akita_black_bowl_1)``). See ``TASK_BODY_MAP`` below for
+the per-task pick/place body-name wiring the old 3-task set never needed
+(all 3 old tasks happened to share identical body names).
+
+Coordinate/tuning notes (empirically measured against the real SOARM env for
+the retargeted cream_cheese/bowl task; table top at z=0.90, confirmed accurate
+and unchanged from the original bowl investigation):
+  * ``cream_cheese_1`` rests FLAT on the table (it does not tip — the asset is
+    already authored lying on its largest face): body origin settles at
+    z ~= 0.909, i.e. object top surface ~= 0.918 (half-thickness ~0.009 m; the
+    object's long/medium faces, ~8.1x4.3 cm, lie horizontal). eef starts at
+    z ~= 1.08 (not 1.13 — that was the old bowl task's start height).
+  * ``akita_black_bowl_1`` (place target, used passively/goal-only here) rests
+    at body origin z ~= 0.898 (same object/geometry as the old bowl tasks).
+  * KNOWN LIKELY BLOCKER (measured, not assumed): at the cream_cheese_region's
+    typical radial distance from the SOARM base (~0.35 m, well inside the
+    0.479 m max reach), driving the eef toward any z target well below the
+    table asymptotically bottoms out around eef z ~= 0.93-0.95 (confirmed
+    across multiple GRASP_Z_OFFSET values, a radius/bearing sweep at 0.30-0.47m,
+    and an OSC_POSITION-vs-OSC_POSE controller swap — none changed the floor
+    materially). That floor sits ~1-3 cm ABOVE the cream_cheese top surface
+    (0.918), so the gripper pads may never make contact. This is a SEPARATE,
+    previously-undocumented arm vertical-reach-depth limitation (independent
+    of the D-07 jaw-width fix and D-08's horizontal-reach check) — see
+    04-02-SUMMARY.md's "Resolution attempt" section for the full measurement
+    trail. `GRASP_Z_OFFSET` below is tuned to be as low as the floor allows;
+    it cannot compensate for a floor that never reaches the object.
   * Actions are OSC_POSE deltas in the controller's normalized [-1, 1] range
     (input_max/min), NOT raw metric offsets — so we apply a proportional gain
     ``KP_POS`` to the metric position error and clip to [-1, 1]. A ~0.05 m error
@@ -42,38 +69,54 @@ os.environ.setdefault("MUJOCO_GL", "glfw")
 # --- FSM tuning constants (empirically tuned starting values) ---------------
 OPEN_CMD = -1.0          # gripper action element: open jaw
 CLOSE_CMD = 1.0          # gripper action element: close jaw
-HOVER_HEIGHT = 0.12      # m above bowl/plate for approach/lift/transport/retreat
-GRASP_Z_OFFSET = 0.015   # m above the bowl body origin the jaw descends to
-PLACE_Z_OFFSET = 0.06    # m above the plate the bowl is released from
+HOVER_HEIGHT = 0.12      # m above object/place-target for approach/lift/transport/retreat
+GRASP_Z_OFFSET = 0.015   # m above the pick object's body origin the jaw descends to
+PLACE_Z_OFFSET = 0.06    # m above the place target the pick object is released from
 KP_POS = 25.0            # proportional gain: metric error (m) -> normalized action
 XY_TOL = 0.020           # m horizontal tolerance for phase transitions
 Z_TOL = 0.025            # m vertical tolerance for phase transitions
-GRASP_HOLD_STEPS = 20    # extra steps held at the bowl so the jaw finishes closing
-RELEASE_HOLD_STEPS = 10  # extra steps held above the plate so the jaw finishes opening
+GRASP_HOLD_STEPS = 20    # extra steps held at the object so the jaw finishes closing
+RELEASE_HOLD_STEPS = 10  # extra steps held above the place target so the jaw finishes opening
 
-# Phases in which the gripper is commanded CLOSED (holding the bowl).
+# Phases in which the gripper is commanded CLOSED (holding the picked object).
 _CLOSED_PHASES = ("grasp", "lift", "transport", "place_descend")
 
-# Corrected 3-task frozen list — copied verbatim from
-# explorations/soarm_sanity.py lines 65-69. The 02-01 candidate
-# ``next_to_the_plate`` was swapped out (bowl region 0.498 m > SOARM's 0.479 m
-# reach); do NOT reintroduce it.
+# RETARGETED (D-07/D-08, 2026-08-03): the original 3-task frozen bowl->plate
+# libero_spatial list is DROPPED (11cm bowl > 84mm faithful jaw; plate
+# place-target also out of the ~0.479m arm reach). Single sub-84mm in-reach
+# task: pick cream_cheese_1 (narrow face well under the 84mm jaw), place into
+# akita_black_bowl_1 (goal: On(cream_cheese_1, akita_black_bowl_1)). Both the
+# object-init region (~0.355m from base) and the place region (~0.29m from
+# base) sit inside the arm's 0.479m max reach -- reuses the same "table"
+# fixture/base offset already validated by the old 3 tasks.
 TASKS = [
-    "pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate.bddl",
-    "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate.bddl",
-    "pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate.bddl",
+    "put_the_cream_cheese_in_the_bowl.bddl",
 ]
+
+# Per-task pick/place MuJoCo body-name wiring. The old 3-task list never
+# needed this (all 3 shared identical body names: akita_black_bowl_1 /
+# plate_1), but the retargeted task uses different names for both roles, so
+# collect_task/collect_all must thread the correct pair through explicitly
+# rather than relying on run_scripted_episode's hardcoded defaults.
+TASK_BODY_MAP = {
+    "put_the_cream_cheese_in_the_bowl.bddl": {
+        "bowl_body": "cream_cheese_1",       # pick object (sub-84mm)
+        "plate_body": "akita_black_bowl_1",  # place target (goal container)
+    },
+}
 
 # This file lives at .../libero/libero/datasets/collector.py, so ".." resolves
 # to .../libero/libero, the sibling of bddl_files. (This project's convention
 # deliberately avoids get_libero_path — the local ~/.libero/config.yaml is stale
 # and points outside this repo; see soarm_sanity.py's hardcoded BDDL_DIR.)
+# RETARGETED: libero_goal (was libero_spatial) -- put_the_cream_cheese_in_the_bowl
+# lives in the libero_goal task suite.
 BDDL_DIR = os.path.normpath(
     os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "..",
         "bddl_files",
-        "libero_spatial",
+        "libero_goal",
     )
 )
 
@@ -162,8 +205,8 @@ def compute_waypoint_action(phase, eef_pos, bowl_pos, plate_pos, gripper_closed)
 
 def run_scripted_episode(
     env,
-    bowl_body="akita_black_bowl_1",
-    plate_body="plate_1",
+    bowl_body="cream_cheese_1",
+    plate_body="akita_black_bowl_1",
     max_steps=300,
     success_hold=10,
 ):
@@ -171,17 +214,22 @@ def run_scripted_episode(
 
     Reset is the CALLER's responsibility (mirrors ``vla/eval_loop.run_episode``'s
     contract inverted — here ``collect_task`` resets in a loop so it can count
-    attempts). Reads ground-truth bowl/plate positions off the env each step,
-    feeds them + the live eef position to ``compute_waypoint_action``, steps the
-    env, and tracks a robosuite-style ``task_completion_hold_count`` (success must
-    hold for ``success_hold`` consecutive steps) as the primary exit condition.
+    attempts). Reads ground-truth pick/place-target positions off the env each
+    step, feeds them + the live eef position to ``compute_waypoint_action``,
+    steps the env, and tracks a robosuite-style ``task_completion_hold_count``
+    (success must hold for ``success_hold`` consecutive steps) as the primary
+    exit condition.
 
     Args:
         env: a DataCollectionWrapper-wrapped SOARM env, freshly ``reset()`` by
             the caller. ``obj_body_id`` / ``sim`` / ``_check_success`` /
             ``_get_observations`` are reachable through robosuite's Wrapper proxy.
-        bowl_body (str): MuJoCo body name of the bowl to pick.
-        plate_body (str): MuJoCo body name of the target plate.
+        bowl_body (str): MuJoCo body name of the PICK object (param name kept
+            from the original bowl->plate tasks; defaults to the retargeted
+            task's pick object, ``cream_cheese_1`` — see ``TASK_BODY_MAP``).
+        plate_body (str): MuJoCo body name of the PLACE target (param name kept
+            from the original bowl->plate tasks; defaults to the retargeted
+            task's place target, ``akita_black_bowl_1``).
         max_steps (int): hard per-episode step cap (fail-safe against a stuck FSM).
         success_hold (int): consecutive ``_check_success()`` steps that latch a win.
 
@@ -248,8 +296,10 @@ def run_scripted_episode(
 def collect_task(
     bddl_file_name,
     hdf5_path,
-    target_successes=40,
-    max_attempts=200,
+    bowl_body="cream_cheese_1",
+    plate_body="akita_black_bowl_1",
+    target_successes=120,
+    max_attempts=300,
     tmp_directory=None,
 ):
     """Collect ``target_successes`` scripted demos for one task -> one HDF5.
@@ -262,6 +312,14 @@ def collect_task(
     Args:
         bddl_file_name (str): Path to the task's BDDL file (fail-loudly validated).
         hdf5_path (str): Output HDF5 path for this task's demos.
+        bowl_body (str): MuJoCo body name of the PICK object, threaded through to
+            ``run_scripted_episode`` (param name kept from the original bowl->plate
+            tasks). Defaults to the retargeted task's pick object; pass the
+            ``TASK_BODY_MAP`` entry explicitly for a given ``bddl_file_name``
+            rather than relying on this default when adding more tasks.
+        plate_body (str): MuJoCo body name of the PLACE target, threaded through
+            to ``run_scripted_episode`` (param name kept from the original
+            bowl->plate tasks). Defaults to the retargeted task's place target.
         target_successes (int): Stop once this many episodes succeed.
         max_attempts (int): Hard cap on reset attempts (T-04-02-01: prevents an
             unreachable target from looping forever — surfaces as a low return).
@@ -293,7 +351,7 @@ def collect_task(
         while successes < target_successes and attempts < max_attempts:
             env.reset()
             attempts += 1
-            if run_scripted_episode(env):
+            if run_scripted_episode(env, bowl_body=bowl_body, plate_body=plate_body):
                 successes += 1
     finally:
         env.close()
@@ -309,12 +367,19 @@ def collect_task(
     return written
 
 
-def collect_all(target_per_task=40, output_dir=None, max_attempts_per_task=200):
-    """Collect the full 3-task scripted dataset (the phase's primary DATA-01 output).
+def collect_all(target_per_task=120, output_dir=None, max_attempts_per_task=300):
+    """Collect the full (now single-task) scripted dataset — DATA-01's primary output.
+
+    RETARGETED (D-07/D-08): this used to loop over 3 frozen bowl->plate tasks
+    at ``target_per_task=40`` each (40x3=120 total, a 20% buffer over the 100+
+    requirement). With only 1 task now, ``target_per_task`` must absorb that
+    entire buffer itself (default raised to 120) so the "100+" requirement is
+    still met from a single task's HDF5 rather than silently undershooting it.
 
     Args:
-        target_per_task (int): Success target per task (D-04: ~40/task, 120 total,
-            a 20% buffer over the 100+ requirement).
+        target_per_task (int): Success target for the (single) task. Default 120
+            preserves the original 3-task total/buffer now that there is only
+            one task to collect from.
         output_dir (str | None): Where the per-task HDF5s land. Defaults to
             ``LIBERO/libero/datasets/soarm_spatial`` — NOT ``get_libero_path``
             (the local ~/.libero/config.yaml is stale; this project's convention
@@ -322,7 +387,7 @@ def collect_all(target_per_task=40, output_dir=None, max_attempts_per_task=200):
         max_attempts_per_task (int): Per-task hard attempt cap.
 
     Returns:
-        dict: {task_slug: demos_written} for the 3 frozen tasks.
+        dict: {task_slug: demos_written} for the (single) retargeted task.
     """
     if output_dir is None:
         output_dir = os.path.normpath(
@@ -341,9 +406,12 @@ def collect_all(target_per_task=40, output_dir=None, max_attempts_per_task=200):
         task_slug = task.replace(".bddl", "")
         hdf5_path = os.path.join(output_dir, f"{task_slug}_demo.hdf5")
         tmp_directory = os.path.join(output_dir, "tmp", task_slug)
+        body_names = TASK_BODY_MAP.get(task, {})
         count = collect_task(
             os.path.join(BDDL_DIR, task),
             hdf5_path,
+            bowl_body=body_names.get("bowl_body", "cream_cheese_1"),
+            plate_body=body_names.get("plate_body", "akita_black_bowl_1"),
             target_successes=target_per_task,
             max_attempts=max_attempts_per_task,
             tmp_directory=tmp_directory,
@@ -356,9 +424,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="SOARM scripted waypoint demo collector (Phase 4, DATA-01)."
     )
-    parser.add_argument("--target-per-task", type=int, default=40)
+    parser.add_argument("--target-per-task", type=int, default=120)
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--max-attempts-per-task", type=int, default=200)
+    parser.add_argument("--max-attempts-per-task", type=int, default=300)
     args = parser.parse_args()
 
     out = collect_all(

@@ -40,11 +40,15 @@ from libero.datasets.collector import (
     CLOSE_CMD,
     OPEN_CMD,
     TASKS,
+    TASK_BODY_MAP,
     BDDL_DIR,
 )
 
-# Reusable hand-picked positions (world frame, matching the real env geometry:
-# bowls sit on the table at z~0.97, plate at z~0.97, eef starts high at z~1.13).
+# Reusable hand-picked positions (world frame). BOWL/PLATE names here are
+# generic FSM-role placeholders (pick target / place target) for the pure
+# unit tests below, independent of which real task/body names are wired in
+# collect_task/collect_all — they do not need to match the retargeted
+# cream_cheese/bowl object geometry exactly, only exercise phase logic.
 BOWL = np.array([-0.075, 0.012, 0.97])
 PLATE = np.array([0.047, 0.198, 0.97])
 
@@ -126,28 +130,46 @@ def test_waypoint_retreat_above_plate_transitions_to_done():
     assert next_phase == "done"
 
 
-def test_tasks_constant_is_corrected_three_task_list():
-    assert len(TASKS) == 3
+def test_tasks_constant_is_retargeted_single_task_list():
+    # RETARGETED (D-07/D-08): the 3-task frozen bowl->plate list is dropped in
+    # favor of a single sub-84mm in-reach task (11cm bowl > 84mm faithful jaw;
+    # old plate place-target also out of reach). See collector.py module
+    # docstring + 04-02-SUMMARY.md for the full history.
+    assert len(TASKS) == 1
+    assert TASKS[0] == "put_the_cream_cheese_in_the_bowl.bddl"
+    # The old frozen bowl->plate tasks must NOT be present.
     joined = " ".join(TASKS)
-    assert "on_the_ramekin_and_place_it_on_the_plate" in joined
-    assert "table_center" in joined
-    assert "between_the_plate_and_the_ramekin" in joined
-    # The stale, out-of-reach task must NOT be present.
+    assert "on_the_ramekin_and_place_it_on_the_plate" not in joined
+    assert "table_center" not in joined
+    assert "between_the_plate_and_the_ramekin" not in joined
     assert "next_to_the_plate" not in joined
+
+
+def test_task_body_map_wires_correct_pick_place_bodies():
+    body_names = TASK_BODY_MAP[TASKS[0]]
+    assert body_names["bowl_body"] == "cream_cheese_1"
+    assert body_names["plate_body"] == "akita_black_bowl_1"
 
 
 # ----------------------------------------------------------------------------
 # Real (no-mock) local-sim integration tests — Task 2 acceptance.
 #
-# NOTE (blocker, see 04-02-SUMMARY.md "Blocker"): the SOARM gripper cannot
-# grasp/lift the akita_black_bowl — the arm's vertical reach bottoms out ~0.02 m
-# ABOVE the settled bowl rim, and the jaw opening (~0.03 m) is far smaller than
-# the bowl (~0.09 m). So no scripted (or learned — Phase 3 = 0%) policy reaches
-# On(bowl, plate) with the current robot. The first test proves the collector
-# PLUMBING is correct end-to-end (runs a real env, records, writes a valid HDF5);
-# the second encodes the TARGET behavior and is xfail'd against that blocker,
-# with the >=2 assertion preserved (NOT weakened) so it flips to xpass the day a
-# gripper/reach redesign makes grasping feasible.
+# NOTE (2nd blocker, see 04-02-SUMMARY.md "Resolution attempt" section, dated
+# 2026-08-03): the D-07 84mm faithful gripper DOES solve the original jaw-width
+# problem (cream_cheese_1's ~4.3cm grasp face is well within the 84mm stroke),
+# but empirical measurement found a SEPARATE, previously-undocumented
+# vertical-reach-DEPTH limitation: at the cream_cheese_region's radial distance
+# from the base (~0.35m, well inside the 0.479m max reach), the arm's eef
+# asymptotically bottoms out around z~0.93-0.95 regardless of GRASP_Z_OFFSET,
+# KP_POS, or even swapping OSC_POSE for OSC_POSITION — consistently ~1-3cm
+# ABOVE the object's actual top surface (z~0.918). A formal 20-attempt
+# validation batch (collect_task target_successes=8, max_attempts=20) reached
+# 0/20 successes. The first test proves the collector PLUMBING is correct
+# end-to-end (runs a real env, records, writes a valid HDF5); the second
+# encodes the TARGET behavior and is xfail'd against this new blocker, with
+# the >=2 assertion preserved (NOT weakened) so it flips to xpass the day an
+# arm-reach-depth fix (e.g. a base riser, or a different pick strategy) makes
+# grasping feasible.
 # ----------------------------------------------------------------------------
 
 
@@ -179,9 +201,11 @@ def test_collect_task_runs_end_to_end_and_writes_valid_hdf5(tmp_path):
 @pytest.mark.xfail(
     strict=False,
     reason=(
-        "BLOCKER: SOARM gripper cannot grasp/lift the akita_black_bowl (vertical "
-        "reach ~0.02m short of the settled bowl rim; jaw opening ~0.03m << bowl "
-        "~0.09m). No scripted trajectory reaches On(bowl,plate). See 04-02-SUMMARY.md."
+        "BLOCKER (2nd, post-D-07/D-08): SOARM arm's vertical reach at the "
+        "cream_cheese_region's radial distance (~0.35m) bottoms out ~1-3cm ABOVE "
+        "the object's top surface, independent of the 84mm gripper's jaw width "
+        "(already fixed by D-07). 0/20 successes in a formal validation batch. "
+        "See 04-02-SUMMARY.md 'Resolution attempt' section."
     ),
 )
 def test_run_scripted_episode_reaches_success_within_budget(tmp_path):
