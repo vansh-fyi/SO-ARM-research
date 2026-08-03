@@ -57,6 +57,17 @@ except Exception:
     verify_states_only = None
     verify_full_obs_regeneration = None
 
+try:
+    # teleop drives a keyboard-only human teleoperation loop against a real
+    # SOARM env (DATA-04, D-02) — same robosuite/MuJoCo sim-dependency risk
+    # as the modules above, PLUS an even narrower requirement: a real
+    # on-screen GLFW display (has_renderer=True), not just an offscreen
+    # renderer. Degrades gracefully in headless/Colab contexts.
+    from .teleop import run_teleop_episode, collect_teleop
+except Exception:
+    run_teleop_episode = None
+    collect_teleop = None
+
 # normalization is pure numpy (no sim dependency) — import UNCONDITIONALLY,
 # matching this module's own design note (it must always import cleanly for
 # the local no-sim pytest suite).
