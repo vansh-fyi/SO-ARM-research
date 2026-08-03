@@ -35,6 +35,16 @@
     <asset>
         <mesh name="soarm_clamp_left" file="soarm_parallel/clamp_1_visual.stl" scale="0.001 0.001 0.001"/>
         <mesh name="soarm_clamp_right" file="soarm_parallel/clamp_2_visual.stl" scale="0.001 0.001 0.001"/>
+        <!-- Fixed Main frame (roboninecom RB9.01.062.010) that bolts to the wrist and
+             houses the gear/racks holding the two clamps. VISUAL-ONLY (the physics is
+             the box jaws + slide joints below); it was previously omitted, which left the
+             clamps rendering with no connecting structure ("floating claws"). The CAD part
+             is in its own corner-origin frame; a cyclic-axis rotation (quat 0.5 0.5 0.5 0.5)
+             maps mesh X->local Y (jaw-travel/opening), mesh Y->local Z, mesh Z->local X
+             (mount-face normal / approach). Placement dialed in via offscreen render so the
+             frame sits at the wrist mount and bridges to the jaws. -->
+        <mesh name="soarm_main_frame" file="soarm_parallel/main_frame_visual.stl" scale="0.001 0.001 0.001"/>
+        <material name="soarm_frame_material" rgba="0.55 0.57 0.6 1"/>
         <material name="soarm_jaw_material" rgba="0.75 0.78 0.8 1"/>
     </asset>
     <actuator>
@@ -47,6 +57,8 @@
     <worldbody>
         <body name="right_gripper" pos="0 0 0" quat="1 0 0 0">
             <site name="ft_frame" pos="0 0 0" size="0.01 0.01 0.01" rgba="1 0 0 1" type="sphere" group="1"/>
+            <!-- Fixed Main frame visual (bolts to wrist, houses gear/racks). See asset note. -->
+            <geom type="mesh" mesh="soarm_main_frame" material="soarm_frame_material" contype="0" conaffinity="0" group="1" pos="-0.015 -0.064 -0.02975" quat="0.5 0.5 0.5 0.5" name="main_frame_visual"/>
             <!-- Mount/base share of the assembly mass (~0.17 kg total; the two
                  jaws carry the rest). -->
             <inertial pos="0 0 -0.03" mass="0.07" diaginertia="6e-05 6e-05 4e-05"/>
