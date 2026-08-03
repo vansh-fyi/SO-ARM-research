@@ -5,10 +5,10 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Dataset Collection
 status: executing
-stopped_at: "Phase 4 STILL blocked: D-07/D-08 task retargeting executed (cream_cheese_1/akita_black_bowl_1, commit 5675163), but empirical validation found a NEW vertical-reach-depth blocker (0/20 successes). DATA-01 dataset not yet produced. Awaiting a fresh Rule-4 decision from the user (pedestal/riser, elevated-object task, state-injection synthesis, or descope) before Phase 4 collection can resume."
-last_updated: "2026-08-03T11:06:39.902Z"
+stopped_at: "Phase 4 UNBLOCKED: DATA-01 dataset now exists (120 demos, put_the_cream_cheese_in_the_bowl_demo.hdf5, commit 6ecd160). The 'vertical reach' finding was a misdiagnosis (corrected) — real cause was the bowl sitting in the arm's forward sweep corridor, causing a genuine collision; fixed by repositioning both objects + tightening Z_TOL. Proceeding to Wave 3 (04-03 replay verification)."
+last_updated: "2026-08-03T12:20:00.000Z"
 last_activity: 2026-08-03
-last_activity_desc: 04-02 task retargeting executed (cream_cheese_1/akita_black_bowl_1, D-07/D-08) and committed; empirical validation found a NEW vertical-reach-depth blocker (0/20 successes) — DATA-01 dataset still not produced, fresh Rule-4 decision needed
+last_activity_desc: 04-02 resolved — corrected a misdiagnosed 'vertical reach/torque' blocker (actually a bowl-in-corridor collision), repositioned the BDDL, fixed a separate Z_TOL bug, and ran the full collection: 120 demos produced, DATA-01 complete
 progress:
   total_phases: 6
   completed_phases: 3
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 
 ## Current Position
 
-Phase: 04 (Dataset Collection) — EXECUTING (BLOCKED mid-Wave-2 on a SECOND embodiment finding)
-Plan: 2 of 5 (04-01 done; 04-02 collector retargeted to cream_cheese_1/akita_black_bowl_1 per D-07/D-08 and committed [5675163], but the real COLLECTION still did not produce demos — a NEW vertical-reach-depth blocker was found empirically [0/20 validation]; 04-03/04/05 pending)
-Status: Blocked — awaiting a fresh Rule-4 decision from the user (pedestal/riser to reduce required vertical excursion, an elevated-object task, state-injection demo synthesis, or DATA-01 descope). See 04-02-SUMMARY.md "Resolution attempt (2026-08-03)" for the full measurement trail and options.
-Last activity: 2026-08-03 — task retargeting (D-07/D-08) executed and committed; empirical validation found the arm's vertical reach cannot reach table-resting-object height at any tested radius (0.29-0.47m), independent of the (already-fixed) jaw width
+Phase: 04 (Dataset Collection) — EXECUTING (Wave 2 / 04-02 now COMPLETE)
+Plan: 2 of 5 done (04-01 done; 04-02 retargeted to cream_cheese_1/akita_black_bowl_1 per D-07/D-08, corrected a misdiagnosed vertical-reach blocker [real cause: bowl-in-corridor collision], fixed, and ran the full collection — 120 demos produced, DATA-01 complete; 04-03/04/05 pending)
+Status: Unblocked — proceeding to Wave 3 (04-03 replay verification), then Wave 4 (04-04 normalization, 04-05 teleop).
+Last activity: 2026-08-03 — 04-02 resolved: repositioned put_the_cream_cheese_in_the_bowl.bddl's objects out of the arm's forward sweep corridor, tightened collector.py's Z_TOL, validated zero unwanted collisions across 20 episodes, ran the full 120-demo collection (78% success rate)
 
 Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 
@@ -107,9 +107,8 @@ None yet.
 - Phase 5 research flag: Spatial VLA input representation (multi-camera RGB vs RGB+depth vs auxiliary 3D annotations) is an open question — study SpatialVLA, VEGA, cVLA before committing
 - Colab delivery mechanism (260802-ijb/itm): now GitHub-clone + getpass() token prompt, replacing the old Drive-zip delivery. **Unproven on a live Colab run as of 2026-08-02** — the prior notebook edits this session were pushed but not yet re-tested end-to-end. **User's explicit fallback: if this doesn't work, revert to the Drive-zip method** (drive.mount() + unzip SoARM-Research-colab.zip, which was working reliably through all of Phase 3). Don't treat this fallback as a last resort to avoid — if the GitHub/getpass approach hits friction on the next real run, ask the user whether to debug it further or just revert, rather than assuming it must be pushed through.
 - 04-02 BLOCKER (RESOLVED in direction, 2026-08-03): SOARM stock gripper couldn't grasp any LIBERO object (jaw ~2-3cm << all objects; ~90 grasp trials 0 successes). RESOLUTION (locked D-07/D-08): upgraded to roboninecom 84mm parallel gripper (faithful, committed ad0b0d0) + retarget to a sub-84mm in-reach object. A second embodiment limit surfaced: the arm's ~0.45m reach can't reach the bowl→plate place-target (~0.5m) — handled by choosing/authoring an in-reach task. See 04-CONTEXT.md ⚠ AMENDMENT + Session Continuity resume sequence.
-- 04 SPEND BLOCKER (active, 2026-08-03): the remaining sim work (author+validate the sub-84mm in-reach task, then run the 100+-demo collection, then Waves 3-4) hit the monthly spend limit — two executor/spike agents failed with "You've hit your monthly spend limit". Blocked until the limit is raised/reset. State is clean + fully resumable per Session Continuity.
-- 04 embodiment note for Phase 5/6: SO-ARM101 is a small ~500g-payload desktop arm; task layouts must keep objects AND targets within ~0.45m reach, and objects <=84mm to be graspable. This constrains Phase 5 spatial-task authoring too.
-- 04 BLOCKER (2026-08-03, NEW - supersedes the resolved jaw-width blocker): scripted collector retargeted to cream_cheese_1/akita_black_bowl_1 (D-07/D-08 executed, commit 5675163), but the SOARM arm's vertical reach cannot bring the gripper down to table-resting-object height (~0.90-0.92m world z) at any reachable radius tested (0.29-0.47m) while holding top-down orientation - a torque/kinematic limit (STS3215 +/-2.94Nm/joint), not a jaw-width problem. 0/20 in a formal validation batch (collect_task target_successes=8 max_attempts=20). DATA-01 (100+ demo dataset) still not producible via the current scripted FSM + this arm. See 04-02-SUMMARY.md 'Resolution attempt (2026-08-03)' for the full measurement trail + options for the user.
+- 04 embodiment note for Phase 5/6: SO-ARM101 is a small ~500g-payload desktop arm; task layouts must keep objects AND targets within ~0.45m reach, objects <=84mm to be graspable, AND avoid placing objects on the base's forward centerline (y~0 close to the base) — the arm's own forearm sweeps through that corridor and will collide with anything sitting there. This constrains Phase 5 spatial-task authoring too.
+- 04-02 RESOLVED (2026-08-03, commit 6ecd160): a "vertical reach / torque-saturation" finding was misdiagnosed earlier the same day (see 04-02-SUMMARY.md history) — user pushback prompted a re-investigation (direct actuator-torque telemetry + MuJoCo contact inspection) that found the real cause was akita_black_bowl_1 sitting in the arm's forward sweep corridor, causing a genuine collision, not a hardware limit. Fixed by repositioning both objects + tightening collector.py's Z_TOL (a separate real bug). DATA-01 dataset now exists: 120 demos at LIBERO/libero/datasets/soarm_spatial/put_the_cream_cheese_in_the_bowl_demo.hdf5. **Lesson for future embodiment-limit claims: always check actuator_force/qfrc_bias against ctrlrange AND sim.data.contact before concluding a hardware/torque ceiling — a "stuck" eef is very often a collision, not saturation.**
 
 ### Quick Tasks Completed
 
@@ -135,41 +134,30 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-03T11:06:39.897Z
-Stopped at: Phase 4 STILL blocked: D-07/D-08 task retargeting executed (cream_cheese_1/akita_black_bowl_1, commit 5675163), but empirical validation found a NEW vertical-reach-depth blocker (0/20 successes). DATA-01 dataset not yet produced. Awaiting a fresh Rule-4 decision from the user (pedestal/riser, elevated-object task, state-injection synthesis, or descope) before Phase 4 collection can resume.
+Last session: 2026-08-03T12:20:00.000Z
+Stopped at: Phase 4 UNBLOCKED. 04-02 fully resolved (commit `6ecd160`): DATA-01
+dataset exists (120 demos). Ready to proceed to Wave 3 (04-03 replay
+verification) and Wave 4 (04-04 normalization, 04-05 teleop).
 
-RESUME SEQUENCE (next session — the D-07/D-08 retargeting work below is DONE;
-what remains is a NEW Rule-4 decision, not more autonomous tuning):
+RESUME SEQUENCE (next session, if execution is interrupted before Waves 3-4 finish):
 
-  1. Read `.planning/phases/04-dataset-collection/04-02-SUMMARY.md`'s
-     "Resolution attempt (2026-08-03)" section (full measurement trail: 3
-     GRASP_Z_OFFSET candidates, a radius/bearing sweep, an OSC_POSE vs
-     OSC_POSITION controller comparison, and a formal 20-attempt validation
-     batch — all converge on the same conclusion, 0/20 successes) plus
-     04-CONTEXT.md's ⚠ AMENDMENT (D-07/D-08, now executed) for background.
-  2. DONE (commit `5675163`): gripper (D-07, faithful 84mm, commit `ad0b0d0`)
-     and task retargeting (D-08: `libero_goal/put_the_cream_cheese_in_the_bowl.bddl`,
-     pick `cream_cheese_1` / place `akita_black_bowl_1`) are both executed and
-     committed. `collector.py`'s `TASK_BODY_MAP` wires the new body names
-     through; `target_per_task` raised 40->120 to preserve the 100+ buffer
-     now that there is only 1 task.
-  3. NEW FINDING (not auto-fixable — Rule 4): the arm's vertical reach cannot
-     bring the gripper down to table-resting-object height (~0.90-0.92m
-     world z) at ANY reachable radius tested (0.29-0.47m) while holding a
-     top-down orientation. This is independent of the (already-fixed) jaw
-     width. A user decision is needed before more autonomous FSM tuning is
-     attempted — see the SUMMARY's "Options for the user": (a) pedestal/riser
-     to reduce required vertical excursion (reopens Phase 2's "no pedestal"
-     D-04), (b) an elevated-object task/region instead of table-flush, (c)
-     state-injection demo synthesis (bypass physical grasp), or (d) descope
-     DATA-01's physical-grasp requirement.
-  4. Once a direction is chosen: re-tune `collector.py`'s clearance constants
-     for that new approach, re-validate on a small batch (foreground sim, NO
-     detached/background MuJoCo processes — a prior agent orphaned a runaway
-     proc during this exact investigation; also mind the macOS git
-     case-collision trap: stage lowercase `libero/...` paths, verify with
-     `git diff HEAD`), then run the real 100+-demo collection into
-     `LIBERO/libero/datasets/soarm_spatial/`. Then proceed to Wave 3 (04-03
-     replay, 04-04 normalization) and Wave 4 (04-05 teleop — human checkpoint).
-  NOTE: run Phase 4 with worktrees DISABLED (sequential on main tree) — the dataset is gitignored and must persist across plans.
+  1. Read `.planning/phases/04-dataset-collection/04-02-SUMMARY.md`'s final
+     "Update (2026-08-03) — RESOLVED" section for the full fix history
+     (gripper upgrade D-07, task retargeting D-08, a misdiagnosed-then-corrected
+     vertical-reach claim, and the actual fix: repositioning objects out of
+     the arm's forward corridor + a Z_TOL bug fix).
+  2. DONE: gripper (D-07, faithful 84mm, commit `ad0b0d0`), task retargeting
+     (D-08, commit `5675163`), and the collision fix + full collection
+     (commit `6ecd160`) are all executed, committed, and verified — 120 demos
+     at `LIBERO/libero/datasets/soarm_spatial/put_the_cream_cheese_in_the_bowl_demo.hdf5`.
+  3. Check whether 04-03/04-04/04-05 have SUMMARY.md files yet — if not,
+     resume `/gsd-execute-phase 4` to continue Wave 3 (04-03 replay
+     verification) then Wave 4 (04-04 normalization, 04-05 teleop — human
+     checkpoint). Note: 04-05's Task 3 was written against the old
+     table_center/bowl/plate task and needs its bddl path, output filename,
+     and instructions updated to point at the new
+     put_the_cream_cheese_in_the_bowl task before it can run (flagged during
+     the retargeting research, not yet fixed).
+  NOTE: continue running Phase 4 with worktrees DISABLED (sequential on main tree) — the dataset is gitignored and must persist across plans.
+  NOTE: if any future embodiment-limit claim looks physically implausible for hardware known to work in the real world, verify actuator_force/qfrc_bias against ctrlrange AND sim.data.contact before accepting a "hardware limit" conclusion — this exact investigation had two prior misdiagnoses that direct telemetry immediately refuted.
 Resume file: .planning/phases/04-dataset-collection/04-02-SUMMARY.md

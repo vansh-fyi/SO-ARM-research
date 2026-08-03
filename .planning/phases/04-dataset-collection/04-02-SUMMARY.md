@@ -40,14 +40,15 @@ key-decisions:
   - "Success-target integration test kept as xfail (assertion preserved, not weakened) against the grasp blocker, per plan guidance to surface rather than fake"
   - "(2026-08-03 resolution attempt) D-07/D-08 executed: retargeted collector.py to libero_goal/put_the_cream_cheese_in_the_bowl.bddl (cream_cheese_1 pick, akita_black_bowl_1 place) — this DID resolve the original jaw-width blocker (cream_cheese's ~4.3cm grasp face fits the 84mm jaw). A prior pass in this same session misdiagnosed the remaining failure as a 'vertical reach / torque-saturation' hardware limit — that diagnosis was WRONG (see 2026-08-03 correction below) and is superseded."
   - "(2026-08-03 CORRECTION) The 'torque-saturation floor' claim above does not hold: direct telemetry (actuator_force vs 2.94Nm ctrlrange) shows applied joint torques peak around ~0.3 Nm while stuck — nowhere near saturated. The real cause is a COLLISION: the gripper jaw/wrist/forearm contacts akita_black_bowl_1 (`gripper0_left_jaw_collision`, `robot0_lower_arm_servo_collision` vs `akita_black_bowl_1_g*` geoms) during any significant reach/descent motion, because the bowl sits close to the base (~0.29m, roughly straight ahead) — almost directly in the arm's natural forward-reach sweep corridor. Moving the pick object (cream_cheese) farther from the bowl did NOT clear the collision, confirming the obstruction is the bowl's OWN placement relative to the arm's sweep path, not proximity between the two task objects. This is a scene/BDDL clutter-and-placement issue, not an arm/gripper hardware limit — no pedestal, redesign, or DATA-01 descope is warranted. Next step: either reposition akita_black_bowl_1 (and/or cream_cheese_1) out of the base's direct corridor, or author a minimal clutter-free BDDL (dropping the unused wine_bottle/cabinet/stove/wine_rack fixtures from this libero_goal scene) with both objects placed clear of the corridor and of each other, then re-validate via the real phase-gated FSM (not ad hoc fixed-step probes, which don't reproduce the real phase-transition/convergence gating and can manufacture spurious collisions)."
+  - "(2026-08-03 RESOLVED, commit 6ecd160) Stripped unused wine_bottle/cabinet/stove/wine_rack clutter from put_the_cream_cheese_in_the_bowl.bddl and repositioned both akita_black_bowl_1 and cream_cheese_1 within the arm's empirically-measured reachable XY band, angularly/radially separated instead of both sitting on the base's forward centerline. Also found and fixed a separate real bug during validation: Z_TOL (0.025) was loose enough that the descend->grasp phase transitioned ~1.5cm above the true grasp point, so the jaw nudged rather than enclosed the object — tightened to 0.010. Validated via the real collect_task path with direct sim.data.contact inspection: zero jaw/forearm-vs-bowl collisions across 20 episodes (only the expected cream_cheese-vs-bowl contact during place). Full 120-demo collection run: 120/153 attempts (~78% success). DATA-01 dataset now exists at LIBERO/libero/datasets/soarm_spatial/put_the_cream_cheese_in_the_bowl_demo.hdf5."
 
-requirements-completed: []
-requirements-blocked: [DATA-01]
+requirements-completed: [DATA-01]
+requirements-blocked: []
 
 # Metrics
-duration: 70min (original) + ~65min (2026-08-03 retargeting + validation attempt)
+duration: 70min (original) + ~65min (2026-08-03 retargeting + misdiagnosis) + ~50min (2026-08-03 corrected fix + validation + full collection)
 completed: 2026-08-03
-status: blocked
+status: complete
 ---
 
 # Phase 4 Plan 02: Scripted Waypoint Collector Summary
@@ -328,7 +329,47 @@ section's "Options for the user"). Self-Check for this update: `collector.py`/
 `test_collector.py` changes FOUND on disk and in `git log` (commit `5675163`);
 full test suite re-run: 11 passed, 1 xfailed.
 
+## Update (2026-08-03) — RESOLVED: DATA-01 dataset now exists (commit `6ecd160`)
+
+The "second blocker" above was itself a misdiagnosis — see the "CORRECTION
+(2026-08-03, same day)" section for the full re-investigation (direct
+actuator-torque telemetry + MuJoCo contact inspection, prompted by user
+pushback on the physical plausibility of a torque-ceiling claim for an arm
+that's marketed specifically for tabletop pick-and-place). The real cause was
+`akita_black_bowl_1` sitting almost dead-ahead of the robot base, inside the
+arm's natural forward-reach sweep corridor, causing genuine jaw/forearm
+collisions — never a torque or reach limit.
+
+**Fix (commit `6ecd160`):** stripped the unused wine_bottle/cabinet/stove/
+wine_rack clutter from `put_the_cream_cheese_in_the_bowl.bddl` and
+repositioned both `akita_black_bowl_1` and `cream_cheese_1` within the arm's
+reachable XY band, angularly separated instead of both on the base's forward
+centerline. Also tightened `collector.py`'s `Z_TOL` (0.025 -> 0.010) after
+finding the descend->grasp phase transitioned ~1.5cm above the true grasp
+point, causing the jaw to nudge rather than enclose the object — a separate,
+real Rule-1 bug unrelated to the collision fix.
+
+**Validation:** real `collect_task` path with direct `sim.data.contact`
+inspection — zero jaw/forearm-vs-bowl collisions across 20 episodes (only the
+expected cream_cheese-vs-bowl contact during the intentional place phase);
+16/20 and 8/9 successes across two independent validation batches.
+
+**Full collection run:** 120 successes / 153 attempts (~78% success rate).
+Dataset written to
+`LIBERO/libero/datasets/soarm_spatial/put_the_cream_cheese_in_the_bowl_demo.hdf5`
+(`data.attrs['total'] == 120`, independently re-verified via a fresh h5py
+read), clearing DATA-01's 100+ demo requirement.
+
+**Test suite:** 12 passed (the previously `xfail`'d target-behavior test now
+passes for real). One pre-existing, unrelated `test_hdf5_writer.py` failure
+confirmed present before this session's changes (via `git stash` + re-run)
+and logged to `.planning/phases/04-dataset-collection/deferred-items.md`
+rather than fixed inline (out of scope for this task).
+
+**DATA-01 is now COMPLETE.** Plans 04-03 (replay verification), 04-04
+(normalization), and 04-05 (teleop) can proceed against this real dataset.
+
 ---
 *Phase: 04-dataset-collection*
-*Completed (blocked): 2026-08-03*
+*Completed: 2026-08-03*
 *Updated (still blocked — second finding): 2026-08-03*
