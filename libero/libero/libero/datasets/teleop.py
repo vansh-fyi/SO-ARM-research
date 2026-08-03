@@ -175,14 +175,19 @@ def collect_teleop(
         )
     os.makedirs(os.path.dirname(os.path.abspath(hdf5_path)), exist_ok=True)
 
-    # has_renderer=True: teleop requires a real on-screen GLFW viewer, unlike
-    # collector.py's headless scripted collection.
+    # has_renderer=True: teleop requires a real on-screen viewer, unlike
+    # collector.py's headless scripted collection. This installed robosuite
+    # version (native `mujoco` bindings, not `mujoco_py`) always constructs
+    # env.viewer as an OpenCVRenderer (see robosuite/environments/base.py),
+    # not the older GLFW-based MujocoPyRenderer some reference scripts assume.
     env = build_recording_env(bddl_file_name, tmp_directory, has_renderer=True)
 
+    # Keyboard's __init__ starts its own global pynput.keyboard.Listener
+    # immediately (see robosuite/devices/keyboard.py) — it does NOT need (and
+    # OpenCVRenderer does not support) per-key add_keypress_callback/
+    # add_keyup_callback/add_keyrepeat_callback wiring through env.viewer;
+    # that 3-callback pattern is specific to the older GLFW viewer.
     device = Keyboard(pos_sensitivity=pos_sensitivity, rot_sensitivity=rot_sensitivity)
-    env.viewer.add_keypress_callback("any", device.on_press)
-    env.viewer.add_keyup_callback("any", device.on_release)
-    env.viewer.add_keyrepeat_callback("any", device.on_press)
 
     print(
         "\n[teleop] Keyboard controls (robosuite defaults — this project makes "
