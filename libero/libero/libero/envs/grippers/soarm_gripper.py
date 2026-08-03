@@ -59,7 +59,7 @@ class SoarmGripper(GripperModel):
 
     @property
     def init_qpos(self):
-        return np.array([0.065, 0.065])  # both jaws fully open (130 mm total; see xml deviation note)
+        return np.array([0.042, 0.042])  # both jaws fully open (84 mm total; faithful roboninecom stroke)
 
     @property
     def speed(self):
