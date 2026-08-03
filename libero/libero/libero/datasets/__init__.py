@@ -56,3 +56,12 @@ try:
 except Exception:
     verify_states_only = None
     verify_full_obs_regeneration = None
+
+# normalization is pure numpy (no sim dependency) — import UNCONDITIONALLY,
+# matching this module's own design note (it must always import cleanly for
+# the local no-sim pytest suite).
+from .normalization import (
+    compute_norm_stats,
+    load_actions_and_proprio_from_hdf5,
+    write_dataset_statistics,
+)
