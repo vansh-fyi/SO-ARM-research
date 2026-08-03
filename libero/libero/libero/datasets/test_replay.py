@@ -44,7 +44,7 @@ import pytest
 
 from libero.datasets.raw_recorder import build_recording_env
 from libero.datasets.hdf5_writer import gather_demonstrations_as_hdf5
-from libero.datasets.replay import verify_states_only
+from libero.datasets.replay import verify_states_only, verify_full_obs_regeneration
 
 # Same task/BDDL used by test_hdf5_writer.py's synthetic-HDF5 plumbing tests —
 # any schema-valid HDF5 works for these corruption-detection tests,
@@ -111,3 +111,33 @@ def test_verify_states_only_raises_on_corrupt_state(tmp_path):
 
     with pytest.raises(AssertionError):
         verify_states_only(hdf5_path)
+
+
+# ----------------------------------------------------------------------------
+# Tier 2: verify_full_obs_regeneration
+# ----------------------------------------------------------------------------
+
+
+def test_verify_full_obs_regeneration_passes_on_04_02_output():
+    paths = sorted(glob.glob(_REAL_DATASET_GLOB))
+    if not paths:
+        pytest.skip("04-02's real collected dataset not present on disk")
+    for p in paths:
+        result = verify_full_obs_regeneration(p)
+        assert result["passed"] == result["sampled_states"]
+        # >=5 overall, and >=1/demo guaranteed structurally by
+        # verify_full_obs_regeneration's always-include-first-state rule.
+        assert result["sampled_states"] >= 5
+
+
+def test_verify_full_obs_regeneration_raises_on_corrupted_obs(tmp_path):
+    hdf5_path = _make_synthetic_hdf5(tmp_path)
+
+    # Directly mutate one pixel in the recorded agentview_rgb obs via h5py.
+    # (255 - v) != v for any integer v, so this always produces a divergence.
+    with h5py.File(hdf5_path, "r+") as f:
+        rgb = f["data"]["demo_1"]["obs"]["agentview_rgb"]
+        rgb[0, 0, 0, 0] = 255 - int(rgb[0, 0, 0, 0])
+
+    with pytest.raises(AssertionError):
+        verify_full_obs_regeneration(hdf5_path)

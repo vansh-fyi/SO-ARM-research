@@ -9,9 +9,10 @@ proves the round-trip:
   * ``verify_states_only`` — cheap, 100%-of-demos tier. No rendering: just
     ``sim.set_state_from_flattened`` + ``sim.forward()`` then re-read the
     flattened state back and compare to the recorded value.
-  * ``verify_full_obs_regeneration`` — expensive, sampled tier (added in
-    Task 2), default ~10% of states, minimum 5, always including at least the
-    first state of every demo.
+  * ``verify_full_obs_regeneration`` — expensive, sampled tier (default ~10%
+    of states, minimum 5, always including at least the first state of every
+    demo). Regenerates real image + proprio observations via
+    ``set_init_state`` and compares them against the recorded ``obs/`` arrays.
 
 Action-replay (``env.step(action)`` loops) is explicitly NOT used here — per
 LIBERO issue #16, MuJoCo's contact solver is not bit-deterministic under
@@ -21,6 +22,7 @@ Both entry points accept either a path string (opened/closed internally) or
 an already-open ``h5py.File``.
 """
 
+import math
 import os
 import re
 
@@ -32,6 +34,7 @@ import h5py
 import numpy as np
 
 from ..envs import OffScreenRenderEnv
+from .hdf5_writer import OBS_KEY_MAPPING
 
 _DEMO_RE = re.compile(r"^demo_(\d+)$")
 
@@ -123,6 +126,97 @@ def verify_states_only(hdf5_path):
             "total_states": total_states,
             "passed": passed,
         }
+    finally:
+        if env is not None:
+            env.close()
+        if should_close:
+            f.close()
+
+
+def _select_sample(demo_names, per_demo_lengths, sample_size):
+    """Deterministic sample: always include (demo, 0) for every demo, then
+    fill the remaining budget with an evenly-spaced deterministic sweep over
+    the rest of the (demo, step) universe (never a naive prefix, which would
+    skew toward the earliest demos)."""
+    must_include = [(d, 0) for d in demo_names if per_demo_lengths[d] > 0]
+    selected = list(must_include)
+    selected_set = set(selected)
+
+    remaining_budget = max(0, sample_size - len(selected))
+    if remaining_budget > 0:
+        pool = [
+            (d, i)
+            for d in demo_names
+            for i in range(per_demo_lengths[d])
+            if (d, i) not in selected_set
+        ]
+        if pool:
+            take = min(remaining_budget, len(pool))
+            stride = max(1, len(pool) // take)
+            selected.extend(pool[::stride][:take])
+
+    return selected
+
+
+def verify_full_obs_regeneration(hdf5_path, sample_size=None):
+    """Sampled, full observation-regeneration determinism check (D-06, tier 2).
+
+    Catches obs-extraction bugs the cheap states-only tier can't see (e.g. a
+    wrong OBS_KEY_MAPPING entry or a stale render). For each sampled
+    (demo, step): call ``set_init_state(recorded_state)`` (the same primitive
+    ``hdf5_writer.py`` used to build the dataset), rename via
+    ``OBS_KEY_MAPPING``, and assert exact equality against the recorded obs
+    array for all 4 keys.
+
+    Args:
+        hdf5_path (str | h5py.File): Dataset path, or an already-open file.
+        sample_size (int | None): Total number of (demo, step) samples to
+            check. Defaults to ``max(5, ceil(0.10 * total_states))``. The
+            first state of every demo is ALWAYS included regardless of
+            ``sample_size`` (>=1/demo guarantee), so the effective sample can
+            exceed a ``sample_size`` smaller than the demo count.
+
+    Returns:
+        dict: {"sampled_states": K, "passed": K}.
+
+    Raises:
+        AssertionError: on the first sampled state whose regenerated
+            observation diverges from the recorded one, naming
+            (demo_name, step_index, key).
+    """
+    f, should_close = _open_h5(hdf5_path)
+    env = None
+    try:
+        grp = f["data"]
+        bddl_file_name = grp.attrs["bddl_file_name"]
+        demo_names = _demo_names(grp)
+        per_demo_lengths = {d: grp[d]["states"].shape[0] for d in demo_names}
+        total_states = sum(per_demo_lengths.values())
+
+        if sample_size is None:
+            sample_size = max(5, math.ceil(0.10 * total_states))
+
+        selected = _select_sample(demo_names, per_demo_lengths, sample_size)
+
+        env = _build_env(bddl_file_name)
+
+        sampled = 0
+        passed = 0
+        for demo_name, step_index in selected:
+            sampled += 1
+            state = grp[demo_name]["states"][step_index]
+            obs = env.set_init_state(state)
+            for schema_key, robosuite_key in OBS_KEY_MAPPING.items():
+                recorded = grp[demo_name]["obs"][schema_key][step_index]
+                regenerated = obs[robosuite_key]
+                if not np.allclose(regenerated, recorded):
+                    raise AssertionError(
+                        "verify_full_obs_regeneration: mismatch in "
+                        f"({demo_name}, {step_index}, {schema_key})"
+                    )
+            passed += 1
+
+        return {"sampled_states": sampled, "passed": passed}
     finally:
         if env is not None:
             env.close()

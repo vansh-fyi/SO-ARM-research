@@ -48,3 +48,11 @@ except Exception:
     collect_task = None
     collect_all = None
     TASKS = None
+
+try:
+    # replay proves state-based determinism (DATA-02) against a real SOARM
+    # env, same robosuite/MuJoCo sim-dependency risk as the modules above.
+    from .replay import verify_states_only, verify_full_obs_regeneration
+except Exception:
+    verify_states_only = None
+    verify_full_obs_regeneration = None
