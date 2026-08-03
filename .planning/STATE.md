@@ -6,7 +6,7 @@ current_phase: 04
 current_phase_name: Dataset Collection
 status: executing
 stopped_at: "Phase 4 UNBLOCKED: DATA-01 dataset now exists (120 demos, put_the_cream_cheese_in_the_bowl_demo.hdf5, commit 6ecd160). The 'vertical reach' finding was a misdiagnosis (corrected) — real cause was the bowl sitting in the arm's forward sweep corridor, causing a genuine collision; fixed by repositioning both objects + tightening Z_TOL. Proceeding to Wave 3 (04-03 replay verification)."
-last_updated: "2026-08-03T16:15:49.195Z"
+last_updated: "2026-08-03T16:23:53.353Z"
 last_activity: 2026-08-03
 last_activity_desc: "04-02 resolved: repositioned put_the_cream_cheese_in_the_bowl.bddl's objects out of the arm's forward sweep corridor, tightened collector.py's Z_TOL, validated zero unwanted collisions across 20 episodes, ran the full 120-demo collection (78% success rate)"
 progress:
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 
 ## Current Position
 
-Phase: 04 (Dataset Collection) — EXECUTING (Wave 2 / 04-02 now COMPLETE)
-Plan: 4 of 5 done (04-01 done; 04-02 retargeted to cream_cheese_1/akita_black_bowl_1 per D-07/D-08, corrected a misdiagnosed vertical-reach blocker [real cause: bowl-in-corridor collision], fixed, and ran the full collection — 120 demos produced, DATA-01 complete; 04-03/04/05 pending)
-Status: Unblocked — proceeding to Wave 3 (04-03 replay verification), then Wave 4 (04-04 normalization, 04-05 teleop).
-Last activity: 2026-08-03 — 04-02 resolved: repositioned put_the_cream_cheese_in_the_bowl.bddl's objects out of the arm's forward sweep corridor, tightened collector.py's Z_TOL, validated zero unwanted collisions across 20 episodes, ran the full 120-demo collection (78% success rate)
+Phase: 04 (Dataset Collection) — EXECUTING (04-01/02/03/04 COMPLETE; 04-05 Tasks 1-2 of 3 done)
+Plan: 4.67 of 5 (04-01/02/03/04 done; 04-05 Task 1 [teleop.py, commit d2a607d] and Task 2 [test_schema_matches_across_sources, commit e165ca7] done and committed, plus a docs fix retargeting Task 3's stale instructions to the real cream_cheese/bowl task [commit 5e5d8ef]; 04-05 Task 3 — a real human-operated keyboard teleop session — is a blocking human-action checkpoint, NOT yet attempted)
+Status: PAUSED at 04-05 Task 3 (human-action checkpoint). Awaiting the user to run the corrected teleop command from 04-05-PLAN.md's Task 3 how-to-verify against `LIBERO/libero/libero/bddl_files/libero_goal/put_the_cream_cheese_in_the_bowl.bddl` and report the `demos written:` line + `verify_states_only` result. Do NOT mark 04-05 or Phase 4 complete until that checkpoint resolves.
+Last activity: 2026-08-03 — 04-05 Tasks 1-2 executed (keyboard-only teleop.py + cross-source schema test) and Task 3's plan instructions corrected for the D-07/D-08 retargeting; execution paused for the human teleop checkpoint.
 
 Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 
@@ -101,6 +101,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-03: verify_states_only (cheap, 100% demos) + verify_full_obs_regeneration (sampled ~10%, min 5, always >=1/demo) built directly on ControlEnv.set_state/set_init_state -- proven round-trip against 04-02's real 120-demo dataset (17457/17457 states, 1746/1746 sampled obs regenerations). DATA-02 complete.
 - [Phase 04]: 04-04: normalization.py computes OpenVLA q01/q99/mean/std/min/max stats purely in numpy, schema-matched to oft_backend.py's existing dataset_statistics.json overlay; ran against the real 04-02 dataset (17457 transitions, 120 trajectories) producing dataset_statistics.json. DATA-03 complete.
 - [Phase 04]: 04-04: corrected plan's stale 6-D proprio assumption (5 joints + 1 gripper DOF) to the real 7-D shape (5 joints + 2-DOF gripper) matching the D-07 84mm parallel-gripper upgrade's actual gripper_states shape -- same class of stale pre-upgrade assumption 04-03 already fixed.
+- [Phase 04]: 04-05: teleop.py (keyboard-only, D-02) + test_schema_matches_across_sources implemented and committed (d2a607d, e165ca7); Task 3's stale how-to-verify (old table_center bowl/plate task) corrected to the real put_the_cream_cheese_in_the_bowl task (5e5d8ef). Task 3 itself (real human-operated teleop session) is a blocking human-action checkpoint -- awaiting the user to run the corrected instructions.
 
 ### Pending Todos
 
@@ -114,6 +115,7 @@ None yet.
 - 04-02 BLOCKER (RESOLVED in direction, 2026-08-03): SOARM stock gripper couldn't grasp any LIBERO object (jaw ~2-3cm << all objects; ~90 grasp trials 0 successes). RESOLUTION (locked D-07/D-08): upgraded to roboninecom 84mm parallel gripper (faithful, committed ad0b0d0) + retarget to a sub-84mm in-reach object. A second embodiment limit surfaced: the arm's ~0.45m reach can't reach the bowl→plate place-target (~0.5m) — handled by choosing/authoring an in-reach task. See 04-CONTEXT.md ⚠ AMENDMENT + Session Continuity resume sequence.
 - 04 embodiment note for Phase 5/6: SO-ARM101 is a small ~500g-payload desktop arm; task layouts must keep objects AND targets within ~0.45m reach, objects <=84mm to be graspable, AND avoid placing objects on the base's forward centerline (y~0 close to the base) — the arm's own forearm sweeps through that corridor and will collide with anything sitting there. This constrains Phase 5 spatial-task authoring too.
 - 04-02 RESOLVED (2026-08-03, commit 6ecd160): a "vertical reach / torque-saturation" finding was misdiagnosed earlier the same day (see 04-02-SUMMARY.md history) — user pushback prompted a re-investigation (direct actuator-torque telemetry + MuJoCo contact inspection) that found the real cause was akita_black_bowl_1 sitting in the arm's forward sweep corridor, causing a genuine collision, not a hardware limit. Fixed by repositioning both objects + tightening collector.py's Z_TOL (a separate real bug). DATA-01 dataset now exists: 120 demos at LIBERO/libero/datasets/soarm_spatial/put_the_cream_cheese_in_the_bowl_demo.hdf5. **Lesson for future embodiment-limit claims: always check actuator_force/qfrc_bias against ctrlrange AND sim.data.contact before concluding a hardware/torque ceiling — a "stuck" eef is very often a collision, not saturation.**
+- 04-05 Task 3 AWAITING HUMAN ACTION: a real person must physically drive SOARM via keyboard (collect_teleop against LIBERO/libero/libero/bddl_files/libero_goal/put_the_cream_cheese_in_the_bowl.bddl) and report 'demos written:' + verify_states_only result. See 04-05-PLAN.md Task 3 how-to-verify for exact commands. Plan is NOT complete until this checkpoint resolves.
 
 ### Quick Tasks Completed
 
@@ -139,7 +141,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-03T16:14:51.073Z
+Last session: 2026-08-03T16:22:47.991Z
 Stopped at: Phase 4 UNBLOCKED. 04-02 fully resolved (commit `6ecd160`): DATA-01
 dataset exists (120 demos). Ready to proceed to Wave 3 (04-03 replay
 verification) and Wave 4 (04-04 normalization, 04-05 teleop).
