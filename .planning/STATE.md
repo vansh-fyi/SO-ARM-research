@@ -6,14 +6,14 @@ current_phase: 04
 current_phase_name: Dataset Collection
 status: executing
 stopped_at: "Phase 4 UNBLOCKED: DATA-01 dataset now exists (120 demos, put_the_cream_cheese_in_the_bowl_demo.hdf5, commit 6ecd160). The 'vertical reach' finding was a misdiagnosis (corrected) — real cause was the bowl sitting in the arm's forward sweep corridor, causing a genuine collision; fixed by repositioning both objects + tightening Z_TOL. Proceeding to Wave 3 (04-03 replay verification)."
-last_updated: "2026-08-03T12:46:17.676Z"
+last_updated: "2026-08-03T16:15:49.195Z"
 last_activity: 2026-08-03
 last_activity_desc: "04-02 resolved: repositioned put_the_cream_cheese_in_the_bowl.bddl's objects out of the arm's forward sweep corridor, tightened collector.py's Z_TOL, validated zero unwanted collisions across 20 episodes, ran the full 120-demo collection (78% success rate)"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
   percent: 50
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 ## Current Position
 
 Phase: 04 (Dataset Collection) — EXECUTING (Wave 2 / 04-02 now COMPLETE)
-Plan: 3 of 5 done (04-01 done; 04-02 retargeted to cream_cheese_1/akita_black_bowl_1 per D-07/D-08, corrected a misdiagnosed vertical-reach blocker [real cause: bowl-in-corridor collision], fixed, and ran the full collection — 120 demos produced, DATA-01 complete; 04-03/04/05 pending)
+Plan: 4 of 5 done (04-01 done; 04-02 retargeted to cream_cheese_1/akita_black_bowl_1 per D-07/D-08, corrected a misdiagnosed vertical-reach blocker [real cause: bowl-in-corridor collision], fixed, and ran the full collection — 120 demos produced, DATA-01 complete; 04-03/04/05 pending)
 Status: Unblocked — proceeding to Wave 3 (04-03 replay verification), then Wave 4 (04-04 normalization, 04-05 teleop).
 Last activity: 2026-08-03 — 04-02 resolved: repositioned put_the_cream_cheese_in_the_bowl.bddl's objects out of the arm's forward sweep corridor, tightened collector.py's Z_TOL, validated zero unwanted collisions across 20 episodes, ran the full 120-demo collection (78% success rate)
 
@@ -58,6 +58,7 @@ Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 | Phase 02 P02 | 10min | 3 tasks | 6 files |
 | Phase 02 P03 | 10min | 2 tasks | 0 files |
 | Phase 04 P03 | 35min | 3 tasks | 3 files |
+| Phase 04 P04 | 20min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-03: defensive optional-import guards (`except ImportError:`) must catch the real class of failure a broken-but-present dependency can raise (e.g. numpy ABI ValueError), not just literal absence — `except Exception` for cross-kernel package guards
 - [Phase ?]: 04 (2026-08-03) SECOND EMBODIMENT BLOCKER: D-07/D-08 task retargeting (cream_cheese_1/akita_black_bowl_1, libero_goal) executed+committed (5675163) - fixes the jaw-width problem, but arm vertical reach bottoms out ~1-3cm above the object's top surface at all reachable radii tested (0.29-0.47m), independent of GRASP_Z_OFFSET/KP_POS/controller-type. Formal validation: 0/20 successes. DATA-01 dataset still not produced; needs a fresh Rule-4 decision (pedestal/riser, elevated-object task, state-injection synthesis, or descope). See 04-02-SUMMARY.md Resolution attempt section.
 - [Phase 04]: 04-03: verify_states_only (cheap, 100% demos) + verify_full_obs_regeneration (sampled ~10%, min 5, always >=1/demo) built directly on ControlEnv.set_state/set_init_state -- proven round-trip against 04-02's real 120-demo dataset (17457/17457 states, 1746/1746 sampled obs regenerations). DATA-02 complete.
+- [Phase 04]: 04-04: normalization.py computes OpenVLA q01/q99/mean/std/min/max stats purely in numpy, schema-matched to oft_backend.py's existing dataset_statistics.json overlay; ran against the real 04-02 dataset (17457 transitions, 120 trajectories) producing dataset_statistics.json. DATA-03 complete.
+- [Phase 04]: 04-04: corrected plan's stale 6-D proprio assumption (5 joints + 1 gripper DOF) to the real 7-D shape (5 joints + 2-DOF gripper) matching the D-07 84mm parallel-gripper upgrade's actual gripper_states shape -- same class of stale pre-upgrade assumption 04-03 already fixed.
 
 ### Pending Todos
 
@@ -136,7 +139,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-03T12:45:05.536Z
+Last session: 2026-08-03T16:14:51.073Z
 Stopped at: Phase 4 UNBLOCKED. 04-02 fully resolved (commit `6ecd160`): DATA-01
 dataset exists (120 demos). Ready to proceed to Wave 3 (04-03 replay
 verification) and Wave 4 (04-04 normalization, 04-05 teleop).
