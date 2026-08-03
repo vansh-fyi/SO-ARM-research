@@ -38,7 +38,8 @@ key-decisions:
   - "Freeze the bowl reference once grasped — a live bowl+HOVER lift target chases the eef upward forever because the grasped bowl rises with the gripper"
   - "Gripper convention verified empirically: SoarmGripper -1 => open (qpos -0.17), +1 => closed (qpos 1.75)"
   - "Success-target integration test kept as xfail (assertion preserved, not weakened) against the grasp blocker, per plan guidance to surface rather than fake"
-  - "(2026-08-03 resolution attempt) D-07/D-08 executed: retargeted collector.py to libero_goal/put_the_cream_cheese_in_the_bowl.bddl (cream_cheese_1 pick, akita_black_bowl_1 place) — this DID resolve the original jaw-width blocker (cream_cheese's ~4.3cm grasp face fits the 84mm jaw), but empirical measurement found a SECOND, previously-undocumented embodiment limitation: the arm's vertical reach at this task's radial distance (~0.35m, well inside the 0.479m max reach) bottoms out ~1-3cm ABOVE the object's actual top surface, independent of GRASP_Z_OFFSET tuning, KP_POS, or controller type (OSC_POSE vs OSC_POSITION both tested). A formal 20-attempt validation batch reached 0/20 successes. DATA-01's 100+ demo dataset is STILL not produced. See the new 'Resolution attempt' section below for the full measurement trail and the Rule-4 decision this now requires."
+  - "(2026-08-03 resolution attempt) D-07/D-08 executed: retargeted collector.py to libero_goal/put_the_cream_cheese_in_the_bowl.bddl (cream_cheese_1 pick, akita_black_bowl_1 place) — this DID resolve the original jaw-width blocker (cream_cheese's ~4.3cm grasp face fits the 84mm jaw). A prior pass in this same session misdiagnosed the remaining failure as a 'vertical reach / torque-saturation' hardware limit — that diagnosis was WRONG (see 2026-08-03 correction below) and is superseded."
+  - "(2026-08-03 CORRECTION) The 'torque-saturation floor' claim above does not hold: direct telemetry (actuator_force vs 2.94Nm ctrlrange) shows applied joint torques peak around ~0.3 Nm while stuck — nowhere near saturated. The real cause is a COLLISION: the gripper jaw/wrist/forearm contacts akita_black_bowl_1 (`gripper0_left_jaw_collision`, `robot0_lower_arm_servo_collision` vs `akita_black_bowl_1_g*` geoms) during any significant reach/descent motion, because the bowl sits close to the base (~0.29m, roughly straight ahead) — almost directly in the arm's natural forward-reach sweep corridor. Moving the pick object (cream_cheese) farther from the bowl did NOT clear the collision, confirming the obstruction is the bowl's OWN placement relative to the arm's sweep path, not proximity between the two task objects. This is a scene/BDDL clutter-and-placement issue, not an arm/gripper hardware limit — no pedestal, redesign, or DATA-01 descope is warranted. Next step: either reposition akita_black_bowl_1 (and/or cream_cheese_1) out of the base's direct corridor, or author a minimal clutter-free BDDL (dropping the unused wine_bottle/cabinet/stove/wine_rack fixtures from this libero_goal scene) with both objects placed clear of the corridor and of each other, then re-validate via the real phase-gated FSM (not ad hoc fixed-step probes, which don't reproduce the real phase-transition/convergence gating and can manufacture spurious collisions)."
 
 requirements-completed: []
 requirements-blocked: [DATA-01]
@@ -165,6 +166,63 @@ not just `cream_cheese_1`.
 committed with the correct retargeted task, body-name wiring, and honestly
 xfail'd target-behavior test (commit `5675163`). No `soarm_spatial/*.hdf5`
 dataset exists yet — DATA-01 remains blocked pending a decision above.
+
+### CORRECTION (2026-08-03, same day) — the "vertical reach ceiling" above was a misdiagnosis
+
+The Conclusion above (torque/kinematic vertical-reach limit, Rule-4 architectural
+decision) does NOT hold up. User pushback prompted a direct re-investigation
+(diagnostic scripts run against the live env, not another full executor
+dispatch) that found:
+
+- **Applied joint torques while "stuck" are tiny** — `actuator_force` peaks
+  around 0.1-0.3 Nm against the ±2.94 Nm `ctrlrange` limit. Not saturated,
+  not even close. `qfrc_bias` (gravity/coriolis compensation needed) is
+  similarly well within budget. The "torque-saturation floor" claim in the
+  Conclusion above is **not supported by the actual controller telemetry**.
+- **Direct MuJoCo contact inspection during descent** shows
+  `gripper0_left_jaw_collision` and `robot0_lower_arm_servo_collision` in
+  persistent contact with `akita_black_bowl_1_g*` geoms — the arm's own jaw
+  and forearm are physically colliding with the bowl. The eef's motion
+  freezes at the exact z the executor reported (≈0.945-0.95) because that's
+  where the collision happens, not because of a reach/torque ceiling.
+  Re-tuning `GRASP_Z_OFFSET` never helped because it changes the *descent
+  target*, not the obstacle in the way.
+  Moving cream_cheese_1's region ~7cm further from the bowl (tested via a
+  scratch BDDL copy, not committed) did NOT clear the collision either — the
+  arm's own forearm still grazed the bowl while reaching past it, and the
+  eef never even converged in XY toward the new target during a hover-only
+  test (no contacts at all at that stage), confirming this is about the
+  **bowl's own placement relative to the arm's base**, not proximity between
+  the two task objects. `akita_black_bowl_1` sits at ~(-0.09, 0.01), only
+  ~0.29m from the base (-0.38, 0) at roughly y≈0 — nearly dead ahead in the
+  arm's natural forward-reach corridor — so the arm's mid/forearm links sweep
+  through/near it whenever reaching for anything positioned beyond it.
+- No joint was near its `jnt_range` limit in any of these tests (checked
+  directly), ruling out a kinematic joint-limit explanation too.
+
+**Corrected conclusion:** this is a scene-clutter / object-placement problem
+specific to `libero_goal/put_the_cream_cheese_in_the_bowl.bddl` (which also
+spawns unrelated wine_bottle/cabinet/stove/wine_rack fixtures packed into a
+small reachable area), not a fundamental SO-ARM101 hardware limitation. The
+arm has ample torque headroom and no joint-range constraint at the poses
+tested. **None of the 4 options in the (now superseded) Conclusion above are
+warranted** — no pedestal, no elevated-object redesign, no state-injection
+synthesis, no DATA-01 descope.
+
+**Corrected next step:** reposition `akita_black_bowl_1` (and/or
+`cream_cheese_1`) out of the base's direct forward corridor — or author a
+minimal, clutter-free 2-object BDDL (dropping the unused wine_bottle/cabinet/
+stove/wine_rack fixtures) with both objects placed clear of the corridor and
+of each other — then re-validate using the real phase-gated
+`run_scripted_episode`/`compute_waypoint_action` FSM (which correctly gates
+phase transitions on `_reached()` convergence) rather than an ad hoc
+fixed-step-count probe (used only for this diagnostic; it doesn't wait for
+XY convergence before descending and can manufacture a spurious collision
+that the real, properly-gated FSM might not hit). Add contact-checking
+(`sim.data.ncon` / `sim.data.contact`) as a standard part of grasp validation
+going forward, not just success/failure counting — it would have caught this
+immediately instead of chasing clearance-constant tuning that could never
+have fixed a collision problem.
 
 ---
 
