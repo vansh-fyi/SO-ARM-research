@@ -5,10 +5,10 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Dataset Collection
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-08-02T18:49:03.617Z"
-last_activity: 2026-08-02
-last_activity_desc: Phase 04 execution started
+stopped_at: Phase 4 PARKED mid-execution — gripper upgrade prerequisite (faithful 84mm locked); awaiting spend-limit clear + task authoring
+last_updated: "2026-08-03T00:00:00.000Z"
+last_activity: 2026-08-03
+last_activity_desc: Phase 04 parked — gripper upgraded to faithful 84mm; task retargeting locked (D-07/D-08)
 progress:
   total_phases: 6
   completed_phases: 3
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 
 ## Current Position
 
-Phase: 04 (Dataset Collection) — EXECUTING
-Plan: 2 of 5
-Status: Ready to execute
-Last activity: 2026-08-02 — Phase 04 execution started
+Phase: 04 (Dataset Collection) — EXECUTING (PARKED mid-Wave-2 on a gripper-upgrade prerequisite)
+Plan: 2 of 5 (04-01 done; 04-02 collector code done but COLLECTION blocked; 04-03/04/05 pending)
+Status: Parked — awaiting monthly spend-limit clear to author+validate the retargeted task, then resume
+Last activity: 2026-08-03 — gripper upgraded to faithful 84mm roboninecom parallel gripper; task retargeting locked
 
 Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 
@@ -65,6 +65,8 @@ Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- **04 (2026-08-03) GRIPPER UPGRADE (LOCKED, D-07):** Stock SOARM gripper (~2-3cm jaw) can't grasp ANY LIBERO object (smallest=butter 4cm; ~90 grasp trials, 0 successes — jaw-size limit, faithful to real hardware). Adopted the open-source roboninecom SO-ARM100/101 parallel gripper, modeled into `SoarmGripper` at the FAITHFUL 84mm stroke (jaws 0..0.042; committed ad0b0d0). 84mm is the practical ceiling for this arm (no wider ready-made gripper; arm payload ~500g) so the 11cm bowl is out of class. Arm unchanged; class name + -1=open/+1=closed contract preserved.
+- **04 (2026-08-03) TASK RETARGETING (LOCKED, D-08):** Dropped the 3 frozen bowl→plate tasks (bowl too big for 84mm jaw AND plate place-target ~0.5m beyond the arm's ~0.45m reach). Retarget to a sub-84mm object (can/box ~4-8cm) in a pick-place task with BOTH object-init and place-target within ~0.45m reach (author/modify a BDDL). Authoring+validation is spend-blocked; happens on resume.
 - Research: OpenVLA-OFT chosen as primary VLA (97.1% LIBERO avg, T4-compatible at 4-bit)
 - Research: SOARM MJCF to be derived from `so101_new_calib.xml`, not built from scratch
 - Research: Two separate Colab kernel groups needed (transformers version conflict between LIBERO training and VLA inference)
@@ -103,7 +105,9 @@ None yet.
 - Phase 2 research flag: SOARM robosuite 1.4 ManipulatorModel integration is novel — budget 1-2 days of iterative MJCF editing; reference TechLabs Aachen SO100+robosuite as prior art
 - Phase 5 research flag: Spatial VLA input representation (multi-camera RGB vs RGB+depth vs auxiliary 3D annotations) is an open question — study SpatialVLA, VEGA, cVLA before committing
 - Colab delivery mechanism (260802-ijb/itm): now GitHub-clone + getpass() token prompt, replacing the old Drive-zip delivery. **Unproven on a live Colab run as of 2026-08-02** — the prior notebook edits this session were pushed but not yet re-tested end-to-end. **User's explicit fallback: if this doesn't work, revert to the Drive-zip method** (drive.mount() + unzip SoARM-Research-colab.zip, which was working reliably through all of Phase 3). Don't treat this fallback as a last resort to avoid — if the GitHub/getpass approach hits friction on the next real run, ask the user whether to debug it further or just revert, rather than assuming it must be pushed through.
-- 04-02 BLOCKER (Rule 4): SOARM gripper cannot grasp/lift the akita_black_bowl (vertical reach ~0.02m short of settled bowl rim; jaw ~0.03m << bowl ~0.09m). Real 50-attempt run = 0 successes; ~5 grasp strategies fail. DATA-01 100+ demos unattainable with current robot. Collector code complete+tested. Needs decision: (a) redesign gripper+reach, (b) swap task set, (c) state-inject demos, (d) descope. 04-03/04/05 depend on this dataset.
+- 04-02 BLOCKER (RESOLVED in direction, 2026-08-03): SOARM stock gripper couldn't grasp any LIBERO object (jaw ~2-3cm << all objects; ~90 grasp trials 0 successes). RESOLUTION (locked D-07/D-08): upgraded to roboninecom 84mm parallel gripper (faithful, committed ad0b0d0) + retarget to a sub-84mm in-reach object. A second embodiment limit surfaced: the arm's ~0.45m reach can't reach the bowl→plate place-target (~0.5m) — handled by choosing/authoring an in-reach task. See 04-CONTEXT.md ⚠ AMENDMENT + Session Continuity resume sequence.
+- 04 SPEND BLOCKER (active, 2026-08-03): the remaining sim work (author+validate the sub-84mm in-reach task, then run the 100+-demo collection, then Waves 3-4) hit the monthly spend limit — two executor/spike agents failed with "You've hit your monthly spend limit". Blocked until the limit is raised/reset. State is clean + fully resumable per Session Continuity.
+- 04 embodiment note for Phase 5/6: SO-ARM101 is a small ~500g-payload desktop arm; task layouts must keep objects AND targets within ~0.45m reach, and objects <=84mm to be graspable. This constrains Phase 5 spatial-task authoring too.
 
 ### Quick Tasks Completed
 
@@ -129,6 +133,15 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-02T18:49:03.612Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-dataset-collection/04-CONTEXT.md
+Last session: 2026-08-03
+Stopped at: Phase 4 PARKED mid-Wave-2 on a gripper-upgrade prerequisite. Full arc: Wave 1 (04-01 recording infra + HDF5 writer) DONE + committed. Wave 2 (04-02) collector code DONE + committed, but the actual 100+-demo COLLECTION was BLOCKED — the stock SOARM gripper physically can't grasp any LIBERO object. User chose to upgrade to the roboninecom 84mm parallel gripper; a spike built + validated it (12/12 grasp+lift+place, commit ac1bfef) but at an unfaithful 130mm; then reverted to the FAITHFUL 84mm (commit ad0b0d0). Direction LOCKED (D-07 gripper, D-08 task retargeting). The remaining sim work (author+validate a sub-84mm in-reach task, then collect) is blocked by the monthly spend limit.
+
+RESUME SEQUENCE (next session — user will run `/gsd-execute-phase 4` once spend-limit clears; the orchestrator MUST do this prerequisite work first, do NOT blindly run the collection or skip 04-02):
+  1. Read this file + `.claude/projects/.../memory/soarm-gripper-embodiment-blocker.md` and `soarm-gripper-mjcf-modeling-notes.md` and 04-CONTEXT.md ⚠ AMENDMENT (D-07/D-08).
+  2. Pick a sub-84mm real LIBERO object the faithful 84mm jaw grasps (bowl 11cm is OUT; cans ~8cm / boxes / grocery items are IN).
+  3. Author or modify a BDDL so BOTH the object-init region AND the place-target sit within the arm's ~0.45m reach (LIBERO supports this; see custom_object_example.ipynb). Keep pick-place structure.
+  4. Validate grasp+lift+place with the FSM at faithful 84mm (foreground sim, NO detached/background processes — a prior agent orphaned a runaway MuJoCo proc; also mind the macOS git case-collision trap: stage lowercase `libero/...` paths, verify with `git diff HEAD`).
+  5. Retarget `LIBERO/libero/libero/datasets/collector.py` TASKS to the validated BDDL.
+  6. RE-RUN the 04-02 collection (100+ demos) — its existing SUMMARY documents the BLOCKER, not completion, so the dataset does not yet exist; collection must actually run. Then proceed to Wave 3 (04-03 replay, 04-04 normalization) and Wave 4 (04-05 teleop — human checkpoint).
+  NOTE: run Phase 4 with worktrees DISABLED (sequential on main tree) — the dataset is gitignored and must persist across plans.
+Resume file: .planning/phases/04-dataset-collection/04-CONTEXT.md (see ⚠ AMENDMENT)

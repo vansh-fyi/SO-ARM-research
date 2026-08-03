@@ -120,6 +120,7 @@ Plans:
 **Mode:** mvp
 **Depends on**: Phase 2 (can start in parallel with Phase 3)
 **Requirements**: DATA-01, DATA-02, DATA-03, DATA-04
+**⚠ In-execution amendment (2026-08-03):** the stock SOARM gripper can't grasp any LIBERO object (embodiment blocker). Gripper upgraded to the roboninecom **84mm parallel gripper** (faithful, committed `ad0b0d0`) and the target task retargeted off the bowl→plate tasks to a **sub-84mm object with pick+place both within the arm's ~0.45m reach**. See `04-CONTEXT.md` ⚠ AMENDMENT (D-07/D-08) + `STATE.md` Session Continuity for the resume sequence. Criterion 1 below now means 100+ demos of that retargeted task.
 **Success Criteria** (what must be TRUE):
 
   1. The scripted collector produces 100+ SOARM demonstrations stored in robomimic HDF5 format with image observations present

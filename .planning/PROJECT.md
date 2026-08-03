@@ -57,6 +57,8 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 | LIBERO as simulation framework | Already in repo, MuJoCo-based, has task suite infrastructure                  | — Pending |
 | Google Colab for compute       | GPU access without local hardware investment                                  | — Pending |
 | Simulation-only scope          | Derisk by validating pipeline in sim before physical robot                    | — Pending |
+| Upgrade SOARM gripper to roboninecom 84mm parallel gripper (Phase 4, 2026-08-03) | Stock ~2-3cm jaw physically can't grasp ANY LIBERO object (smallest 4cm); roboninecom is real/printable (STEP+STL), 120-150N, same STS3215 servo. Modeled faithfully at 84mm. Also a real hardware upgrade for the eventual physical arm. | ✓ Committed (ad0b0d0); sim re-validation on a sub-84mm task pending |
+| Retarget Phase 4 off the 3 frozen bowl→plate tasks to a sub-84mm in-reach pick-place task (2026-08-03) | Bowl (11cm) exceeds even the 84mm jaw AND the plate place-target (~0.5m) is beyond the arm's ~0.45m reach; a small object with both pick+place in-reach is completable | — Pending (task authoring spend-blocked) |
 
 ## Evolution
 
@@ -79,4 +81,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-07-18 after Phase 2 completion*
+*Last updated: 2026-08-03 — Phase 4 in progress; SOARM gripper upgraded to roboninecom 84mm parallel gripper (embodiment fix), Phase 4 task set retargeted to sub-84mm in-reach objects. Note for future phases: SO-ARM101 is a small ~500g-payload arm — tasks must keep objects (<=84mm) and targets within ~0.45m reach.*

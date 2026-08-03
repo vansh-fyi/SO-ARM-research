@@ -1,7 +1,8 @@
 # Phase 4: Dataset Collection - Context
 
 **Gathered:** 2026-08-02
-**Status:** Ready for planning
+**Status:** In execution — PARKED pending gripper-upgrade prerequisite (see ⚠ AMENDMENT below)
+**Amended:** 2026-08-03 (gripper upgrade + task retargeting locked)
 
 <domain>
 ## Phase Boundary
@@ -10,11 +11,26 @@ A scripted and teleoperated demonstration collection system that records SOARM t
 
 </domain>
 
+<amendment>
+## ⚠ AMENDMENT (2026-08-03) — Gripper upgrade + task retargeting (READ FIRST)
+
+Execution of Phase 4 hit a hard embodiment blocker that changes the robot and the target task. This amendment **supersedes** the stale bowl→plate references in the domain paragraph above and in D-01.
+
+**What happened:** The scripted collector code (D-01/D-05) is built and works, but the **stock SOARM gripper (~2–3 cm jaw) physically cannot grasp ANY LIBERO object** — the narrowest object across all suites is `butter` at 4.0 cm; bowls are 8–16 cm. Empirically confirmed (~90 grasp trials, 0 successes; attribution = jaw size). This is faithful to the small real stock gripper. Retargeting to a different LIBERO object cannot fix it, and LIBERO-PRO is an eval-perturbation suite, not a source of small graspable objects.
+
+**Locked decisions (user, 2026-08-03):**
+- **D-07 (Gripper upgrade — LOCKED):** Replace the stock gripper with the open-source **roboninecom SO-ARM100/101 parallel gripper** — real, printable (STEP + STL), 120–150 N grip, same Feetech STS3215 servo. Modeled into `SoarmGripper` at the **faithful 84 mm stroke** (both slide jaws `0..0.042`; committed `ad0b0d0`). The arm is unchanged; `SoarmGripper` class name + `-1=open/+1=closed` contract preserved. **84 mm is the practical ceiling for this arm** — no wider ready-made gripper exists and the arm payload is only ~500 g, so the 11 cm bowl is beyond this robot class. Target **sub-84 mm objects** (cans/boxes ~4–8 cm), NOT the bowl.
+- **D-08 (Task retargeting — LOCKED):** Drop the 3 frozen `libero_spatial` bowl→plate tasks. They fail on two independent counts: (a) the bowl is too big for the 84 mm jaw, and (b) the plate place-target sits ~0.5 m out, beyond the arm's ~0.45 m reach. Instead, use a **sub-84 mm object in a pick-place task whose object-init AND place-target both sit within the arm's ~0.45 m reach** — authoring or modifying a BDDL to place them in-reach (LIBERO's task system supports this; see `custom_object_example.ipynb`). Keep pick-place structure (feeds Phase 5 spatial variants).
+
+**Pending on resume (spend-blocked as of 2026-08-03):** (1) author + empirically validate the sub-84 mm in-reach task at the faithful 84 mm gripper (grasp+lift+place via the FSM); (2) retarget `collector.py`'s `TASKS` to that BDDL; (3) re-run the collection (04-02's collection step — its existing SUMMARY documents the BLOCKER, not completion, so the collection must actually run); (4) proceed to Waves 3–4. See `.claude/.../memory/soarm-gripper-embodiment-blocker.md` and `soarm-gripper-mjcf-modeling-notes.md` for full technical carry-forward, and STATE.md Session Continuity for the exact resume sequence.
+
+</amendment>
+
 <decisions>
 ## Implementation Decisions
 
 ### Scripted Demo Generation
-- **D-01:** How the scripted collector generates successful trajectories for the 3 frozen tasks (hand-coded waypoint/IK script vs. scripted + randomized noise/placement vs. VLA-rollout filtering) is **Claude's discretion** — research LIBERO's existing demo-generation conventions and SOARM's tuned kinematics (Phase 2) before choosing. Note: OFT/π0 currently sit at 0% zero-shot success on SOARM (Phase 3 baseline), so VLA-rollout filtering is unlikely to be viable without further work — a hand-coded or noise-augmented waypoint approach is the more realistic default unless research finds a fast fix.
+- **D-01:** *(Partially SUPERSEDED by D-07/D-08 in the amendment above — the "3 frozen bowl tasks" target is replaced by a sub-84 mm in-reach task; the hand-coded waypoint FSM approach itself was chosen and built, and is retained.)* How the scripted collector generates successful trajectories for the 3 frozen tasks (hand-coded waypoint/IK script vs. scripted + randomized noise/placement vs. VLA-rollout filtering) is **Claude's discretion** — research LIBERO's existing demo-generation conventions and SOARM's tuned kinematics (Phase 2) before choosing. Note: OFT/π0 currently sit at 0% zero-shot success on SOARM (Phase 3 baseline), so VLA-rollout filtering is unlikely to be viable without further work — a hand-coded or noise-augmented waypoint approach is the more realistic default unless research finds a fast fix.
 
 ### Teleoperation Interface
 - **D-02:** Prioritize **keyboard-only** input for the teleoperation interface (DATA-04). No SpaceMouse hardware dependency — reuses robosuite's existing keyboard `Device` class. SpaceMouse support is not required for this phase.
