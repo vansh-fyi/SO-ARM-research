@@ -5,10 +5,10 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Dataset Collection
 status: executing
-stopped_at: Phase 4 PARKED mid-execution — gripper upgrade prerequisite (faithful 84mm locked); awaiting spend-limit clear + task authoring
-last_updated: "2026-08-03T00:00:00.000Z"
+stopped_at: "Phase 4 STILL blocked: D-07/D-08 task retargeting executed (cream_cheese_1/akita_black_bowl_1, commit 5675163), but empirical validation found a NEW vertical-reach-depth blocker (0/20 successes). DATA-01 dataset not yet produced. Awaiting a fresh Rule-4 decision from the user (pedestal/riser, elevated-object task, state-injection synthesis, or descope) before Phase 4 collection can resume."
+last_updated: "2026-08-03T11:06:39.902Z"
 last_activity: 2026-08-03
-last_activity_desc: Phase 04 parked — gripper upgraded to faithful 84mm; task retargeting locked (D-07/D-08)
+last_activity_desc: 04-02 task retargeting executed (cream_cheese_1/akita_black_bowl_1, D-07/D-08) and committed; empirical validation found a NEW vertical-reach-depth blocker (0/20 successes) — DATA-01 dataset still not produced, fresh Rule-4 decision needed
 progress:
   total_phases: 6
   completed_phases: 3
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-07)
 
 ## Current Position
 
-Phase: 04 (Dataset Collection) — EXECUTING (PARKED mid-Wave-2 on a gripper-upgrade prerequisite)
-Plan: 2 of 5 (04-01 done; 04-02 collector code done but COLLECTION blocked; 04-03/04/05 pending)
-Status: Parked — awaiting monthly spend-limit clear to author+validate the retargeted task, then resume
-Last activity: 2026-08-03 — gripper upgraded to faithful 84mm roboninecom parallel gripper; task retargeting locked
+Phase: 04 (Dataset Collection) — EXECUTING (BLOCKED mid-Wave-2 on a SECOND embodiment finding)
+Plan: 2 of 5 (04-01 done; 04-02 collector retargeted to cream_cheese_1/akita_black_bowl_1 per D-07/D-08 and committed [5675163], but the real COLLECTION still did not produce demos — a NEW vertical-reach-depth blocker was found empirically [0/20 validation]; 04-03/04/05 pending)
+Status: Blocked — awaiting a fresh Rule-4 decision from the user (pedestal/riser to reduce required vertical excursion, an elevated-object task, state-injection demo synthesis, or DATA-01 descope). See 04-02-SUMMARY.md "Resolution attempt (2026-08-03)" for the full measurement trail and options.
+Last activity: 2026-08-03 — task retargeting (D-07/D-08) executed and committed; empirical validation found the arm's vertical reach cannot reach table-resting-object height at any tested radius (0.29-0.47m), independent of the (already-fixed) jaw width
 
 Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 
@@ -95,6 +95,7 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-03: never route large (multi-GB) gsutil/GCS downloads through a Google Drive FUSE mount on Colab — local disk only, copy to Drive afterward if persistence is needed
 - [Phase 03]: 03-03: openpi-client's WebsocketClientPolicy hardcodes websockets' 20s/20s keepalive with no tuning knobs — any Colab-side stall (e.g. a JAX recompile) longer than that needs client-side reconnect-retry, not a server-side fix
 - [Phase 03]: 03-03: defensive optional-import guards (`except ImportError:`) must catch the real class of failure a broken-but-present dependency can raise (e.g. numpy ABI ValueError), not just literal absence — `except Exception` for cross-kernel package guards
+- [Phase ?]: 04 (2026-08-03) SECOND EMBODIMENT BLOCKER: D-07/D-08 task retargeting (cream_cheese_1/akita_black_bowl_1, libero_goal) executed+committed (5675163) - fixes the jaw-width problem, but arm vertical reach bottoms out ~1-3cm above the object's top surface at all reachable radii tested (0.29-0.47m), independent of GRASP_Z_OFFSET/KP_POS/controller-type. Formal validation: 0/20 successes. DATA-01 dataset still not produced; needs a fresh Rule-4 decision (pedestal/riser, elevated-object task, state-injection synthesis, or descope). See 04-02-SUMMARY.md Resolution attempt section.
 
 ### Pending Todos
 
@@ -108,6 +109,7 @@ None yet.
 - 04-02 BLOCKER (RESOLVED in direction, 2026-08-03): SOARM stock gripper couldn't grasp any LIBERO object (jaw ~2-3cm << all objects; ~90 grasp trials 0 successes). RESOLUTION (locked D-07/D-08): upgraded to roboninecom 84mm parallel gripper (faithful, committed ad0b0d0) + retarget to a sub-84mm in-reach object. A second embodiment limit surfaced: the arm's ~0.45m reach can't reach the bowl→plate place-target (~0.5m) — handled by choosing/authoring an in-reach task. See 04-CONTEXT.md ⚠ AMENDMENT + Session Continuity resume sequence.
 - 04 SPEND BLOCKER (active, 2026-08-03): the remaining sim work (author+validate the sub-84mm in-reach task, then run the 100+-demo collection, then Waves 3-4) hit the monthly spend limit — two executor/spike agents failed with "You've hit your monthly spend limit". Blocked until the limit is raised/reset. State is clean + fully resumable per Session Continuity.
 - 04 embodiment note for Phase 5/6: SO-ARM101 is a small ~500g-payload desktop arm; task layouts must keep objects AND targets within ~0.45m reach, and objects <=84mm to be graspable. This constrains Phase 5 spatial-task authoring too.
+- 04 BLOCKER (2026-08-03, NEW - supersedes the resolved jaw-width blocker): scripted collector retargeted to cream_cheese_1/akita_black_bowl_1 (D-07/D-08 executed, commit 5675163), but the SOARM arm's vertical reach cannot bring the gripper down to table-resting-object height (~0.90-0.92m world z) at any reachable radius tested (0.29-0.47m) while holding top-down orientation - a torque/kinematic limit (STS3215 +/-2.94Nm/joint), not a jaw-width problem. 0/20 in a formal validation batch (collect_task target_successes=8 max_attempts=20). DATA-01 (100+ demo dataset) still not producible via the current scripted FSM + this arm. See 04-02-SUMMARY.md 'Resolution attempt (2026-08-03)' for the full measurement trail + options for the user.
 
 ### Quick Tasks Completed
 
@@ -133,15 +135,41 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-03
-Stopped at: Phase 4 PARKED mid-Wave-2 on a gripper-upgrade prerequisite. Full arc: Wave 1 (04-01 recording infra + HDF5 writer) DONE + committed. Wave 2 (04-02) collector code DONE + committed, but the actual 100+-demo COLLECTION was BLOCKED — the stock SOARM gripper physically can't grasp any LIBERO object. User chose to upgrade to the roboninecom 84mm parallel gripper; a spike built + validated it (12/12 grasp+lift+place, commit ac1bfef) but at an unfaithful 130mm; then reverted to the FAITHFUL 84mm (commit ad0b0d0). Direction LOCKED (D-07 gripper, D-08 task retargeting). The remaining sim work (author+validate a sub-84mm in-reach task, then collect) is blocked by the monthly spend limit.
+Last session: 2026-08-03T11:06:39.897Z
+Stopped at: Phase 4 STILL blocked: D-07/D-08 task retargeting executed (cream_cheese_1/akita_black_bowl_1, commit 5675163), but empirical validation found a NEW vertical-reach-depth blocker (0/20 successes). DATA-01 dataset not yet produced. Awaiting a fresh Rule-4 decision from the user (pedestal/riser, elevated-object task, state-injection synthesis, or descope) before Phase 4 collection can resume.
 
-RESUME SEQUENCE (next session — user will run `/gsd-execute-phase 4` once spend-limit clears; the orchestrator MUST do this prerequisite work first, do NOT blindly run the collection or skip 04-02):
-  1. Read this file + `.claude/projects/.../memory/soarm-gripper-embodiment-blocker.md` and `soarm-gripper-mjcf-modeling-notes.md` and 04-CONTEXT.md ⚠ AMENDMENT (D-07/D-08).
-  2. Pick a sub-84mm real LIBERO object the faithful 84mm jaw grasps (bowl 11cm is OUT; cans ~8cm / boxes / grocery items are IN).
-  3. Author or modify a BDDL so BOTH the object-init region AND the place-target sit within the arm's ~0.45m reach (LIBERO supports this; see custom_object_example.ipynb). Keep pick-place structure.
-  4. Validate grasp+lift+place with the FSM at faithful 84mm (foreground sim, NO detached/background processes — a prior agent orphaned a runaway MuJoCo proc; also mind the macOS git case-collision trap: stage lowercase `libero/...` paths, verify with `git diff HEAD`).
-  5. Retarget `LIBERO/libero/libero/datasets/collector.py` TASKS to the validated BDDL.
-  6. RE-RUN the 04-02 collection (100+ demos) — its existing SUMMARY documents the BLOCKER, not completion, so the dataset does not yet exist; collection must actually run. Then proceed to Wave 3 (04-03 replay, 04-04 normalization) and Wave 4 (04-05 teleop — human checkpoint).
+RESUME SEQUENCE (next session — the D-07/D-08 retargeting work below is DONE;
+what remains is a NEW Rule-4 decision, not more autonomous tuning):
+
+  1. Read `.planning/phases/04-dataset-collection/04-02-SUMMARY.md`'s
+     "Resolution attempt (2026-08-03)" section (full measurement trail: 3
+     GRASP_Z_OFFSET candidates, a radius/bearing sweep, an OSC_POSE vs
+     OSC_POSITION controller comparison, and a formal 20-attempt validation
+     batch — all converge on the same conclusion, 0/20 successes) plus
+     04-CONTEXT.md's ⚠ AMENDMENT (D-07/D-08, now executed) for background.
+  2. DONE (commit `5675163`): gripper (D-07, faithful 84mm, commit `ad0b0d0`)
+     and task retargeting (D-08: `libero_goal/put_the_cream_cheese_in_the_bowl.bddl`,
+     pick `cream_cheese_1` / place `akita_black_bowl_1`) are both executed and
+     committed. `collector.py`'s `TASK_BODY_MAP` wires the new body names
+     through; `target_per_task` raised 40->120 to preserve the 100+ buffer
+     now that there is only 1 task.
+  3. NEW FINDING (not auto-fixable — Rule 4): the arm's vertical reach cannot
+     bring the gripper down to table-resting-object height (~0.90-0.92m
+     world z) at ANY reachable radius tested (0.29-0.47m) while holding a
+     top-down orientation. This is independent of the (already-fixed) jaw
+     width. A user decision is needed before more autonomous FSM tuning is
+     attempted — see the SUMMARY's "Options for the user": (a) pedestal/riser
+     to reduce required vertical excursion (reopens Phase 2's "no pedestal"
+     D-04), (b) an elevated-object task/region instead of table-flush, (c)
+     state-injection demo synthesis (bypass physical grasp), or (d) descope
+     DATA-01's physical-grasp requirement.
+  4. Once a direction is chosen: re-tune `collector.py`'s clearance constants
+     for that new approach, re-validate on a small batch (foreground sim, NO
+     detached/background MuJoCo processes — a prior agent orphaned a runaway
+     proc during this exact investigation; also mind the macOS git
+     case-collision trap: stage lowercase `libero/...` paths, verify with
+     `git diff HEAD`), then run the real 100+-demo collection into
+     `LIBERO/libero/datasets/soarm_spatial/`. Then proceed to Wave 3 (04-03
+     replay, 04-04 normalization) and Wave 4 (04-05 teleop — human checkpoint).
   NOTE: run Phase 4 with worktrees DISABLED (sequential on main tree) — the dataset is gitignored and must persist across plans.
-Resume file: .planning/phases/04-dataset-collection/04-CONTEXT.md (see ⚠ AMENDMENT)
+Resume file: .planning/phases/04-dataset-collection/04-02-SUMMARY.md
