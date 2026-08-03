@@ -30,6 +30,7 @@ convention for this phase's live collection step.
 
 import argparse
 import os
+import tempfile
 
 # Set the MuJoCo GL backend before any import that triggers MuJoCo (mirrors
 # raw_recorder.py / hdf5_writer.py / collector.py). setdefault so an
@@ -150,8 +151,10 @@ def collect_teleop(
         num_episodes (int): Number of teleop attempts to run (a human may
             trigger a device reset on some attempts without completing the
             task; only successful episodes are ever written).
-        tmp_directory (str | None): DataCollectionWrapper scratch dir;
-            defaults to ``<hdf5 dir>/tmp/<task_slug>_teleop``.
+        tmp_directory (str | None): DataCollectionWrapper scratch dir. When
+            None, a FRESH unique dir is created per run under ``<hdf5 dir>/tmp/``
+            so each run gathers only its own episodes (pass an explicit path to
+            deliberately accumulate demos across runs).
         pos_sensitivity (float): Keyboard position input scale.
         rot_sensitivity (float): Keyboard rotation input scale.
         arm (str): which arm to control ("right" or "left").
@@ -168,12 +171,21 @@ def collect_teleop(
         bddl_file_name
     ), f"[error] {bddl_file_name} does not exist!"
 
-    if tmp_directory is None:
-        task_slug = os.path.basename(bddl_file_name).replace(".bddl", "")
-        tmp_directory = os.path.join(
-            os.path.dirname(os.path.abspath(hdf5_path)), "tmp", f"{task_slug}_teleop"
-        )
     os.makedirs(os.path.dirname(os.path.abspath(hdf5_path)), exist_ok=True)
+    if tmp_directory is None:
+        # FRESH scratch dir PER RUN. A fixed per-task path let successive runs
+        # accumulate episodes in the same folder, and gather_demonstrations_as_hdf5
+        # sweeps EVERY successful episode it finds — so a second run would silently
+        # re-gather the first run's demos into the new HDF5 (observed: a "v2" file
+        # came out holding the prior run's demo plus the new one). mkdtemp guarantees
+        # each run gathers only its own episodes. Pass an explicit tmp_directory only
+        # if you deliberately want to accumulate across runs.
+        task_slug = os.path.basename(bddl_file_name).replace(".bddl", "")
+        tmp_base = os.path.join(
+            os.path.dirname(os.path.abspath(hdf5_path)), "tmp"
+        )
+        os.makedirs(tmp_base, exist_ok=True)
+        tmp_directory = tempfile.mkdtemp(prefix=f"{task_slug}_teleop_", dir=tmp_base)
 
     # has_renderer=True: teleop requires a real on-screen viewer, unlike
     # collector.py's headless scripted collection. This installed robosuite
