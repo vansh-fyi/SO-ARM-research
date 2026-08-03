@@ -17,7 +17,14 @@ ASSETS = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "as
 
 
 class SoarmGripper(GripperModel):
-    """SO101 1-DOF jaw gripper (fixed jaw + moving jaw on one hinge joint).
+    """SO-ARM100/101 parallel-jaw gripper (roboninecom upgrade).
+
+    Two symmetric prismatic jaws (``gripper_left`` / ``gripper_right``) driven by
+    one actuator each, collapsed to a single 1-D gripper action exactly like
+    robosuite's ``PandaGripper``. 84 mm full opening stroke (+/-42 mm per jaw) so
+    it can actually grasp LIBERO objects (stock jaw was too small). Class name and
+    the ``-1 => open, +1 => closed`` convention are preserved so the Phase-4
+    collector / robot contract is unchanged.
 
     Args:
         idn (int or str): Number or some other unique identification string
@@ -28,10 +35,13 @@ class SoarmGripper(GripperModel):
         super().__init__(os.path.join(ASSETS, "grippers/soarm_gripper.xml"), idn=idn)
 
     def format_action(self, action):
-        """Maps continuous action into an integrated jaw position target.
+        """Maps the 1-D gripper action into the two jaw position targets.
 
-        -1 => open, 1 => closed. Single-actuator collapse of PandaGripper's
-        two-finger direction array: only np.sign(action) scaling remains.
+        -1 => open, +1 => closed. Both jaw actuators share ctrlrange [0, 0.042]
+        with current_action=-1 => 0 (closed) and +1 => 0.042 (open), so a CLOSE
+        command (+1) drives both current elements toward -1 and an OPEN command
+        (-1) drives them toward +1. Mirrors PandaGripper's two-element integrated
+        action (here both elements move together — the jaws are symmetric).
 
         Args:
             action (np.array): gripper-specific action
@@ -41,17 +51,19 @@ class SoarmGripper(GripperModel):
         """
         assert len(action) == self.dof
         self.current_action = np.clip(
-            self.current_action + self.speed * np.sign(action), -1.0, 1.0
+            self.current_action + np.array([-1.0, -1.0]) * self.speed * np.sign(action),
+            -1.0,
+            1.0,
         )
         return self.current_action
 
     @property
     def init_qpos(self):
-        return np.array([0.8])  # jaw open (range -0.17..1.75 rad); tune in 02-03
+        return np.array([0.065, 0.065])  # both jaws fully open (130 mm total; see xml deviation note)
 
     @property
     def speed(self):
-        return 0.10  # rad-scale jaw moves faster than Panda's 0.01 m fingers
+        return 0.10  # jaw closes briskly within the FSM's GRASP_HOLD_STEPS budget
 
     @property
     def dof(self):
@@ -60,8 +72,8 @@ class SoarmGripper(GripperModel):
     @property
     def _important_geoms(self):
         return {
-            "left_finger": ["fixed_jaw_collision"],
-            "right_finger": ["moving_jaw_collision"],
-            "left_fingerpad": ["fixed_jaw_collision"],
-            "right_fingerpad": ["moving_jaw_collision"],
+            "left_finger": ["left_jaw_collision"],
+            "right_finger": ["right_jaw_collision"],
+            "left_fingerpad": ["left_jaw_collision"],
+            "right_fingerpad": ["right_jaw_collision"],
         }
