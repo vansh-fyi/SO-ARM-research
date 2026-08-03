@@ -37,19 +37,30 @@ and unchanged from the original bowl investigation):
     z ~= 1.08 (not 1.13 — that was the old bowl task's start height).
   * ``akita_black_bowl_1`` (place target, used passively/goal-only here) rests
     at body origin z ~= 0.898 (same object/geometry as the old bowl tasks).
-  * KNOWN LIKELY BLOCKER (measured, not assumed): at the cream_cheese_region's
-    typical radial distance from the SOARM base (~0.35 m, well inside the
-    0.479 m max reach), driving the eef toward any z target well below the
-    table asymptotically bottoms out around eef z ~= 0.93-0.95 (confirmed
-    across multiple GRASP_Z_OFFSET values, a radius/bearing sweep at 0.30-0.47m,
-    and an OSC_POSITION-vs-OSC_POSE controller swap — none changed the floor
-    materially). That floor sits ~1-3 cm ABOVE the cream_cheese top surface
-    (0.918), so the gripper pads may never make contact. This is a SEPARATE,
-    previously-undocumented arm vertical-reach-depth limitation (independent
-    of the D-07 jaw-width fix and D-08's horizontal-reach check) — see
-    04-02-SUMMARY.md's "Resolution attempt" section for the full measurement
-    trail. `GRASP_Z_OFFSET` below is tuned to be as low as the floor allows;
-    it cannot compensate for a floor that never reaches the object.
+  * RESOLVED (2026-08-03, 3rd attempt): a previously-reported "vertical
+    reach-depth" blocker (eef asymptoting ~1-3cm above the object regardless
+    of GRASP_Z_OFFSET/controller-type) was a MISDIAGNOSIS, corrected the same
+    day — direct MuJoCo contact inspection showed the real cause was the old
+    ``akita_black_bowl_region`` sitting almost dead-ahead of the base (y~=0),
+    directly in the forearm's natural sweep corridor, causing genuine
+    jaw/forearm-vs-bowl collisions (measured actuator_force never exceeded
+    ~30% of the +/-2.94Nm budget — not a torque ceiling). A further empirical
+    XY sweep (this 3rd attempt) additionally found the arm's reachable XY
+    envelope, while holding a FIXED end-effector orientation (this FSM never
+    commands a rotation delta), is tightly bounded to roughly |y| <~ 0.04 m
+    from the base's centerline REGARDLESS of x/radial distance — a genuine
+    kinematic constraint of this 5-DOF arm at a fixed orientation, not a bug.
+    Fix applied: stripped unused wine_bottle/cabinet/stove/wine_rack clutter
+    from the BDDL and repositioned both ``akita_black_bowl_region`` and
+    ``cream_cheese_region`` to sit within that reachable |y| band at
+    different radii (angularly/radially separated so the arm's sweep to one
+    object doesn't pass through the other), see the BDDL file itself for the
+    exact ranges. Validated via the real ``collect_task`` path with direct
+    contact inspection: zero jaw/forearm-vs-bowl collisions across 20
+    episodes (only the expected, intentional cream_cheese-vs-bowl contact
+    during place_descend/release), 16/20 and 8/9 successes in two
+    independent batches. See 04-02-SUMMARY.md's dated sections for the full
+    measurement trail across all 3 attempts.
   * Actions are OSC_POSE deltas in the controller's normalized [-1, 1] range
     (input_max/min), NOT raw metric offsets — so we apply a proportional gain
     ``KP_POS`` to the metric position error and clip to [-1, 1]. A ~0.05 m error
@@ -74,7 +85,12 @@ GRASP_Z_OFFSET = 0.015   # m above the pick object's body origin the jaw descend
 PLACE_Z_OFFSET = 0.06    # m above the place target the pick object is released from
 KP_POS = 25.0            # proportional gain: metric error (m) -> normalized action
 XY_TOL = 0.020           # m horizontal tolerance for phase transitions
-Z_TOL = 0.025            # m vertical tolerance for phase transitions
+Z_TOL = 0.010            # m vertical tolerance for phase transitions (tightened
+                         # 2026-08-03, was 0.025: the old value let descend->
+                         # grasp transition ~1.5cm above the true grasp point
+                         # [Rule 1 bug — a loose Z_TOL, not a hardware limit],
+                         # so the jaw only nudged the object instead of
+                         # enclosing it; see collector.py module docstring)
 GRASP_HOLD_STEPS = 20    # extra steps held at the object so the jaw finishes closing
 RELEASE_HOLD_STEPS = 10  # extra steps held above the place target so the jaw finishes opening
 

@@ -32,11 +32,11 @@ if _LIBERO_LIBERO not in sys.path:
     sys.path.insert(0, _LIBERO_LIBERO)
 
 import numpy as np
-import pytest
 
 from libero.datasets.collector import (
     compute_waypoint_action,
     HOVER_HEIGHT,
+    GRASP_Z_OFFSET,
     CLOSE_CMD,
     OPEN_CMD,
     TASKS,
@@ -90,7 +90,10 @@ def test_waypoint_approach_at_hover_transitions_to_descend():
 
 
 def test_waypoint_descend_at_bowl_transitions_to_grasp_and_closes():
-    eef = BOWL.copy()  # at bowl height
+    # Exactly at the grasp point (bowl height + GRASP_Z_OFFSET), independent of
+    # Z_TOL's exact value (tightened 2026-08-03 to force a genuinely-converged
+    # descend before transitioning — see collector.py Z_TOL comment).
+    eef = BOWL.copy() + np.array([0.0, 0.0, GRASP_Z_OFFSET])
     action, next_phase, _ = _unpack("descend", eef, False)
     assert next_phase == "grasp"
     # gripper element goes positive (close command) on the descend->grasp step
@@ -154,22 +157,31 @@ def test_task_body_map_wires_correct_pick_place_bodies():
 # ----------------------------------------------------------------------------
 # Real (no-mock) local-sim integration tests — Task 2 acceptance.
 #
-# NOTE (2nd blocker, see 04-02-SUMMARY.md "Resolution attempt" section, dated
-# 2026-08-03): the D-07 84mm faithful gripper DOES solve the original jaw-width
-# problem (cream_cheese_1's ~4.3cm grasp face is well within the 84mm stroke),
-# but empirical measurement found a SEPARATE, previously-undocumented
-# vertical-reach-DEPTH limitation: at the cream_cheese_region's radial distance
-# from the base (~0.35m, well inside the 0.479m max reach), the arm's eef
-# asymptotically bottoms out around z~0.93-0.95 regardless of GRASP_Z_OFFSET,
-# KP_POS, or even swapping OSC_POSE for OSC_POSITION — consistently ~1-3cm
-# ABOVE the object's actual top surface (z~0.918). A formal 20-attempt
-# validation batch (collect_task target_successes=8, max_attempts=20) reached
-# 0/20 successes. The first test proves the collector PLUMBING is correct
-# end-to-end (runs a real env, records, writes a valid HDF5); the second
-# encodes the TARGET behavior and is xfail'd against this new blocker, with
-# the >=2 assertion preserved (NOT weakened) so it flips to xpass the day an
-# arm-reach-depth fix (e.g. a base riser, or a different pick strategy) makes
-# grasping feasible.
+# RESOLVED (2026-08-03, 3rd attempt — see 04-02-SUMMARY.md "RESOLUTION" section
+# dated 2026-08-03, 3rd attempt): the previously-reported "vertical reach depth"
+# blocker was a MISDIAGNOSIS (corrected same day) — direct contact inspection
+# showed the real cause was a scene/BDDL placement problem: the bowl sat
+# dead-ahead of the arm's base (y~=0), directly in the forearm's natural sweep
+# corridor, causing genuine jaw/forearm-vs-bowl collisions during any
+# significant reach past it (not a torque or reach-depth ceiling — measured
+# actuator_force never exceeded ~30% of the +/-2.94Nm budget). A further
+# empirical sweep (this 3rd attempt) also found the arm's XY reach with a
+# FIXED (zero-delta) end-effector orientation is tightly bounded to
+# |y| <~ 0.04m from the base's centerline regardless of x/radial distance —
+# a real kinematic constraint of this 5-DOF arm holding a fixed orientation,
+# not a bug. Fix: stripped the unused wine_bottle/cabinet/stove/wine_rack
+# clutter from put_the_cream_cheese_in_the_bowl.bddl and repositioned both
+# akita_black_bowl_region and cream_cheese_region to sit within that
+# |y| <~ 0.04m reachable band at different radii (so the two objects are
+# angularly/radially separated, not both dead-ahead), plus tightened Z_TOL
+# (0.025 -> 0.010) so the descend phase's grasp-height check doesn't
+# prematurely pass ~1.5cm above the object (Rule 1 bug, orthogonal to the
+# above placement fix). Validated via the real collect_task path with direct
+# MuJoCo contact inspection (sim.data.ncon/sim.data.contact): zero
+# jaw/forearm-vs-bowl collisions across 20 episodes, only the expected
+# cream_cheese-vs-bowl contact during the intentional place_descend/release
+# phases; 16/20 (80%) and 8/9 successes in two independent batches. Both
+# tests below now PASS for real (no xfail).
 # ----------------------------------------------------------------------------
 
 
@@ -198,16 +210,6 @@ def test_collect_task_runs_end_to_end_and_writes_valid_hdf5(tmp_path):
         assert int(f["data"].attrs["total"]) == count
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "BLOCKER (2nd, post-D-07/D-08): SOARM arm's vertical reach at the "
-        "cream_cheese_region's radial distance (~0.35m) bottoms out ~1-3cm ABOVE "
-        "the object's top surface, independent of the 84mm gripper's jaw width "
-        "(already fixed by D-07). 0/20 successes in a formal validation batch. "
-        "See 04-02-SUMMARY.md 'Resolution attempt' section."
-    ),
-)
 def test_run_scripted_episode_reaches_success_within_budget(tmp_path):
     from libero.datasets.collector import collect_task
 
