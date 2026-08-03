@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (4 plans) (closed 2026-07-10 — UAT 4/4 PASS after ENV-03 dependency fixes baked into notebook)
 - [x] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks (completed 2026-07-18)
 - [x] **Phase 3: VLA Inference Loop** - Close the loop from language prompt to rendered SOARM task video with success detection and dual-VLA support (completed 2026-08-02)
-- [ ] **Phase 4: Dataset Collection** - Collect 100+ scripted SOARM demonstrations in robomimic HDF5 with state-based replay and normalization stats
+- [x] **Phase 4: Dataset Collection** - Collect 100+ scripted SOARM demonstrations in robomimic HDF5 with state-based replay and normalization stats (completed 2026-08-03)
 - [ ] **Phase 5: Spatial Awareness** - Add multi-camera perception, depth-based 3D localization, and spatial language BDDL task variants
 - [ ] **Phase 6: Fine-Tuning & Evaluation** - Fine-tune OpenVLA-OFT on SOARM demonstrations and benchmark spatial vs. non-spatial task success
 
@@ -128,7 +128,7 @@ Plans:
   3. SOARM-specific action and observation normalization statistics are computed from the collected dataset (not copied from Panda)
   4. A human operator can record SOARM demonstrations using the teleoperation interface and they land in the same HDF5 format
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans complete
 
 Plans:
 **Wave 1**
@@ -146,7 +146,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 04-05-PLAN.md — Keyboard-only teleoperation interface (D-02) + schema-convergence proof + blocking human-operated session, closes DATA-02's determinism guarantee for the teleop path too (DATA-04)
+- [x] 04-05-PLAN.md — Keyboard-only teleoperation interface (D-02) + schema-convergence proof + blocking human-operated session, closes DATA-02's determinism guarantee for the teleop path too (DATA-04)
 
 ### Phase 5: Spatial Awareness
 
@@ -185,6 +185,6 @@ Plans:
 | 1. Colab Environment Setup | 4/4 | Complete   | 2026-07-09 |
 | 2. SOARM Robot Integration | 5/5 | Complete    | 2026-07-18 |
 | 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
-| 4. Dataset Collection | 4/5 | In Progress|  |
+| 4. Dataset Collection | 5/5 | Complete   | 2026-08-03 |
 | 5. Spatial Awareness | 0/TBD | Not started | - |
 | 6. Fine-Tuning & Evaluation | 0/TBD | Not started | - |
