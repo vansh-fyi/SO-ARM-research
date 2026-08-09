@@ -5,8 +5,8 @@ milestone_name: milestone
 current_phase: 5
 current_phase_name: Spatial Awareness
 status: paused
-stopped_at: "Phase 4 UNBLOCKED. 04-02 fully resolved (commit `6ecd160`): DATA-01"
-last_updated: "2026-08-03T18:02:06.980Z"
+stopped_at: Phase 5 context gathered
+last_updated: "2026-08-09T13:50:05.491Z"
 last_activity: 2026-08-03
 last_activity_desc: Phase 04 complete, transitioned to Phase 5
 progress:
@@ -142,8 +142,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-03T16:22:47.991Z
-Stopped at: Phase 4 UNBLOCKED. 04-02 fully resolved (commit `6ecd160`): DATA-01
+Last session: 2026-08-09T13:50:05.480Z
+Stopped at: Phase 5 context gathered
 dataset exists (120 demos). Ready to proceed to Wave 3 (04-03 replay
 verification) and Wave 4 (04-04 normalization, 04-05 teleop).
 
@@ -170,4 +170,4 @@ RESUME SEQUENCE (next session, if execution is interrupted before Waves 3-4 fini
      the retargeting research, not yet fixed).
   NOTE: continue running Phase 4 with worktrees DISABLED (sequential on main tree) — the dataset is gitignored and must persist across plans.
   NOTE: if any future embodiment-limit claim looks physically implausible for hardware known to work in the real world, verify actuator_force/qfrc_bias against ctrlrange AND sim.data.contact before accepting a "hardware limit" conclusion — this exact investigation had two prior misdiagnoses that direct telemetry immediately refuted.
-Resume file: .planning/phases/04-dataset-collection/04-02-SUMMARY.md
+Resume file: .planning/phases/05-spatial-awareness/05-CONTEXT.md
