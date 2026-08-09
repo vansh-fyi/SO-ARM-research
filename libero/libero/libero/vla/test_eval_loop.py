@@ -28,7 +28,10 @@ class MockEnv:
     def __init__(self, done_on_step=3):
         self.done_on_step = done_on_step
         self.step_count = 0
-        self._obs = {"robot0_eye_in_hand_image": np.zeros((4, 4, 3), dtype=np.uint8)}
+        self._obs = {
+            "robot0_eye_in_hand_image": np.zeros((4, 4, 3), dtype=np.uint8),
+            "agentview_image": np.zeros((4, 4, 3), dtype=np.uint8),
+        }
 
     def reset(self):
         self.step_count = 0
@@ -48,6 +51,18 @@ class MockBackend:
 
     def predict(self, images, language):
         self.predict_calls += 1
+        return np.zeros((8, 7))
+
+
+class RecordingBackend:
+    """Records the images dict it receives on each predict() call (Phase 5,
+    SPAT-02 dict-plumbing regression coverage)."""
+
+    def __init__(self):
+        self.seen_images = None
+
+    def predict(self, images, language):
+        self.seen_images = images
         return np.zeros((8, 7))
 
 
@@ -166,3 +181,21 @@ def test_run_suite_multi_task_multi_episode_summary(capsys):
     assert "Aggregate" in captured.out
     # a numeric success-rate percentage per task is printed
     assert "%" in captured.out
+
+
+def test_images_dict_includes_both_camera_views_spatial():
+    """Test 5 (Phase 5, D-01/SPAT-02): run_episode's images dict passed to
+    backend.predict() contains both "eye_in_hand" and "agentview" keys,
+    sourced from the correct obs entries (not swapped)."""
+    env = MockEnv(done_on_step=3)
+    backend = RecordingBackend()
+
+    run_episode(env, backend, "pick up the bowl", "/tmp/unused_video")
+
+    assert set(backend.seen_images.keys()) >= {"eye_in_hand", "agentview"}
+    np.testing.assert_array_equal(
+        backend.seen_images["eye_in_hand"], env._obs["robot0_eye_in_hand_image"]
+    )
+    np.testing.assert_array_equal(
+        backend.seen_images["agentview"], env._obs["agentview_image"]
+    )
