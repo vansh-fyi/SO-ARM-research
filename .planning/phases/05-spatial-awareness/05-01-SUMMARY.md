@@ -135,3 +135,7 @@ None - no external service configuration required.
 ---
 *Phase: 05-spatial-awareness*
 *Completed: 2026-08-09*
+
+## Self-Check: PASSED
+
+All 6 modified source files and the SUMMARY.md file confirmed present on disk; all 3 task commits (498d25d, 7037e41, 7b494a4) confirmed present in git log.
