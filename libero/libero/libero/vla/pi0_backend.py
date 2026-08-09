@@ -113,13 +113,15 @@ class Pi0Backend:
     def predict(self, images: dict, language: str) -> np.ndarray:
         """Return an action chunk from the remote pi0/pi0-FAST policy server.
 
-        Per D-01, `images` is a dict of named camera views; this backend
-        only consumes the "eye_in_hand" key (per D-01, this phase only
-        populates that key — both openpi obs image keys below reuse it
-        since no separate wrist camera exists in this phase's scope). Per
-        D-02, all normalization is openpi's internal responsibility once
-        the observation dict is handed to `infer()` — there is no shared
-        normalization layer.
+        Per D-01, `images` is a dict of named camera views. Per D-02 and
+        Phase 5's spatial-awareness work (RESEARCH.md Pattern 1, matching
+        openpi's native libero_policy.py obs-key contract), this backend
+        now sends genuinely distinct base and wrist views: "agentview" ->
+        "observation/image" and "eye_in_hand" -> "observation/wrist_image",
+        each independently resized/converted — no duplication of a single
+        view into both keys. All normalization beyond this resize/uint8
+        step is openpi's internal responsibility once the observation dict
+        is handed to `infer()` — there is no shared normalization layer.
 
         Transient connection drops (e.g. the 2026-07-26 keepalive-timeout
         failure) are retried: back off, verify the server port is alive,
@@ -127,12 +129,15 @@ class Pi0Backend:
         (closed port) or exhausted retries raise RuntimeError pointing at
         /content/serve_policy.log.
         """
-        img = image_tools.convert_to_uint8(
+        base_img = image_tools.convert_to_uint8(
+            image_tools.resize_with_pad(np.asarray(images["agentview"]), 224, 224)
+        )
+        wrist_img = image_tools.convert_to_uint8(
             image_tools.resize_with_pad(np.asarray(images["eye_in_hand"]), 224, 224)
         )
         obs = {
-            "observation/image": img,
-            "observation/wrist_image": img,
+            "observation/image": base_img,
+            "observation/wrist_image": wrist_img,
             "observation/state": self._robot_state(),
             "prompt": language,
         }

@@ -88,9 +88,10 @@ def test_init_constructs_websocket_client_policy(fake_openpi_client):
 def test_predict_builds_obs_dict_with_required_keys(fake_openpi_client):
     """Test 2: predict() builds obs dict with the 4 required openpi keys.
 
-    Both "observation/image" and "observation/wrist_image" are built from
-    images["eye_in_hand"] via resize_with_pad(224, 224) + convert_to_uint8
-    (per D-01, this phase only populates the "eye_in_hand" key).
+    "observation/image" is built from images["agentview"] and
+    "observation/wrist_image" from images["eye_in_hand"] -- independently,
+    via resize_with_pad(224, 224) + convert_to_uint8 (Phase 5, D-02: real
+    distinct base/wrist views, no duplication).
     """
     _, fake_image_tools_mod, mock_wcp_cls = fake_openpi_client
     mod = _import_pi0_backend()
@@ -100,7 +101,9 @@ def test_predict_builds_obs_dict_with_required_keys(fake_openpi_client):
 
     backend = mod.Pi0Backend(host="localhost", port=8000)
     fake_image = np.zeros((256, 256, 3), dtype=np.uint8)
-    backend.predict({"eye_in_hand": fake_image}, "pick up the black bowl")
+    backend.predict(
+        {"eye_in_hand": fake_image, "agentview": fake_image}, "pick up the black bowl"
+    )
 
     assert mock_client.infer.call_count == 1
     (obs,), _kwargs = mock_client.infer.call_args
@@ -116,12 +119,11 @@ def test_predict_builds_obs_dict_with_required_keys(fake_openpi_client):
     assert isinstance(obs["observation/wrist_image"], np.ndarray)
     assert isinstance(obs["observation/state"], np.ndarray)
 
-    # Confirm the documented 224x224 resize target was used to build the
-    # shared image (per D-01/plan: both obs image keys reuse the single
-    # "eye_in_hand" resize+convert result, since no separate wrist camera
-    # exists in this phase's scope).
+    # Confirm the documented 224x224 resize target was used to build both
+    # independently-sourced images (agentview -> observation/image,
+    # eye_in_hand -> observation/wrist_image).
     resize_calls = fake_image_tools_mod.resize_with_pad.call_args_list
-    assert len(resize_calls) >= 1
+    assert len(resize_calls) >= 2
     for call in resize_calls:
         args, _ = call
         assert args[1] == 224 and args[2] == 224
@@ -138,7 +140,9 @@ def test_predict_returns_actions_from_infer_unchanged(fake_openpi_client):
 
     backend = mod.Pi0Backend(host="localhost", port=8000)
     fake_image = np.zeros((256, 256, 3), dtype=np.uint8)
-    result = backend.predict({"eye_in_hand": fake_image}, "pick up the black bowl")
+    result = backend.predict(
+        {"eye_in_hand": fake_image, "agentview": fake_image}, "pick up the black bowl"
+    )
 
     assert isinstance(result, np.ndarray)
     np.testing.assert_array_equal(result, expected_actions)
@@ -166,7 +170,9 @@ def test_predict_reconnects_and_retries_on_connection_loss(fake_openpi_client):
     backend._wait_for_port = lambda timeout_s=30.0: True  # no real socket probe
 
     fake_image = np.zeros((256, 256, 3), dtype=np.uint8)
-    result = backend.predict({"eye_in_hand": fake_image}, "pick up the black bowl")
+    result = backend.predict(
+        {"eye_in_hand": fake_image, "agentview": fake_image}, "pick up the black bowl"
+    )
 
     np.testing.assert_array_equal(result, expected_actions)
     assert mock_wcp_cls.call_count == 2  # original + reconnect
@@ -192,7 +198,9 @@ def test_predict_raises_runtime_error_after_exhausted_retries(fake_openpi_client
 
     fake_image = np.zeros((256, 256, 3), dtype=np.uint8)
     with pytest.raises(RuntimeError, match="serve_policy.log"):
-        backend.predict({"eye_in_hand": fake_image}, "pick up the black bowl")
+        backend.predict(
+            {"eye_in_hand": fake_image, "agentview": fake_image}, "pick up the black bowl"
+        )
 
 
 def test_predict_fails_fast_when_server_port_dead(fake_openpi_client):
@@ -211,6 +219,34 @@ def test_predict_fails_fast_when_server_port_dead(fake_openpi_client):
 
     fake_image = np.zeros((256, 256, 3), dtype=np.uint8)
     with pytest.raises(RuntimeError, match="died"):
-        backend.predict({"eye_in_hand": fake_image}, "pick up the black bowl")
+        backend.predict(
+            {"eye_in_hand": fake_image, "agentview": fake_image}, "pick up the black bowl"
+        )
     # No reconnect attempt was made past the dead-port check.
     assert mock_wcp_cls.call_count == 1
+
+
+def test_predict_uses_distinct_base_and_wrist_images_spatial(fake_openpi_client):
+    """Test 7 (Phase 5, D-02): predict() sources observation/image from
+    images["agentview"] and observation/wrist_image from
+    images["eye_in_hand"] independently -- proves no duplication of a
+    single view into both openpi obs keys."""
+    _, _, mock_wcp_cls = fake_openpi_client
+    mod = _import_pi0_backend()
+
+    mock_client = mock_wcp_cls.return_value
+    mock_client.infer.return_value = {"actions": np.zeros((10, 7))}
+
+    backend = mod.Pi0Backend(host="localhost", port=8000)
+    eye_in_hand_image = np.zeros((4, 4, 3), dtype=np.uint8)
+    agentview_image = np.full((4, 4, 3), 255, dtype=np.uint8)
+
+    backend.predict(
+        {"eye_in_hand": eye_in_hand_image, "agentview": agentview_image},
+        "pick up the black bowl",
+    )
+
+    (obs,), _kwargs = mock_client.infer.call_args
+    np.testing.assert_array_equal(obs["observation/image"], agentview_image)
+    np.testing.assert_array_equal(obs["observation/wrist_image"], eye_in_hand_image)
+    assert not np.array_equal(obs["observation/image"], obs["observation/wrist_image"])
