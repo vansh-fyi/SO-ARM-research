@@ -37,7 +37,7 @@ Requirements for initial research pipeline. Each maps to roadmap phases.
 - [ ] **SPAT-02**: All camera views are passed as input to the VLA during inference
 - [ ] **SPAT-03**: MuJoCo depth buffer frames are extracted alongside RGB frames
 - [ ] **SPAT-04**: Object XYZ positions are extracted from MuJoCo state and available as structured context
-- [ ] **SPAT-05**: At least 3 BDDL tasks use spatial language prompts (e.g. "pick the cube to the left of the bowl")
+- [x] **SPAT-05**: At least 3 BDDL tasks use spatial language prompts (e.g. "pick the cube to the left of the bowl")
 
 ### Fine-Tuning & Evaluation
 
@@ -102,7 +102,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SPAT-02 | Phase 5 | Pending |
 | SPAT-03 | Phase 5 | Pending |
 | SPAT-04 | Phase 5 | Pending |
-| SPAT-05 | Phase 5 | Pending |
+| SPAT-05 | Phase 5 | Complete |
 | TUNE-01 | Phase 6 | Pending |
 | TUNE-02 | Phase 6 | Pending |
 | TUNE-03 | Phase 6 | Pending |
