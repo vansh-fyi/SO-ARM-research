@@ -161,3 +161,7 @@ None - no external service configuration required.
 ---
 *Phase: 05-spatial-awareness*
 *Completed: 2026-08-09*
+
+## Self-Check: PASSED
+
+All 8 claimed artifacts found on disk; all 5 commit hashes (`24362c9`, `d53016b`, `ac1a7a9`, `70e5cea`, `08d58da`) found in git log.
