@@ -17,6 +17,15 @@ VALIDATE_PREDICATE_FN_DICT = {
     "turnoff": TurnOff(),
 }
 
+VALIDATE_PREDICATE_FN_DICT.update(
+    {
+        "leftofx": LeftOfX(),
+        "rightofx": RightOfX(),
+        "nearto": NearTo(),
+        "farfrom": FarFrom(),
+    }
+)
+
 
 def update_predicate_fn_dict(fn_key, fn_name):
     VALIDATE_PREDICATE_FN_DICT.update({fn_key: eval(fn_name)()})
