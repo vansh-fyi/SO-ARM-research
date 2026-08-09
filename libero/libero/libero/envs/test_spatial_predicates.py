@@ -188,3 +188,64 @@ class TestNearTaskIntegration:
             assert successes == _N_RESETS
         finally:
             env.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 3: integration tests -- "between" (new 3rd-object region, empirical
+# collision-safety validation, D-06, Pitfall 4)
+# ---------------------------------------------------------------------------
+
+
+class TestBetweenTaskIntegration:
+    def test_between_task_resets_satisfy_goal_20_of_20(self):
+        env = _build_env(_BETWEEN_BDDL)
+        try:
+            successes = 0
+            for _ in range(_N_RESETS):
+                env.reset()
+                if env.check_success():
+                    successes += 1
+            assert successes == _N_RESETS
+        finally:
+            env.close()
+
+    def test_between_task_no_robot_butter_contact_at_rest_20_of_20(self):
+        """D-06/Pitfall 4: the new butter_1 region needs its own empirical
+        collision-safety check, not an assumption from coordinates alone.
+        The arm should not be touching the new object merely by existing
+        at its rest pose across the full randomized init range."""
+        env = _build_env(_BETWEEN_BDDL)
+        try:
+            robot_model = env.env.robots[0].robot_model
+            butter_model = env.env.get_object("butter_1")
+            contact_count = 0
+            for _ in range(_N_RESETS):
+                env.reset()
+                if env.env.check_contact(robot_model, butter_model):
+                    contact_count += 1
+            assert contact_count == 0
+        finally:
+            env.close()
+
+    def test_between_task_directional_correctness_reversed_args_false(self):
+        env = _build_env(_BETWEEN_BDDL)
+        try:
+            env.reset()
+            # Reversed argument order from the BDDL goal's actual order
+            # (RightOfX butter_1 akita_black_bowl_1) /
+            # (LeftOfX butter_1 cream_cheese_1) -- proves neither predicate
+            # is trivially always-True regardless of argument order.
+            right_reversed = eval_predicate_fn(
+                "rightofx",
+                env.env.object_states_dict["akita_black_bowl_1"],
+                env.env.object_states_dict["butter_1"],
+            )
+            left_reversed = eval_predicate_fn(
+                "leftofx",
+                env.env.object_states_dict["cream_cheese_1"],
+                env.env.object_states_dict["butter_1"],
+            )
+            assert bool(right_reversed) is False
+            assert bool(left_reversed) is False
+        finally:
+            env.close()
