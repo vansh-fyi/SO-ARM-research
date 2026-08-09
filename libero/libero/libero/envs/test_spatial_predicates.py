@@ -35,6 +35,40 @@ import numpy as np
 import pytest
 
 from libero.envs.predicates.base_predicates import LeftOfX, RightOfX, NearTo, FarFrom
+from libero.envs.predicates import eval_predicate_fn
+from libero.envs import OffScreenRenderEnv
+
+_BDDL_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "bddl_files",
+    "libero_spatial_soarm",
+)
+_RIGHT_OF_BDDL = os.path.normpath(
+    os.path.join(_BDDL_DIR, "put_the_cream_cheese_to_the_right_of_the_bowl.bddl")
+)
+_NEAR_BDDL = os.path.normpath(
+    os.path.join(_BDDL_DIR, "put_the_cream_cheese_near_the_bowl.bddl")
+)
+_BETWEEN_BDDL = os.path.normpath(
+    os.path.join(
+        _BDDL_DIR, "put_the_butter_between_the_bowl_and_the_cream_cheese.bddl"
+    )
+)
+
+_N_RESETS = 20
+
+
+def _build_env(bddl_path):
+    env = OffScreenRenderEnv(
+        bddl_file_name=bddl_path,
+        robots=["Soarm101"],
+        camera_heights=128,
+        camera_widths=128,
+        has_renderer=False,
+        has_offscreen_renderer=True,
+    )
+    return env
 
 
 class _StubObj:
@@ -104,3 +138,53 @@ class TestFarFrom:
     def test_close_pair_false(self):
         arg1, arg2 = CLOSE_PAIR
         assert bool(FarFrom()(arg1, arg2)) is False
+
+
+# ---------------------------------------------------------------------------
+# Task 2: integration tests -- right_of / near (reused, already-validated
+# regions, D-06 fast path)
+# ---------------------------------------------------------------------------
+
+
+class TestRightOfTaskIntegration:
+    def test_right_of_task_resets_satisfy_goal_20_of_20(self):
+        env = _build_env(_RIGHT_OF_BDDL)
+        try:
+            successes = 0
+            for _ in range(_N_RESETS):
+                env.reset()
+                if env.check_success():
+                    successes += 1
+            assert successes == _N_RESETS
+        finally:
+            env.close()
+
+    def test_right_of_task_directional_correctness_reversed_args_false(self):
+        env = _build_env(_RIGHT_OF_BDDL)
+        try:
+            env.reset()
+            # Reversed argument order from the BDDL goal's actual order
+            # (RightOfX cream_cheese_1 akita_black_bowl_1) -- proves the
+            # predicate isn't trivially always-True regardless of order.
+            result = eval_predicate_fn(
+                "rightofx",
+                env.env.object_states_dict["akita_black_bowl_1"],
+                env.env.object_states_dict["cream_cheese_1"],
+            )
+            assert bool(result) is False
+        finally:
+            env.close()
+
+
+class TestNearTaskIntegration:
+    def test_near_task_resets_satisfy_goal_20_of_20(self):
+        env = _build_env(_NEAR_BDDL)
+        try:
+            successes = 0
+            for _ in range(_N_RESETS):
+                env.reset()
+                if env.check_success():
+                    successes += 1
+            assert successes == _N_RESETS
+        finally:
+            env.close()
