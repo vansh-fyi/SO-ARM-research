@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks (completed 2026-07-18)
 - [x] **Phase 3: VLA Inference Loop** - Close the loop from language prompt to rendered SOARM task video with success detection and dual-VLA support (completed 2026-08-02)
 - [x] **Phase 4: Dataset Collection** - Collect 100+ scripted SOARM demonstrations in robomimic HDF5 with state-based replay and normalization stats (completed 2026-08-03)
-- [ ] **Phase 5: Spatial Awareness** - Add multi-camera perception, depth-based 3D localization, and spatial language BDDL task variants
+- [x] **Phase 5: Spatial Awareness** - Add multi-camera perception, depth-based 3D localization, and spatial language BDDL task variants (completed 2026-08-10)
 - [ ] **Phase 6: Fine-Tuning & Evaluation** - Fine-tune OpenVLA-OFT on SOARM demonstrations and benchmark spatial vs. non-spatial task success
 
 ## Phase Details
@@ -160,13 +160,13 @@ Plans:
   2. MuJoCo depth frames are extracted alongside RGB, and object XYZ positions are available as structured data (extractable from MuJoCo state)
   3. At least 3 BDDL tasks use spatial language prompts (e.g., "pick the cube to the left of the bowl") and success predicates correctly evaluate spatial conditions
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 Plans:
 **Wave 1** (all 3 plans are independent -- zero files_modified overlap, run fully in parallel)
 
 - [x] 05-01-PLAN.md — Multi-camera -> VLA wiring: eval_loop.py images dict, Pi0Backend/OFTBackend real dual-image consumption (D-01, D-02, SPAT-02)
-- [ ] 05-02-PLAN.md — Depth extraction + depth->XYZ back-projection pipeline: camera-config test, new perception/depth_xyz.py module, D-04 ground-truth validation (D-03, D-04, SPAT-01/03/04)
+- [x] 05-02-PLAN.md — Depth extraction + depth->XYZ back-projection pipeline: camera-config test, new perception/depth_xyz.py module, D-04 ground-truth validation (D-03, D-04, SPAT-01/03/04)
 - [x] 05-03-PLAN.md — Spatial BDDL predicates + task authoring: LeftOfX/RightOfX/NearTo/FarFrom predicates, 3 new spatial BDDL tasks (left/right, near, between) (D-05..D-09, SPAT-05)
 
 ### Phase 6: Fine-Tuning & Evaluation
@@ -193,5 +193,5 @@ Plans:
 | 2. SOARM Robot Integration | 5/5 | Complete    | 2026-07-18 |
 | 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
 | 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
-| 5. Spatial Awareness | 2/3 | In Progress|  |
+| 5. Spatial Awareness | 3/3 | Complete   | 2026-08-10 |
 | 6. Fine-Tuning & Evaluation | 0/TBD | Not started | - |
