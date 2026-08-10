@@ -167,3 +167,7 @@ None - no external service configuration required.
 ---
 *Phase: 05-spatial-awareness*
 *Completed: 2026-08-10*
+
+## Self-Check: PASSED
+
+All created files confirmed present on disk (test_camera_config.py, perception/__init__.py, perception/depth_xyz.py, perception/test_depth_xyz.py, this SUMMARY.md). All commit hashes confirmed present in git log (54a8a49, 8972b95, a1e7ca2, 11012c1).
