@@ -33,10 +33,10 @@ Requirements for initial research pipeline. Each maps to roadmap phases.
 
 ### Spatial Awareness
 
-- [ ] **SPAT-01**: At least 2 camera views (wrist + overhead) are configured in LIBERO SOARM environments
+- [x] **SPAT-01**: At least 2 camera views (wrist + overhead) are configured in LIBERO SOARM environments
 - [x] **SPAT-02**: All camera views are passed as input to the VLA during inference
-- [ ] **SPAT-03**: MuJoCo depth buffer frames are extracted alongside RGB frames
-- [ ] **SPAT-04**: Object XYZ positions are extracted from MuJoCo state and available as structured context
+- [x] **SPAT-03**: MuJoCo depth buffer frames are extracted alongside RGB frames
+- [x] **SPAT-04**: Object XYZ positions are extracted from MuJoCo state and available as structured context
 - [x] **SPAT-05**: At least 3 BDDL tasks use spatial language prompts (e.g. "pick the cube to the left of the bowl")
 
 ### Fine-Tuning & Evaluation
@@ -98,10 +98,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DATA-02 | Phase 4 | Complete |
 | DATA-03 | Phase 4 | Complete |
 | DATA-04 | Phase 4 | Complete |
-| SPAT-01 | Phase 5 | Pending |
+| SPAT-01 | Phase 5 | Complete |
 | SPAT-02 | Phase 5 | Complete |
-| SPAT-03 | Phase 5 | Pending |
-| SPAT-04 | Phase 5 | Pending |
+| SPAT-03 | Phase 5 | Complete |
+| SPAT-04 | Phase 5 | Complete |
 | SPAT-05 | Phase 5 | Complete |
 | TUNE-01 | Phase 6 | Pending |
 | TUNE-02 | Phase 6 | Pending |
