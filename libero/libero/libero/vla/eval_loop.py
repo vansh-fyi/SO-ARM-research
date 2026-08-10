@@ -24,6 +24,7 @@ def run_episode(
     video_path: str,
     max_steps: int = MAX_STEPS_DEFAULT,
     camera_name: str = "robot0_eye_in_hand_image",
+    agentview_camera_name: str = "agentview_image",
 ) -> dict:
     """Run one episode: reset, predict -> chunk-replay -> poll -> record video.
 
@@ -50,6 +51,10 @@ def run_episode(
             project's own LIBERO eval config default, 600).
         camera_name: obs dict key for the eye-in-hand camera frame (Phase 2
             confirmed key, also used as the interface's "eye_in_hand" image).
+            Also drives VideoWriter's own camera (unchanged from Phase 3).
+        agentview_camera_name: obs dict key for the overhead agentview
+            camera frame (Phase 5, D-01/SPAT-02) — passed to backends as the
+            interface's "agentview" image, alongside "eye_in_hand".
 
     Returns:
         {"success": bool, "steps": int, "video_path": str}
@@ -60,7 +65,10 @@ def run_episode(
 
     with VideoWriter(video_path, save_video=True, fps=30, single_video=True) as vw:
         while steps < max_steps and not done:
-            images = {"eye_in_hand": obs[camera_name]}
+            images = {
+                "eye_in_hand": obs[camera_name],
+                "agentview": obs[agentview_camera_name],
+            }
             action_chunk = backend.predict(images, language)
 
             for a in action_chunk:

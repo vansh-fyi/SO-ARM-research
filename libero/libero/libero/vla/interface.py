@@ -5,9 +5,10 @@ pipeline implements this single-method contract so the eval loop
 (`eval_loop.py`) never needs to branch on which backend is active.
 
 Design notes:
-- `images` is a dict of named camera views, not a single image (D-01). This
-  phase populates only the `"eye_in_hand"` key; Phase 5's multi-camera work
-  (SPAT-01/02) will add more keys without needing a signature change.
+- `images` is a dict of named camera views, not a single image (D-01).
+  Phase 3 populated only the `"eye_in_hand"` key; Phase 5's multi-camera
+  work (SPAT-01/02, D-01) now also populates the `"agentview"` key,
+  without needing a signature change.
 - Each backend normalizes its own actions/observations internally inside its
   `predict()` implementation (D-02). There is no shared normalization layer —
   OFT overlays its confirmed `libero_spatial_no_noops` norm_stats itself,
@@ -30,8 +31,10 @@ class VLABackend(Protocol):
 
         Args:
             images: dict of named camera views, e.g. {"eye_in_hand": PIL.Image}.
-                Phase 3 populates only the "eye_in_hand" key; later phases may
-                add more keys without changing this signature (D-01).
+                Phase 5 (SPAT-01/SPAT-02, D-01) now populates both the
+                "eye_in_hand" and "agentview" keys on every eval_loop step;
+                later phases may add more keys without changing this
+                signature.
             language: natural-language task instruction string.
 
         Returns:

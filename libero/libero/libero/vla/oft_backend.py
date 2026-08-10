@@ -119,21 +119,51 @@ class OFTBackend:
         print(f"Using unnorm_key: {self.unnorm_key}")
 
     def predict(self, images: dict, language: str) -> np.ndarray:
-        """Return the full (8, 7) OFT action chunk for one eye_in_hand frame.
+        """Return the full (8, 7) OFT action chunk for both camera views.
 
-        Per D-01, `images` is a dict of named camera views; this backend
-        only consumes the "eye_in_hand" key. Per D-03, the eval loop (not
-        this backend) owns open-loop replay of all 8 returned steps — this
-        method returns the full chunk, not just actions[0].
+        Per D-01, `images` is a dict of named camera views. Per D-02 and
+        Phase 5's spatial-awareness work (RESEARCH.md Pattern 1, CITED
+        github.com/moojink/openvla-oft experiments/robot/openvla_utils.py
+        get_vla_action), this backend now packs both "eye_in_hand"
+        (primary) and "agentview" (extra view) into a single multi-image
+        forward pass, following the checkpoint's documented
+        num_images_in_input=2 pattern: each view is processed through
+        `self.processor` independently, then their pixel_values tensors
+        are concatenated along dim=1 before calling `predict_action` once.
+        Per D-03, the eval loop (not this backend) owns open-loop replay of
+        all 8 returned steps — this method returns the full chunk, not
+        just actions[0].
+
+        GPU-behavioral verification (does the checkpoint actually consume
+        both images correctly, not just accept the tensor shape) is
+        Colab-pending -- this project has no local GPU/torch (torch and
+        transformers are NOT importable in the local libero conda env;
+        confirmed this session). Source-level correctness (torch.cat +
+        dim=1 + pixel_values reassignment) is verified locally via
+        grep-based source assertions in the plan's verify step; this file
+        has zero local pytest coverage, matching this project's existing
+        convention for GPU-only-verifiable backends (03-RESEARCH.md
+        Environment Availability, 05-VALIDATION.md Manual-Only
+        Verifications).
         """
         prompt = f"In: What action should the robot take to {language}?\nOut:"
         # Prismatic's image_processor calls img.convert("RGB") on each image
         # (processing_prismatic.py) — it expects PIL.Image, not a raw ndarray.
         # Phase 1's proven pattern (01-colab-env-setup.ipynb cell 23) always
         # wraps the frame with Image.fromarray before calling the processor.
-        pil_image = Image.fromarray(images["eye_in_hand"])
-        inputs = self.processor(prompt, pil_image).to(
+        primary = Image.fromarray(images["eye_in_hand"])
+        extra_views = [Image.fromarray(images["agentview"])]
+
+        primary_inputs = self.processor(prompt, primary).to(
             self.device, dtype=torch.bfloat16
+        )
+        extra_inputs = [
+            self.processor(prompt, view).to(self.device, dtype=torch.bfloat16)
+            for view in extra_views
+        ]
+        primary_inputs["pixel_values"] = torch.cat(
+            [primary_inputs["pixel_values"]] + [e["pixel_values"] for e in extra_inputs],
+            dim=1,
         )
 
         # OFT predict_action returns (actions, hidden_states) — unpack the
@@ -141,7 +171,7 @@ class OFTBackend:
         # (7,) action (Phase 1 confirmed).
         with torch.no_grad():
             result = self.model.predict_action(
-                **inputs, unnorm_key=self.unnorm_key, do_sample=False
+                **primary_inputs, unnorm_key=self.unnorm_key, do_sample=False
             )
 
         actions = result[0] if isinstance(result, tuple) else result
