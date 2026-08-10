@@ -1,0 +1,54 @@
+(define (problem LIBERO_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language Put the butter between the bowl and the cream cheese)
+    (:regions
+      (akita_black_bowl_region
+          (:target main_table)
+          (:ranges (
+              (-0.21 -0.04 -0.19 -0.02)
+            )
+          )
+      )
+      (cream_cheese_region
+          (:target main_table)
+          (:ranges (
+              (-0.05 0.02 -0.03 0.04)
+            )
+          )
+      )
+      (butter_region
+          (:target main_table)
+          (:ranges (
+              (-0.13 -0.08 -0.11 -0.06)
+            )
+          )
+      )
+    )
+
+  (:fixtures
+    main_table - table
+  )
+
+  (:objects
+    akita_black_bowl_1 - akita_black_bowl
+    cream_cheese_1 - cream_cheese
+    butter_1 - butter
+  )
+
+  (:obj_of_interest
+    butter_1
+    akita_black_bowl_1
+    cream_cheese_1
+  )
+
+  (:init
+    (On akita_black_bowl_1 main_table_akita_black_bowl_region)
+    (On cream_cheese_1 main_table_cream_cheese_region)
+    (On butter_1 main_table_butter_region)
+  )
+
+  (:goal
+    (And (RightOfX butter_1 akita_black_bowl_1) (LeftOfX butter_1 cream_cheese_1))
+  )
+
+)

@@ -1,5 +1,7 @@
 from typing import List
 
+import numpy as np
+
 
 class Expression:
     def __init__(self):
@@ -88,6 +90,50 @@ class Stack(BinaryAtomic):
             and arg2.check_contain(arg1)
             and arg1.get_geom_state()["pos"][2] > arg2.get_geom_state()["pos"][2]
         )
+
+
+class LeftOfX(BinaryAtomic):
+    """True iff arg1 is to the left of arg2 along the table's X axis, beyond a margin."""
+
+    MARGIN = 0.03
+
+    def __call__(self, arg1, arg2):
+        arg1_pos = arg1.get_geom_state()["pos"]
+        arg2_pos = arg2.get_geom_state()["pos"]
+        return (arg2_pos[0] - arg1_pos[0]) > self.MARGIN
+
+
+class RightOfX(BinaryAtomic):
+    """True iff arg1 is to the right of arg2 along the table's X axis, beyond a margin."""
+
+    MARGIN = 0.03
+
+    def __call__(self, arg1, arg2):
+        arg1_pos = arg1.get_geom_state()["pos"]
+        arg2_pos = arg2.get_geom_state()["pos"]
+        return (arg1_pos[0] - arg2_pos[0]) > self.MARGIN
+
+
+class NearTo(BinaryAtomic):
+    """True iff the planar (XY) distance between arg1 and arg2 is below a threshold."""
+
+    THRESHOLD = 0.22
+
+    def __call__(self, arg1, arg2):
+        arg1_pos = arg1.get_geom_state()["pos"]
+        arg2_pos = arg2.get_geom_state()["pos"]
+        return np.linalg.norm(arg1_pos[:2] - arg2_pos[:2]) < self.THRESHOLD
+
+
+class FarFrom(BinaryAtomic):
+    """True iff the planar (XY) distance between arg1 and arg2 is above a threshold."""
+
+    THRESHOLD = 0.20
+
+    def __call__(self, arg1, arg2):
+        arg1_pos = arg1.get_geom_state()["pos"]
+        arg2_pos = arg2.get_geom_state()["pos"]
+        return np.linalg.norm(arg1_pos[:2] - arg2_pos[:2]) > self.THRESHOLD
 
 
 class PrintJointState(UnaryAtomic):
