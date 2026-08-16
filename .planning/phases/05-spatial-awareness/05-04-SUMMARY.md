@@ -138,3 +138,12 @@ This is the real-checkpoint confirmation that source-level fixes and local mock-
 ---
 *Phase: 05-spatial-awareness*
 *Completed: 2026-08-16*
+
+## Self-Check: PASSED
+
+- FOUND: LIBERO/libero/libero/vla/test_oft_backend.py
+- FOUND: LIBERO/libero/libero/vla/oft_backend.py
+- FOUND: .planning/phases/05-spatial-awareness/05-04-SUMMARY.md
+- FOUND commit: f5b1e29 (test)
+- FOUND commit: 955dc79 (fix)
+- FOUND commit: 96441cc (docs)
