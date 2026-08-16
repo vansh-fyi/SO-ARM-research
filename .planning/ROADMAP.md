@@ -160,7 +160,7 @@ Plans:
   2. MuJoCo depth frames are extracted alongside RGB, and object XYZ positions are available as structured data (extractable from MuJoCo state)
   3. At least 3 BDDL tasks use spatial language prompts (e.g., "pick the cube to the left of the bowl") and success predicates correctly evaluate spatial conditions
 
-**Plans**: 3/4 plans complete
+**Plans**: 4/4 plans complete
 
 Plans:
 **Wave 1** (all 3 plans are independent -- zero files_modified overlap, run fully in parallel)
@@ -171,7 +171,7 @@ Plans:
 
 **Wave 2 — gap closure** *(from 05-UAT.md blocker)*
 
-- [ ] 05-04-PLAN.md — OFTBackend dual-camera fix: activate checkpoint's num_images_in_input=2 mode + correct inverted primary/extra_views order, with local regression tests (D-02, SPAT-02)
+- [x] 05-04-PLAN.md — OFTBackend dual-camera fix: activate checkpoint's num_images_in_input=2 mode + correct inverted primary/extra_views order, with local regression tests (D-02, SPAT-02)
 
 ### Phase 6: Fine-Tuning & Evaluation
 
@@ -197,5 +197,5 @@ Plans:
 | 2. SOARM Robot Integration | 5/5 | Complete    | 2026-07-18 |
 | 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
 | 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
-| 5. Spatial Awareness | 3/3 | Complete   | 2026-08-10 |
+| 5. Spatial Awareness | 4/4 | Complete   | 2026-08-10 |
 | 6. Fine-Tuning & Evaluation | 0/TBD | Not started | - |
