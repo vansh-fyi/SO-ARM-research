@@ -96,6 +96,16 @@ class OFTBackend:
         ).to(device)
         self.device = device
 
+        # The checkpoint's vision backbone defaults to num_images_in_input=1,
+        # which routes forward() through a single-image torch.split(
+        # pixel_values, [3, 3], dim=1) path (tolerates only 6 channels).
+        # Without this call, predict()'s 12-channel dual-image pixel_values
+        # tensor crashes with `split_with_sizes expects split_sizes to sum
+        # exactly to 12 ... but got split_sizes=[3, 3]` (confirmed live on
+        # Colab GPU, 05-UAT.md Gap 1). Mirrors upstream moojink/openvla-oft's
+        # get_vla(), which makes this exact call right after from_pretrained().
+        self.model.vision_backbone.set_num_images_in_input(2)
+
         # Checkpoint config's norm_stats holds only the OXE PRETRAINING
         # datasets (bridge_orig, fractal, ...). LIBERO fine-tune statistics
         # live in a separate dataset_statistics.json in the HF repo — must
@@ -124,10 +134,10 @@ class OFTBackend:
         Per D-01, `images` is a dict of named camera views. Per D-02 and
         Phase 5's spatial-awareness work (RESEARCH.md Pattern 1, CITED
         github.com/moojink/openvla-oft experiments/robot/openvla_utils.py
-        get_vla_action), this backend now packs both "eye_in_hand"
-        (primary) and "agentview" (extra view) into a single multi-image
-        forward pass, following the checkpoint's documented
-        num_images_in_input=2 pattern: each view is processed through
+        get_vla_action), this backend now packs both "agentview"
+        (primary, third-person) and "eye_in_hand" (extra view, wrist) into
+        a single multi-image forward pass, following the checkpoint's
+        documented num_images_in_input=2 pattern: each view is processed through
         `self.processor` independently, then their pixel_values tensors
         are concatenated along dim=1 before calling `predict_action` once.
         Per D-03, the eval loop (not this backend) owns open-loop replay of
@@ -151,8 +161,10 @@ class OFTBackend:
         # (processing_prismatic.py) — it expects PIL.Image, not a raw ndarray.
         # Phase 1's proven pattern (01-colab-env-setup.ipynb cell 23) always
         # wraps the frame with Image.fromarray before calling the processor.
-        primary = Image.fromarray(images["eye_in_hand"])
-        extra_views = [Image.fromarray(images["agentview"])]
+        # Upstream's channel order is baked into the checkpoint's training:
+        # primary = agentview (third-person), secondary = eye_in_hand (wrist).
+        primary = Image.fromarray(images["agentview"])
+        extra_views = [Image.fromarray(images["eye_in_hand"])]
 
         primary_inputs = self.processor(prompt, primary).to(
             self.device, dtype=torch.bfloat16
