@@ -16,13 +16,13 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 - [X] LIBERO task suite configured for SOARM (replacing default Panda arm) — Validated in Phase 2: 3 libero_spatial tasks run crash-free with `robots=["Soarm101"]`
 - [X] Google Colab notebook that loads π0/OpenVLA and runs inference on GPU — Validated in Phase 3: VLA Inference Loop (Colab A100/L4 sign-off, OFT 2026-07-19, π0 2026-08-02)
 - [X] End-to-end pipeline: text prompt → VLA → SOARM joint actions → rendered simulation output — Validated in Phase 3: both OFT and π0 backends drive the shared eval_loop/run_suite unmodified, producing per-episode video and success-rate tables
+- [X] Dataset collection infrastructure: scripted/teleoperated SOARM demonstrations in LIBERO — Validated in Phase 4: Dataset Collection (120 demos, `put_the_cream_cheese_in_the_bowl`, 04-02 scripted + 04-05 keyboard teleop, HDF5 schema-verified via replay round-trip)
+- [X] Spatial awareness: multi-camera views fed to VLA during task execution — Validated in Phase 5 (SPAT-02): both OFTBackend and Pi0Backend consume genuinely distinct agentview + eye_in_hand views via each checkpoint's native dual-image API; confirmed live on Colab GPU (05-04 gap fix + retest, 2026-08-17)
+- [X] Spatial awareness: 3D scene understanding (object positions in space) — Validated in Phase 5 (SPAT-01/03/04): `depth_xyz.py`'s camera-derived back-projection pipeline matches MuJoCo ground truth within ~0.02m using real Colab (Linux egl) instance-segmentation rendering
+- [X] Spatial awareness: spatial language grounding in prompts ("left of the box", "near the wall") — Validated in Phase 5 (SPAT-05): 3 new BDDL spatial-relation tasks + binary predicate classes, local test suite green
 
 ### Active
 
-- [ ] Dataset collection infrastructure: scripted/teleoperated SOARM demonstrations in LIBERO
-- [ ] Spatial awareness: multi-camera views fed to VLA during task execution
-- [ ] Spatial awareness: 3D scene understanding (object positions in space)
-- [ ] Spatial awareness: spatial language grounding in prompts ("left of the box", "near the wall")
 - [ ] Fine-tuning pipeline: collected SOARM demos used to fine-tune VLA on our robot
 - [ ] Evaluation benchmark: task suite measuring spatial understanding quality
 
@@ -57,8 +57,9 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 | LIBERO as simulation framework | Already in repo, MuJoCo-based, has task suite infrastructure                  | — Pending |
 | Google Colab for compute       | GPU access without local hardware investment                                  | — Pending |
 | Simulation-only scope          | Derisk by validating pipeline in sim before physical robot                    | — Pending |
-| Upgrade SOARM gripper to roboninecom 84mm parallel gripper (Phase 4, 2026-08-03) | Stock ~2-3cm jaw physically can't grasp ANY LIBERO object (smallest 4cm); roboninecom is real/printable (STEP+STL), 120-150N, same STS3215 servo. Modeled faithfully at 84mm. Also a real hardware upgrade for the eventual physical arm. | ✓ Committed (ad0b0d0); sim re-validation on a sub-84mm task pending |
-| Retarget Phase 4 off the 3 frozen bowl→plate tasks to a sub-84mm in-reach pick-place task (2026-08-03) | Bowl (11cm) exceeds even the 84mm jaw AND the plate place-target (~0.5m) is beyond the arm's ~0.45m reach; a small object with both pick+place in-reach is completable | — Pending (task authoring spend-blocked) |
+| Upgrade SOARM gripper to roboninecom 84mm parallel gripper (Phase 4, 2026-08-03) | Stock ~2-3cm jaw physically can't grasp ANY LIBERO object (smallest 4cm); roboninecom is real/printable (STEP+STL), 120-150N, same STS3215 servo. Modeled faithfully at 84mm. Also a real hardware upgrade for the eventual physical arm. | ✓ Committed (ad0b0d0); sim re-validated — 120 real demos collected on `put_the_cream_cheese_in_the_bowl` |
+| Retarget Phase 4 off the 3 frozen bowl→plate tasks to a sub-84mm in-reach pick-place task (2026-08-03) | Bowl (11cm) exceeds even the 84mm jaw AND the plate place-target (~0.5m) is beyond the arm's ~0.45m reach; a small object with both pick+place in-reach is completable | ✓ Committed (5675163); collision-corridor fix (6ecd160) unblocked full 120-demo collection |
+| Route both camera views through each VLA backend's native multi-image API, not a manual tile/concat fallback (Phase 5 D-02, 2026-08-10) | RESEARCH.md confirmed both OpenVLA-OFT and π0/openpi checkpoints have native dual-image support at the API/checkpoint level — a manual tile would silently degrade both models below their trained input distribution | ✓ Committed; OFTBackend needed a follow-up fix (`set_num_images_in_input(2)` + corrected agentview/eye_in_hand channel order, 05-04) after the initial implementation crashed on real Colab GPU inference — confirmed working end-to-end 2026-08-17 |
 
 ## Evolution
 
@@ -81,4 +82,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-08-03 — Phase 4 in progress; SOARM gripper upgraded to roboninecom 84mm parallel gripper (embodiment fix), Phase 4 task set retargeted to sub-84mm in-reach objects. Note for future phases: SO-ARM101 is a small ~500g-payload arm — tasks must keep objects (<=84mm) and targets within ~0.45m reach.*
+*Last updated: 2026-08-17 — Phase 5 (Spatial Awareness) complete: multi-camera VLA input, depth→XYZ 3D localization, and 3 spatial-language BDDL tasks all validated on Colab GPU/Linux-egl. Next: Phase 6 (Fine-Tuning & Evaluation) — LoRA fine-tune OpenVLA-OFT on the 120-demo SOARM dataset, benchmark before/after in WandB. Note for future phases: SO-ARM101 is a small ~500g-payload arm — tasks must keep objects (<=84mm) and targets within ~0.45m reach.*

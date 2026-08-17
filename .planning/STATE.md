@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 5
-current_phase_name: Spatial Awareness
+current_phase: 6
+current_phase_name: Fine-Tuning & Evaluation
 status: executing
 stopped_at: Phase 5 context gathered
-last_updated: "2026-08-09T14:49:58.053Z"
-last_activity: 2026-08-09
-last_activity_desc: Phase 5 execution started
+last_updated: "2026-08-17T07:34:31.505Z"
+last_activity: 2026-08-17
+last_activity_desc: Phase 05 complete, transitioned to Phase 6
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 20
-  completed_plans: 17
-  percent: 67
+  completed_phases: 5
+  total_plans: 21
+  completed_plans: 21
+  percent: 83
 ---
 
 # Project State
@@ -24,22 +24,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-07)
 
 **Core value:** A researcher types a task prompt and watches SOARM execute it in a LIBERO simulation — the loop from language to embodied action.
-**Current focus:** Phase 5 — Spatial Awareness
+**Current focus:** Phase 6 — Fine-Tuning & Evaluation
 
 ## Current Position
 
-Phase: 5 (Spatial Awareness) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 5
-Last activity: 2026-08-09 — Phase 5 execution started
+Phase: 6 — Fine-Tuning & Evaluation
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-17 — Phase 05 complete, transitioned to Phase 6
 
-Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
+Progress: [█████████████████░░░] 83% (Phases 1-5 of 6 complete)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 10
+- Total plans completed: 14
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -49,6 +49,7 @@ Progress: [█████░░░░░] 50% (Phases 1-3 of 6 complete)
 |-------|-------|-------|----------|
 | 02 | 5 | - | - |
 | 04 | 5 | - | - |
+| 05 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -117,9 +118,10 @@ None yet.
 - 04 embodiment note for Phase 5/6: SO-ARM101 is a small ~500g-payload desktop arm; task layouts must keep objects AND targets within ~0.45m reach, objects <=84mm to be graspable, AND avoid placing objects on the base's forward centerline (y~0 close to the base) — the arm's own forearm sweeps through that corridor and will collide with anything sitting there. This constrains Phase 5 spatial-task authoring too.
 - 04-02 RESOLVED (2026-08-03, commit 6ecd160): a "vertical reach / torque-saturation" finding was misdiagnosed earlier the same day (see 04-02-SUMMARY.md history) — user pushback prompted a re-investigation (direct actuator-torque telemetry + MuJoCo contact inspection) that found the real cause was akita_black_bowl_1 sitting in the arm's forward sweep corridor, causing a genuine collision, not a hardware limit. Fixed by repositioning both objects + tightening collector.py's Z_TOL (a separate real bug). DATA-01 dataset now exists: 120 demos at LIBERO/libero/datasets/soarm_spatial/put_the_cream_cheese_in_the_bowl_demo.hdf5. **Lesson for future embodiment-limit claims: always check actuator_force/qfrc_bias against ctrlrange AND sim.data.contact before concluding a hardware/torque ceiling — a "stuck" eef is very often a collision, not saturation.**
 - 04-05 Task 3 AWAITING HUMAN ACTION: a real person must physically drive SOARM via keyboard (collect_teleop against LIBERO/libero/libero/bddl_files/libero_goal/put_the_cream_cheese_in_the_bowl.bddl) and report 'demos written:' + verify_states_only result. See 04-05-PLAN.md Task 3 how-to-verify for exact commands. Plan is NOT complete until this checkpoint resolves.
-- 05 EXECUTION IN PROGRESS (2026-08-10): Wave 1 has 2/3 plans merged to master (05-01 multi-camera VLA wiring — SPAT-02 done, commit `e66a424`; 05-03 spatial predicates+BDDL tasks — SPAT-05 done, commit `2f483ef`). **05-02 (depth extraction + depth→XYZ perception, SPAT-01/03/04) is INCOMPLETE**, blocked by a Claude Code session-limit wall (resets 11:30pm IST, 2026-08-10 — hit at ~10:06 IST with ~13hrs remaining at time of writing). Real partial progress exists and was deliberately preserved (NOT discarded): git worktree at `.claude/worktrees/agent-a17cb74e202609a0d` on branch `worktree-agent-a17cb74e202609a0d`, with 2 real commits (`7edd485` camera-config integration test for SPAT-01/03, `5e6e996` failing D-04 ground-truth test for `object_xyz_from_obs`) plus uncommitted draft files `LIBERO/libero/libero/perception/__init__.py` and `depth_xyz.py` (untested implementation-in-progress). **RESUME SEQUENCE:** run `git worktree list` to confirm the worktree still exists, then either (a) continue an executor INSIDE that same worktree/branch to finish Task 2's TDD cycle (implement depth_xyz.py until the D-04 test passes, then Task 2's remaining validation + SUMMARY.md), or (b) if the worktree was lost, restart 05-02 fresh via `/gsd-execute-phase 5` (it will correctly detect 05-01/05-03 as done via their SUMMARY.md files and only dispatch 05-02). Either way, after 05-02 completes: merge its worktree, run phase verification, and mark Phase 5 complete.
-- 05 PRE-EXISTING TEST DEBT FOUND (2026-08-10, not a Phase 5 regression — confirmed via `git log` that neither test file nor its underlying source was touched by any 05-01/05-02/05-03 commit): Phase 5's regression gate (`conda run -n libero pytest LIBERO/libero/libero/datasets -q`) surfaced 2 pre-existing failures from Phase 4: (1) `test_hdf5_writer.py::test_schema_and_obs_key_naming` asserts `gripper_states.shape[1] == 1` ("SOARM's 1-DOF gripper") — stale, never updated after the D-07 84mm 2-DOF parallel-gripper upgrade (04-04 fixed the *normalization* code's proprio-shape assumption but this specific test assertion was missed). Actual shape is 2, which is correct. (2) `test_replay.py::test_verify_full_obs_regeneration_passes_on_04_02_output` fails with a pixel mismatch in `(demo_1, 0, agentview_rgb)` when regenerating rendered obs from the real 04-02 dataset — likely MuJoCo offscreen-render non-determinism, not investigated further (out of Phase 5 scope). Both are genuine, fixable bugs but belong to Phase 4's test suite, not Phase 5's SPAT-01..05 requirements — flagging for a future quick-task or Phase 6 cleanup rather than blocking Phase 5 completion.
+- 05 PRE-EXISTING TEST DEBT (found 2026-08-10, still open — not a Phase 5 regression, confirmed via `git log` that neither test file nor its underlying source was touched by any 05-* commit): (1) `test_hdf5_writer.py::test_schema_and_obs_key_naming` asserts `gripper_states.shape[1] == 1` ("SOARM's 1-DOF gripper") — stale, never updated after the D-07 84mm 2-DOF parallel-gripper upgrade. Actual shape is 2, which is correct; the assertion needs updating. (2) `test_replay.py::test_verify_full_obs_regeneration_passes_on_04_02_output` fails with a pixel mismatch in `(demo_1, 0, agentview_rgb)` when regenerating rendered obs from the real 04-02 dataset — likely MuJoCo offscreen-render non-determinism, not investigated. Both belong to Phase 4's test suite, not Phase 5's requirements — candidate for a Phase 6 quick-task cleanup.
 - 05 BUG FIXED (2026-08-10, commits `4b241ee`+`8451bca`): the 05-03 executor's fix commit (`d53016b`, "case-path staging miss") accidentally re-registered the ENTIRE `LIBERO/` tree (1168 files) as lowercase `libero/` in git's index — invisible on macOS (case-insensitive fs) but would have broken every hardcoded `LIBERO/...` path on Colab (Linux, case-sensitive) on next clone/pull, since the project's core execution environment is Colab. Fixed via a two-step `git mv` (through a temp name, since git can't case-rename directly on a case-insensitive fs) restoring canonical `LIBERO/` casing; re-ran the vla (12/12) and spatial-predicates (16/16) test suites post-fix, both green. **Lesson for future executors/sessions on this repo: macOS case-insensitivity can silently corrupt git's tracked path casing for an entire subtree via one `git add`/`git mv` with the wrong case — if a diff shows an unexpected top-level directory-name case change (e.g. `libero/` vs `LIBERO/`), treat it as a blocking bug, not a cosmetic one, given this project's Colab (Linux) execution target.**
+- 05 COMPLETE (2026-08-17): all 4 plans (05-01..05-04) merged, 13/13 must-haves verified. UAT surfaced a real blocker post-implementation — `OFTBackend.predict()` crashed on Colab GPU (`RuntimeError: split_with_sizes ... got split_sizes=[3, 3]`) because `__init__` never called `self.model.vision_backbone.set_num_images_in_input(2)`, plus an inverted `agentview`/`eye_in_hand` channel order. Fixed via gap-closure plan 05-04 (commits `f5b1e29`/`955dc79`/`96441cc`), retested live on Colab GPU: no crash, pixel_values genuinely differ per-view (max diff 3.34), and action output is measurably nonzero-sensitive to the second view (mean diff 0.000239) though weak — accepted as this checkpoint's first-action-chunk characteristic (instruction-dominated), not a residual bug. **Lesson: when the ONLY local-environment constraint is "no GPU," a UAT/Colab retest step is not optional busywork — this exact crash and its fix both required real GPU execution to surface and confirm; source-level review alone (grep-based assertions) passed the buggy version too.**
+- 05 LESSON — private-repo sync friction recurred (2026-08-16/17): the outer `SoARM-Research` git repo (not just `LIBERO/`) drifted 76+ commits ahead of `origin/main` multiple times mid-session because work was committed locally but never pushed — Colab always clones/pulls from `origin/main`, so any local-only commit is invisible there until an explicit `git push origin master:main`. **This is not a one-time fix — check `git status -sb` for an "ahead" count before telling the user to `git pull` on Colab, every time**, not just once per session.
 
 ### Quick Tasks Completed
 
@@ -145,32 +147,19 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-09T13:50:05.480Z
-Stopped at: Phase 5 context gathered
-dataset exists (120 demos). Ready to proceed to Wave 3 (04-03 replay
-verification) and Wave 4 (04-04 normalization, 04-05 teleop).
+Last session: 2026-08-17T08:15:00.000Z
+Stopped at: Phase 5 complete (13/13 must-haves verified), ready to plan Phase 6
 
-RESUME SEQUENCE (next session, if execution is interrupted before Waves 3-4 finish):
+Phase 4 (Dataset Collection) and Phase 5 (Spatial Awareness) are both complete —
+their earlier resume-sequence notes below are historical, not active blockers.
 
-  1. Read `.planning/phases/04-dataset-collection/04-02-SUMMARY.md`'s final
-     "Update (2026-08-03) — RESOLVED" section for the full fix history
-     (gripper upgrade D-07, task retargeting D-08, a misdiagnosed-then-corrected
-     vertical-reach claim, and the actual fix: repositioning objects out of
-     the arm's forward corridor + a Z_TOL bug fix).
+NOTE: 2 pre-existing test failures from Phase 4 (gripper_states.shape assertion,
+a replay-obs pixel-mismatch test) remain open — see Blockers/Concerns above,
+candidate for a Phase 6 quick-task cleanup, not a Phase 6 blocker.
 
-  2. DONE: gripper (D-07, faithful 84mm, commit `ad0b0d0`), task retargeting
-     (D-08, commit `5675163`), and the collision fix + full collection
-     (commit `6ecd160`) are all executed, committed, and verified — 120 demos
-     at `LIBERO/libero/datasets/soarm_spatial/put_the_cream_cheese_in_the_bowl_demo.hdf5`.
+NOTE (repo sync): the outer repo has repeatedly drifted commits-ahead of
+`origin/main` without being pushed — before telling the user to `git pull` on
+Colab, always check `git status -sb` for an "ahead" count first.
 
-  3. Check whether 04-03/04-04/04-05 have SUMMARY.md files yet — if not,
-     resume `/gsd-execute-phase 4` to continue Wave 3 (04-03 replay
-     verification) then Wave 4 (04-04 normalization, 04-05 teleop — human
-     checkpoint). Note: 04-05's Task 3 was written against the old
-     table_center/bowl/plate task and needs its bddl path, output filename,
-     and instructions updated to point at the new
-     put_the_cream_cheese_in_the_bowl task before it can run (flagged during
-     the retargeting research, not yet fixed).
-  NOTE: continue running Phase 4 with worktrees DISABLED (sequential on main tree) — the dataset is gitignored and must persist across plans.
-  NOTE: if any future embodiment-limit claim looks physically implausible for hardware known to work in the real world, verify actuator_force/qfrc_bias against ctrlrange AND sim.data.contact before accepting a "hardware limit" conclusion — this exact investigation had two prior misdiagnoses that direct telemetry immediately refuted.
-Resume file: .planning/phases/05-spatial-awareness/05-CONTEXT.md
+NOTE: if any future embodiment-limit claim looks physically implausible for hardware known to work in the real world, verify actuator_force/qfrc_bias against ctrlrange AND sim.data.contact before accepting a "hardware limit" conclusion — this exact investigation had two prior misdiagnoses that direct telemetry immediately refuted.
+Resume file: None

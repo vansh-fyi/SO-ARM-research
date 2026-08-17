@@ -197,5 +197,5 @@ Plans:
 | 2. SOARM Robot Integration | 5/5 | Complete    | 2026-07-18 |
 | 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
 | 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
-| 5. Spatial Awareness | 4/4 | Complete   | 2026-08-10 |
+| 5. Spatial Awareness | 4/4 | Complete    | 2026-08-10 |
 | 6. Fine-Tuning & Evaluation | 0/TBD | Not started | - |
