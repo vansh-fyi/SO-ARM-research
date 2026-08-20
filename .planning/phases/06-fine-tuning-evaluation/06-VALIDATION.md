@@ -2,8 +2,8 @@
 phase: 6
 slug: fine-tuning-evaluation
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-08-20
 ---
 
@@ -73,11 +73,11 @@ created: 2026-08-20
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 60s (local suite)
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies — every `type="auto"` task across 06-01/06-02/06-03 carries a self-contained `<automated>` command (06-01 Task 1's verify now checks its own module import rather than Task 2's not-yet-created test file; 06-02 Task 1 now authors and runs `test_oxe_register.py` within the same task); `checkpoint:human-verify`/`checkpoint:decision` tasks are exempt by type.
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify — 06-02's only non-automated task (Task 3, package-legitimacy checkpoint) sits between two automated tasks (Task 2, Task 4); 06-03's checkpoint (Task 4) is the final task, preceded by three automated tasks.
+- [x] Wave 0 covers all MISSING references — `test_rlds_converter.py` created and run in 06-01 Task 2 (self-contained, no longer invoked prematurely by Task 1); `test_eval_loop.py` seed-determinism additions created and run in 06-03 Task 1; no new fixture files needed; no new framework install.
+- [x] No watch-mode flags
+- [x] Feedback latency < 60s (local suite) — all local `pytest`/`python -c`/notebook-JSON-check commands complete well under 60s; Colab-only GPU steps remain explicitly manual per the Manual-Only Verifications table above, unaffected by this revision.
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** pending re-verification (revision iteration 1, 2026-08-20 — both BLOCKER findings from gsd-plan-checker resolved: 06-01 Task 1's verify decoupled from Task 2's test file; 06-02 Task 1 now authors `test_oxe_register.py` in the same task. Awaiting gsd-plan-checker re-run for formal sign-off.)

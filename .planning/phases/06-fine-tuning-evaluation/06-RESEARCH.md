@@ -416,19 +416,19 @@ Verified/cited patterns from official sources (already embedded above in Archite
 
 **If this table is empty:** N/A — see entries above; all five require Colab-side or direct-source confirmation before being treated as locked implementation facts.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does `finetune.py`'s single-dataset (non-OXE-mixture) code path actually branch on `state_encoding`, or is it only consumed for cross-dataset OXE-mixture normalization bookkeeping?**
+1. **Does `finetune.py`'s single-dataset (non-OXE-mixture) code path actually branch on `state_encoding`, or is it only consumed for cross-dataset OXE-mixture normalization bookkeeping?** — RESOLVED: addressed by plan 06-02 Task 2's OXE-registration smoke-test cell (`apply_soarm_spatial_registration(...)` prints the registered config), which runs and surfaces the actual `state_encoding` value BEFORE the Task 4 `torchrun` launch — this is the "very first Colab validation gate" the recommendation below asked for, without needing a dedicated separate training-step probe.
    - What we know: `OXE_DATASET_CONFIGS` entries always include a `state_encoding`/`action_encoding` field [CITED: configs.py structure, fetched this session].
    - What's unclear: Whether a wrong-but-structurally-valid enum for a single custom (non-mixed) dataset silently degrades training, or is inert bookkeeping.
    - Recommendation: Add a Colab-side smoke test (train for a handful of steps, inspect a sampled batch's state tensor values against known ground truth) before committing to a full training run; treat this as the very first Colab validation gate in the plan.
 
-2. **Is `accelerate` actually imported by `finetune.py`, and if so, is any specific version pin required?**
+2. **Is `accelerate` actually imported by `finetune.py`, and if so, is any specific version pin required?** — RESOLVED: addressed by plan 06-02 Task 2's conditional install cell (`import accelerate` attempted first; `pip install accelerate==1.14.0` only runs if that import fails), implementing the recommendation exactly — no unconditional pin, no unnecessary Package Legitimacy checkpoint for an unused package.
    - What we know: `torchrun --standalone` is the documented launch command (raw `torch.distributed`, not `accelerate launch`).
    - What's unclear: Whether `peft`'s internals or `transformers`'s trainer utilities pull in `accelerate` as a hard runtime dependency even without `accelerate launch`.
    - Recommendation: Attempt the training notebook's dependency install without pinning `accelerate` first; only add it if an `ImportError` surfaces, to avoid an unnecessary Package Legitimacy checkpoint for an unused package.
 
-3. **What is `run_root_dir`/checkpoint disk footprint over a full training run, and does it fit Colab A100's local disk alongside the RLDS dataset and base model cache?**
+3. **What is `run_root_dir`/checkpoint disk footprint over a full training run, and does it fit Colab A100's local disk alongside the RLDS dataset and base model cache?** — RESOLVED: addressed by plan 06-02 Task 4's checkpoint-push polling loop, which pushes each new `*_chkpt` directory to HF Hub then deletes all but the 2 most-recently-pushed local checkpoint directories, implementing the "keep last 2 locally, prune older" recommendation directly as an automated cleanup step (not merely a manual disk-usage check).
    - What we know: Setting `merge_lora_during_training=False` avoids the ~14-16GB-per-checkpoint full-model re-save (Pattern 3's key optimization).
    - What's unclear: Exact adapter-only + action-head + optimizer-state checkpoint size at `save_freq=1000`, and how many checkpoints accumulate with `save_latest_checkpoint_only=False` before HF Hub pushes + local cleanup are needed.
    - Recommendation: Plan a Colab-side disk-usage check after the first checkpoint save, before committing to the full `max_steps` run; consider a local-disk cleanup step after each successful HF Hub push (keep last 2 locally, prune older).
