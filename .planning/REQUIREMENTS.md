@@ -41,7 +41,7 @@ Requirements for initial research pipeline. Each maps to roadmap phases.
 
 ### Fine-Tuning & Evaluation
 
-- [ ] **TUNE-01**: Robomimic HDF5 dataset is converted to RLDS format compatible with OpenVLA fine-tuning pipeline
+- [x] **TUNE-01**: Robomimic HDF5 dataset is converted to RLDS format compatible with OpenVLA fine-tuning pipeline
 - [ ] **TUNE-02**: OpenVLA-OFT is fine-tuned on SOARM demonstrations using LoRA (r=32) on Colab A100
 - [ ] **TUNE-03**: Spatial vs non-spatial task success rates are benchmarked before and after fine-tuning
 - [ ] **TUNE-04**: Training metrics and evaluation results are tracked with WandB
@@ -103,7 +103,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SPAT-03 | Phase 5 | Complete |
 | SPAT-04 | Phase 5 | Complete |
 | SPAT-05 | Phase 5 | Complete |
-| TUNE-01 | Phase 6 | Pending |
+| TUNE-01 | Phase 6 | Complete |
 | TUNE-02 | Phase 6 | Pending |
 | TUNE-03 | Phase 6 | Pending |
 | TUNE-04 | Phase 6 | Pending |
