@@ -185,7 +185,17 @@ Plans:
   2. Task success rates on spatial and non-spatial SOARM tasks are measured and compared before and after fine-tuning
   3. Training loss curves and evaluation success rates are visible in a WandB run dashboard
 
-**Plans**: TBD
+**Plans**: 3/3 plans
+
+Plans:
+**Wave 1** (independent -- zero files_modified overlap, run fully in parallel)
+
+- [ ] 06-01-PLAN.md — Custom robomimic HDF5 -> RLDS converter, genuine TFDS write, local schema/loading tests (TUNE-01)
+- [ ] 06-03-PLAN.md — eval_loop.py seed plumbing + FinetunedOFTBackend (HF Hub adapter reload) + eval notebook: seeded before/after benchmark + WandB eval logging (TUNE-03, TUNE-04)
+
+**Wave 2** *(blocked on 06-01)*
+
+- [ ] 06-02-PLAN.md — OXE dataset registration + training notebook: finetune.py LoRA r=32 invocation, resumable HF Hub checkpoint push, WandB training curves (TUNE-02, TUNE-04)
 
 ## Progress
 
