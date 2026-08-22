@@ -146,6 +146,15 @@ Task 4 (blocking `checkpoint:human-verify`, `gate="blocking-human"`) has NOT bee
 **Total deviations:** 1 auto-fixed (1 blocking, Rule 3)
 **Impact on plan:** Necessary for the plan's own literal signature spec to be importable in this project's local test environment. No scope creep — purely additive, zero behavior change to the plan's design.
 
+## Checkpoint Approvals
+
+**Task 4: Human re-verifies peft package legitimacy for this notebook's separate Colab kernel install** (`checkpoint:human-verify`, `gate="blocking-human"`, non-auto-approvable)
+
+- **What was verified:** `peft==0.20.0` -- the same package/version already fully investigated and verified legitimate in Plan 06-02 Task 3 -- re-confirmed for `06b-eval.ipynb`'s independent Colab kernel install site (D-12: eval runs in a separate kernel from training, so the install happens twice).
+- **How-to-verify steps (per plan):** confirm same pinned version as Plan 06-02's verification; after install, `pip show peft` Home-page/Author fields reference `github.com/huggingface/peft`.
+- **Resolution:** User responded **"approved"**, confirming the same HuggingFace origin holds for this notebook's independent kernel install site. Package Legitimacy Gate satisfied for both notebooks' separate `peft==0.20.0` install sites (T-06-03-SC closed).
+- **Resolved:** 2026-08-22
+
 ## Issues Encountered
 None beyond the deviation above.
 
