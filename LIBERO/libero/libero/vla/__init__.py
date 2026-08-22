@@ -29,4 +29,15 @@ try:
 except Exception:
     Pi0Backend = None
 
+try:
+    # torch/peft/huggingface_hub/transformers are Colab-only GPU dependencies
+    # for this project (03-RESEARCH.md Environment Availability), same as
+    # OFTBackend above. Degrade gracefully so `eval_loop`'s local, no-GPU
+    # pytest suite can still import this package; on Colab (all deps
+    # installed) this import succeeds and FinetunedOFTBackend is exported
+    # normally.
+    from .adapter_backend import FinetunedOFTBackend
+except Exception:
+    FinetunedOFTBackend = None
+
 from .eval_loop import run_episode, run_suite, print_episode_result

@@ -10,6 +10,15 @@ SubprocVectorEnv machinery is not needed here), and reuses
 reimplementing either.
 """
 
+# PEP 604 `int | None` annotations are used below (matching this plan's
+# literal signature spec) but this project's local `libero` conda env runs
+# Python 3.9, whose runtime does not support `|`-union type syntax at
+# annotation-evaluation time. `from __future__ import annotations` defers
+# annotation evaluation to strings, so the `|` syntax parses fine on 3.9
+# without changing any runtime behavior (Colab runs 3.10+, where this is a
+# no-op).
+from __future__ import annotations
+
 import os
 
 from ..utils.video_utils import VideoWriter
@@ -25,6 +34,7 @@ def run_episode(
     max_steps: int = MAX_STEPS_DEFAULT,
     camera_name: str = "robot0_eye_in_hand_image",
     agentview_camera_name: str = "agentview_image",
+    seed: int | None = None,
 ) -> dict:
     """Run one episode: reset, predict -> chunk-replay -> poll -> record video.
 
@@ -55,10 +65,18 @@ def run_episode(
         agentview_camera_name: obs dict key for the overhead agentview
             camera frame (Phase 5, D-01/SPAT-02) — passed to backends as the
             interface's "agentview" image, alongside "eye_in_hand".
+        seed: optional episode seed (TUNE-03, D-08). When not None, calls
+            `env.seed(seed)` immediately before `env.reset()` so the same
+            seed reused across a before-run and an after-run produces
+            byte-identical initial object placements. When None (default),
+            behavior is byte-identical to before this parameter existed —
+            no `env.seed` call is made at all.
 
     Returns:
         {"success": bool, "steps": int, "video_path": str}
     """
+    if seed is not None:
+        env.seed(seed)
     obs = env.reset()
     steps = 0
     done = False
@@ -100,6 +118,7 @@ def run_suite(
     episodes_per_task: int,
     video_dir: str,
     max_steps: int = MAX_STEPS_DEFAULT,
+    episode_seeds: list | None = None,
 ) -> list:
     """Run `episodes_per_task` episodes for each task, print PASS/FAIL per
     episode, and print an aggregated success-rate summary table (D-14).
@@ -116,6 +135,16 @@ def run_suite(
         episodes_per_task: number of episodes to run per task.
         video_dir: directory under which per-episode video subdirectories are created.
         max_steps: forwarded to run_episode (D-13 default 600).
+        episode_seeds: optional list of length `episodes_per_task` (TUNE-03,
+            D-08, Pitfall 7). When provided, `episode_seeds[ep_idx]` is
+            passed as `run_episode`'s `seed` argument for each episode,
+            applied freshly INSIDE this per-episode loop (not once before
+            it) — the same env is reused across all `episodes_per_task`
+            episodes of a task, so seeding must happen per-episode for a
+            reused `episode_seeds` list to reproduce identical initial
+            object placements across separate `run_suite` calls. When
+            None (default), no seed is applied — byte-identical to before
+            this parameter existed.
 
     Returns:
         list of dicts, one per episode:
@@ -130,8 +159,9 @@ def run_suite(
 
         for ep_idx in range(episodes_per_task):
             video_path = os.path.join(video_dir, f"{task_slug}_ep{ep_idx}")
+            seed = episode_seeds[ep_idx] if episode_seeds is not None else None
             result = run_episode(
-                env, backend, language, video_path, max_steps=max_steps
+                env, backend, language, video_path, max_steps=max_steps, seed=seed
             )
             print_episode_result(task_slug, ep_idx, result)
             all_results.append({"task": task_slug, "episode": ep_idx, **result})

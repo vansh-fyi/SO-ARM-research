@@ -28,6 +28,8 @@ class MockEnv:
     def __init__(self, done_on_step=3):
         self.done_on_step = done_on_step
         self.step_count = 0
+        self.last_seed = None
+        self.seed_calls = []
         self._obs = {
             "robot0_eye_in_hand_image": np.zeros((4, 4, 3), dtype=np.uint8),
             "agentview_image": np.zeros((4, 4, 3), dtype=np.uint8),
@@ -41,6 +43,10 @@ class MockEnv:
         self.step_count += 1
         done = self.step_count >= self.done_on_step
         return self._obs, 0.0, done, {}
+
+    def seed(self, seed):
+        self.last_seed = seed
+        self.seed_calls.append(seed)
 
 
 class MockBackend:
@@ -199,3 +205,72 @@ def test_images_dict_includes_both_camera_views_spatial():
     np.testing.assert_array_equal(
         backend.seen_images["agentview"], env._obs["agentview_image"]
     )
+
+
+def test_run_episode_calls_env_seed_before_reset():
+    """Test 6 (TUNE-03, D-08, Pitfall 7): passing seed= to run_episode calls
+    env.seed(seed) before env.reset() (verified via MockEnv's last_seed
+    recorder)."""
+    env = MockEnv(done_on_step=3)
+    backend = MockBackend()
+
+    run_episode(env, backend, "pick up the bowl", "/tmp/unused_video", seed=42)
+
+    assert env.last_seed == 42
+
+
+def test_run_episode_without_seed_never_calls_env_seed():
+    """Test 7 (TUNE-03, D-08): omitting seed leaves behavior byte-identical
+    to before this parameter existed — env.seed() is never called."""
+    env = MockEnv(done_on_step=3)
+    backend = MockBackend()
+
+    run_episode(env, backend, "pick up the bowl", "/tmp/unused_video")
+
+    assert env.last_seed is None
+    assert env.seed_calls == []
+
+
+def test_run_suite_applies_seeds_identically_across_two_runs():
+    """Test 8 (TUNE-03, D-08, Pitfall 7): running run_suite twice with the
+    same env_factory/episode_seeds produces the identical env.seed() call
+    sequence both times -- the literal regression Pitfall 7 warns against
+    (seeding once before the per-episode loop, instead of inside it, would
+    make only episode 0 seeded correctly and the two runs would diverge)."""
+    envs = []
+
+    def env_factory(task):
+        env = MockEnv(done_on_step=10_000)
+        envs.append(env)
+        return env
+
+    backend = MockBackend()
+    episode_seeds = [10, 20, 30]
+
+    run_suite(
+        env_factory,
+        backend,
+        ["task_a.bddl"],
+        {"task_a.bddl": "do the task"},
+        episodes_per_task=3,
+        video_dir="/tmp/video_dir",
+        max_steps=5,
+        episode_seeds=episode_seeds,
+    )
+    first_run_env = envs[-1]
+    assert first_run_env.seed_calls == [10, 20, 30]
+    assert first_run_env.last_seed == 30
+
+    run_suite(
+        env_factory,
+        backend,
+        ["task_a.bddl"],
+        {"task_a.bddl": "do the task"},
+        episodes_per_task=3,
+        video_dir="/tmp/video_dir",
+        max_steps=5,
+        episode_seeds=episode_seeds,
+    )
+    second_run_env = envs[-1]
+    assert second_run_env.seed_calls == [10, 20, 30]
+    assert second_run_env.last_seed == 30
