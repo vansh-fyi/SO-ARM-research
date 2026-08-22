@@ -185,13 +185,13 @@ Plans:
   2. Task success rates on spatial and non-spatial SOARM tasks are measured and compared before and after fine-tuning
   3. Training loss curves and evaluation success rates are visible in a WandB run dashboard
 
-**Plans**: 3/3 plans
+**Plans**: 2/3 plans executed
 
 Plans:
 **Wave 1** (independent -- zero files_modified overlap, run fully in parallel)
 
-- [ ] 06-01-PLAN.md — Custom robomimic HDF5 -> RLDS converter, genuine TFDS write, local schema/loading tests (TUNE-01)
-- [ ] 06-03-PLAN.md — eval_loop.py seed plumbing + FinetunedOFTBackend (HF Hub adapter reload) + eval notebook: seeded before/after benchmark + WandB eval logging (TUNE-03, TUNE-04)
+- [x] 06-01-PLAN.md — Custom robomimic HDF5 -> RLDS converter, genuine TFDS write, local schema/loading tests (TUNE-01)
+- [x] 06-03-PLAN.md — eval_loop.py seed plumbing + FinetunedOFTBackend (HF Hub adapter reload) + eval notebook: seeded before/after benchmark + WandB eval logging (TUNE-03, TUNE-04)
 
 **Wave 2** *(blocked on 06-01)*
 
@@ -208,4 +208,4 @@ Plans:
 | 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
 | 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
 | 5. Spatial Awareness | 4/4 | Complete    | 2026-08-10 |
-| 6. Fine-Tuning & Evaluation | 0/TBD | Not started | - |
+| 6. Fine-Tuning & Evaluation | 2/3 | In Progress|  |
