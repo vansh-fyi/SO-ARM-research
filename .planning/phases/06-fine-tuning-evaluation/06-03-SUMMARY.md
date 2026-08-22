@@ -34,12 +34,13 @@ key-files:
 
 key-decisions:
   - "eval_loop.py needed `from __future__ import annotations` (not in the original plan) to support PEP 604 `int | None` syntax on this project's local Python 3.9 libero conda env -- Colab runs 3.10+, where this is a no-op."
+  - "Task 4's blocking peft==0.20.0 re-verification checkpoint was approved by the user ('approved') -- same package/version/origin already fully investigated in Plan 06-02 Task 3, re-confirmed here for this notebook's independent Colab kernel install site (D-12)."
 
 patterns-established:
   - "Seed plumbing pattern: optional seed/episode_seeds kwargs, purely additive, byte-identical behavior when omitted -- reusable for any future eval-loop determinism requirement."
   - "Fine-tuned-adapter-backend pattern: subclass the zero-shot backend, call super().__init__() first, then layer on adapter-specific merge/stats/re-activation steps -- keeps zero-shot and fine-tuned code paths from diverging."
 
-requirements-completed: []  # TUNE-03/TUNE-04 NOT yet complete -- Task 4's blocking human-verify checkpoint (package legitimacy re-confirmation) has not resolved, and the plan's <human-check> real-Colab run is still pending per its own verification section.
+requirements-completed: []  # TUNE-03/TUNE-04 executor-side work is done (Tasks 1-4 all complete), but the plan's <human-check> live-Colab benchmark run (before/after WandB tables) is still pending -- out of this executor's scope, same as this phase's other GPU-only steps. Mark complete only after that run is confirmed.
 
 coverage:
   - id: D1
@@ -75,48 +76,54 @@ coverage:
         ref: "python -c notebook JSON-validity + expected-cell-content check (plan's <verify> automated command)"
         status: pass
     human_judgment: true
-    rationale: "Requires a real Colab A100 GPU run (this project has no local GPU) to confirm the benchmark actually executes and both tables land in WandB -- source-level checks alone cannot prove the live run works, per this plan's <human-check> section."
+    rationale: "Requires a real Colab A100 GPU run (this project has no local GPU) to confirm the benchmark actually executes and both tables land in WandB -- source-level checks alone cannot prove the live run works, per this plan's <human-check> section. Not yet performed -- outside this executor's scope."
   - id: D4
     description: "Task 4: human re-verifies peft==0.20.0 legitimacy for this notebook's separate Colab kernel install"
     requirement: "TUNE-03, TUNE-04"
-    verification: []
+    verification:
+      - kind: manual
+        ref: "checkpoint:human-verify (gate=blocking-human) -- user responded 'approved'"
+        status: pass
     human_judgment: true
-    rationale: "Blocking checkpoint:human-verify with gate=blocking-human -- never auto-approvable regardless of workflow.auto_advance; requires explicit human confirmation of pip show peft's HuggingFace origin on this notebook's kernel."
+    rationale: "Blocking checkpoint:human-verify with gate=blocking-human -- never auto-approvable regardless of workflow.auto_advance. User explicitly confirmed pip show peft's HuggingFace origin (github.com/huggingface/peft) for this notebook's independent Colab kernel install site. Package Legitimacy Gate now satisfied for both notebooks' peft==0.20.0 install sites."
 
 # Metrics
-duration: 45min
-completed: 2026-08-20
-status: checkpoint-pending
+duration: 48min
+completed: 2026-08-22
+status: complete
 ---
 
-# Phase 6 Plan 03: Before/After Fine-Tuning Benchmark (Tasks 1-3) Summary
+# Phase 6 Plan 03: Before/After Fine-Tuning Benchmark Summary
 
-**Seed-plumbed eval_loop.py + FinetunedOFTBackend (HF Hub LoRA adapter reload via peft) + 06b-eval.ipynb before/after seeded benchmark notebook — Task 4's blocking package-legitimacy checkpoint is pending human action.**
+**Seed-plumbed eval_loop.py + FinetunedOFTBackend (HF Hub LoRA adapter reload via peft) + 06b-eval.ipynb before/after seeded benchmark notebook -- all 4 tasks complete, including the human-approved peft re-verification checkpoint.**
 
 ## Performance
 
-- **Duration:** ~45 min (Tasks 1-3)
+- **Duration:** ~48 min total (Tasks 1-3 ~45 min + Task 4 checkpoint resolution)
 - **Started:** 2026-08-20T17:39:00Z
 - **Completed (Tasks 1-3):** 2026-08-20T17:52:57Z
-- **Tasks:** 3 of 4 completed (Task 4 is a blocking human-verify checkpoint, not yet resolved)
+- **Completed (Task 4 + finalization):** 2026-08-22
+- **Tasks:** 4 of 4 completed
 - **Files modified:** 6 (3 created, 3 modified)
 
 ## Accomplishments
-- `eval_loop.py`'s `run_episode`/`run_suite` gained optional `seed`/`episode_seeds` parameters, applied freshly inside the per-episode loop (not hoisted before it) — the exact correctness requirement from Pitfall 7, proven via a two-independent-runs determinism test.
-- `adapter_backend.py`'s `FinetunedOFTBackend(OFTBackend)` reuses `OFTBackend`'s entire loading path via `super().__init__()`, merges a HF-Hub-downloaded PEFT adapter via `merge_and_unload()`, re-applies `set_num_images_in_input(2)` post-merge, and overlays the adapter's OWN `dataset_statistics.json` (not the base checkpoint's or Phase 4's) — `predict()` inherited verbatim.
+- `eval_loop.py`'s `run_episode`/`run_suite` gained optional `seed`/`episode_seeds` parameters, applied freshly inside the per-episode loop (not hoisted before it) -- the exact correctness requirement from Pitfall 7, proven via a two-independent-runs determinism test.
+- `adapter_backend.py`'s `FinetunedOFTBackend(OFTBackend)` reuses `OFTBackend`'s entire loading path via `super().__init__()`, merges a HF-Hub-downloaded PEFT adapter via `merge_and_unload()`, re-applies `set_num_images_in_input(2)` post-merge, and overlays the adapter's OWN `dataset_statistics.json` (not the base checkpoint's or Phase 4's) -- `predict()` inherited verbatim.
 - `06b-eval.ipynb` created as a separate Colab kernel (D-12): downloads the adapter, re-runs the full zero-shot baseline (D-09), a Pitfall-6 stats-divergence check, the fine-tuned benchmark under the byte-identical seeded protocol (D-08), and a WandB eval-results wrapper logging a before/after table + aggregate scalars to the shared `soarm-oft-finetune-eval` project.
+- Task 4's blocking `peft==0.20.0` package-legitimacy re-verification checkpoint (`gate="blocking-human"`) was resolved -- user approved, confirming the same already-verified HuggingFace origin holds for this notebook's independent Colab kernel install site (D-12).
 
 ## Task Commits
 
 Each task was committed atomically:
 
-1. **Task 1: eval_loop.py — per-episode seed plumbing** - `e05f9d8` (feat)
-2. **Task 2: adapter_backend.py — FinetunedOFTBackend** - `b69767a` (feat)
-3. **Task 3: 06b-eval.ipynb — before/after seeded benchmark notebook** - `e1ad20a` (feat)
+1. **Task 1: eval_loop.py -- per-episode seed plumbing** - `e05f9d8` (feat)
+2. **Task 2: adapter_backend.py -- FinetunedOFTBackend** - `b69767a` (feat)
+3. **Task 3: 06b-eval.ipynb -- before/after seeded benchmark notebook** - `e1ad20a` (feat)
+4. **Task 4: peft re-verification checkpoint approval record** - `57a4acb` (docs)
 
-**Plan metadata:** this SUMMARY.md commit (docs, worktree-local; STATE.md/ROADMAP.md updates deferred to the orchestrator per parallel-worktree execution)
+**Plan metadata:** this SUMMARY.md finalization commit (docs, worktree-local; STATE.md/ROADMAP.md updates deferred to the orchestrator per parallel-worktree execution)
 
-Task 4 (blocking `checkpoint:human-verify`, `gate="blocking-human"`) has NOT been committed — it requires explicit human confirmation and cannot be auto-approved by this executor regardless of `workflow.auto_advance`.
+Task 4 (blocking `checkpoint:human-verify`, `gate="blocking-human"`) required explicit human confirmation and could not be auto-approved regardless of `workflow.auto_advance` -- the user's "approved" response is recorded in `57a4acb` and the "Checkpoint Approvals" section below.
 
 ## Files Created/Modified
 - `LIBERO/libero/libero/vla/eval_loop.py` - `run_episode` gains `seed: int | None = None`; `run_suite` gains `episode_seeds: list | None = None`; both purely additive
@@ -127,7 +134,8 @@ Task 4 (blocking `checkpoint:human-verify`, `gate="blocking-human"`) has NOT bee
 - `LIBERO/notebooks/06b-eval.ipynb` - new eval notebook (bootstrap, adapter download, seeded before/after `run_suite`, Pitfall-6 divergence check, WandB eval-results wrapper)
 
 ## Decisions Made
-- Added `from __future__ import annotations` to `eval_loop.py` — not in the original plan's action spec, but required for the plan's literal `seed: int | None = None` / `episode_seeds: list | None = None` PEP 604 syntax to import successfully on this project's local `libero` conda env, which runs Python 3.9 (Colab runs 3.10+, where this deferred-annotation-evaluation is a no-op). Without it, `import libero.vla` raised `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'` at collection time, blocking every local test in the `vla` package.
+- Added `from __future__ import annotations` to `eval_loop.py` -- not in the original plan's action spec, but required for the plan's literal `seed: int | None = None` / `episode_seeds: list | None = None` PEP 604 syntax to import successfully on this project's local `libero` conda env, which runs Python 3.9 (Colab runs 3.10+, where this deferred-annotation-evaluation is a no-op). Without it, `import libero.vla` raised `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'` at collection time, blocking every local test in the `vla` package.
+- Task 4's blocking package-legitimacy checkpoint was resolved by explicit human approval rather than auto-approval -- consistent with `gate="blocking-human"` being non-auto-approvable regardless of `workflow.auto_advance`.
 
 ## Deviations from Plan
 
@@ -138,13 +146,13 @@ Task 4 (blocking `checkpoint:human-verify`, `gate="blocking-human"`) has NOT bee
 - **Issue:** Plan's literal `seed: int | None = None` signature spec, taken verbatim, is a runtime `TypeError` on Python 3.9 (this project's local `libero` conda env) because PEP 604 `|`-union syntax is not runtime-evaluable pre-3.10 without deferred annotations.
 - **Fix:** Added `from __future__ import annotations` at the top of `eval_loop.py`, deferring all annotation evaluation to strings. No runtime behavior change on Colab (3.10+), where this is already implicit via a different PEP.
 - **Files modified:** `LIBERO/libero/libero/vla/eval_loop.py`
-- **Verification:** `conda run -n libero pytest LIBERO/libero/libero/vla -x -q` — 17/17 passing after the fix (later 19/19 after Task 2's additions)
+- **Verification:** `conda run -n libero pytest LIBERO/libero/libero/vla -x -q` -- 17/17 passing after the fix (later 19/19 after Task 2's additions)
 - **Committed in:** `e05f9d8` (Task 1 commit)
 
 ---
 
 **Total deviations:** 1 auto-fixed (1 blocking, Rule 3)
-**Impact on plan:** Necessary for the plan's own literal signature spec to be importable in this project's local test environment. No scope creep — purely additive, zero behavior change to the plan's design.
+**Impact on plan:** Necessary for the plan's own literal signature spec to be importable in this project's local test environment. No scope creep -- purely additive, zero behavior change to the plan's design.
 
 ## Checkpoint Approvals
 
@@ -159,21 +167,26 @@ Task 4 (blocking `checkpoint:human-verify`, `gate="blocking-human"`) has NOT bee
 None beyond the deviation above.
 
 ## User Setup Required
-None yet completed — Plan 06-03's `user_setup` entries (Hugging Face Hub read access, Weights & Biases `WANDB_API_KEY`) are consumed on Colab when `06b-eval.ipynb` is actually run, which is gated behind Task 4's checkpoint below.
+Plan 06-03's `user_setup` entries (Hugging Face Hub read access, Weights & Biases `WANDB_API_KEY`) are consumed on Colab when `06b-eval.ipynb` is actually run. The Task 4 checkpoint that gated the notebook's install cell is now resolved; the researcher can proceed to the live Colab run described below.
 
 ## Next Phase Readiness
 
-**BLOCKED on Task 4 — blocking `checkpoint:human-verify` (`gate="blocking-human"`), never auto-approvable:**
+**All 4 tasks complete. This plan's local, no-GPU-dependent executor work is done and merged:**
+- `eval_loop.py` seed plumbing (Task 1)
+- `FinetunedOFTBackend` (Task 2)
+- `06b-eval.ipynb` (Task 3)
+- Task 4's blocking `peft==0.20.0` package-legitimacy re-verification checkpoint -- approved
 
-Task 4 requires a human to re-confirm `peft==0.20.0`'s legitimacy (same package/version already verified in Plan 06-02 Task 3, now re-installed in this notebook's separate Colab kernel per D-12). This blocks:
-- Running `06b-eval.ipynb`'s Block A install cell (`pip install peft==0.20.0 --no-deps`)
-- The plan's `<human-check>` real-Colab before/after benchmark run (TUNE-03/TUNE-04 final verification)
-- Marking `TUNE-03`/`TUNE-04` complete in REQUIREMENTS.md
+**Remaining work outside this executor's scope (live-Colab verification, per this phase's other GPU-only steps):**
 
-Once Task 4 resolves (human confirms `pip show peft`'s `github.com/huggingface/peft` origin on the eval kernel) and the `<human-check>` Colab run completes (before/after tables + aggregate scalars visible in `https://wandb.ai/<entity>/soarm-oft-finetune-eval`, Pitfall-6 divergence-check result visually confirmed), this plan is fully complete.
+The plan's `<human-check>` section requires a real Colab A100 GPU run to confirm TUNE-03/TUNE-04 end-to-end:
+1. After Plan 06-02's training run completes and prints its final `HF_ADAPTER_REPO_ID`, paste it into `06b-eval.ipynb`'s `ADAPTER_REPO_ID` cell.
+2. Run `06b-eval.ipynb` end-to-end on a Colab A100 (or T4) runtime through Block A, restart, Block B, task/language setup, WandB init, the BEFORE cell, the Pitfall-6 divergence-check cell, and the AFTER cell.
+3. Confirm the before/after `wandb.Table` and aggregate scalars appear in `https://wandb.ai/<entity>/soarm-oft-finetune-eval` alongside Plan 06-02's training-loss curves (same project, per D-13).
+4. Visually confirm the divergence-check cell printed either a clean pass or a clearly-flagged WARNING for the two `dataset_statistics.json` sources.
 
-All local, no-GPU-dependent work (Tasks 1-3) is done and merged: seed plumbing, `FinetunedOFTBackend`, and the notebook itself are ready for that Colab run — nothing further to implement locally.
+This live-Colab confirmation is what the next `/gsd-verify-work`/UAT pass on this phase should perform -- `TUNE-03`/`TUNE-04` should only be marked complete in REQUIREMENTS.md after it succeeds, consistent with how this phase's other GPU-only steps (data conversion, training) are tracked.
 
 ---
 *Phase: 06-fine-tuning-evaluation*
-*Completed (Tasks 1-3): 2026-08-20*
+*Completed: 2026-08-22*
