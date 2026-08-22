@@ -76,3 +76,12 @@ from .normalization import (
     load_actions_and_proprio_from_hdf5,
     write_dataset_statistics,
 )
+
+# rlds_converter is also pure-numpy-at-module-top (h5py/tensorflow/
+# tensorflow_datasets/bddl_utils imports are all local to function bodies) —
+# import UNCONDITIONALLY, same rationale as normalization above.
+from .rlds_converter import (
+    validate_episode_arrays,
+    load_episodes_from_hdf5,
+    hdf5_to_rlds,
+)
