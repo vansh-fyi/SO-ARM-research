@@ -116,6 +116,15 @@ Each task was committed atomically:
 - HF Hub auth cell implements the Drive-file-then-getpass pattern described in STATE.md's 01-close decision note fresh (no existing notebook already had this exact variant committed) -- explicitly requiring a WRITE-scoped token since this notebook pushes checkpoints, unlike prior phases' read-only HF usage.
 - Block B's post-restart cell order was copied verbatim from `06b-eval.ipynb` (already merged onto this branch from Plan 06-03's wave) rather than re-derived from Notebook 01 alone, since 06b-eval.ipynb already established the exact EGL -> config.yaml -> sys.path -> matplotlib/numba-shim sequence for this phase.
 
+## Checkpoint Approvals
+
+**Task 3: Human verifies peft/tensorflow-datasets/accelerate package legitimacy before Task 2's install cell runs** (`checkpoint:human-verify`, `gate="blocking-human"`, non-auto-approvable)
+
+- **What was verified:** `peft==0.20.0`, `tensorflow-datasets==4.9.10`, and (conditionally) `accelerate==1.14.0` -- all three flagged SUS by 06-RESEARCH.md's Package Legitimacy Audit (unknown download counts, no structural red flags found).
+- **How-to-verify steps (per plan):** PyPI metadata (Home-page/project-url) for each package confirmed to reference `github.com/huggingface/peft`, `github.com/tensorflow/datasets`, and `github.com/huggingface/accelerate` respectively.
+- **Resolution:** User responded **"approved"**, confirming PyPI metadata for all three packages matches their official HuggingFace/TensorFlow-org origin. Package Legitimacy Gate satisfied for this notebook's install site (T-06-02-SC closed).
+- **Resolved:** 2026-08-23
+
 ## Deviations from Plan
 
 None - Tasks 1 and 2 executed exactly as written. All automated verification commands and acceptance criteria for both tasks pass.
