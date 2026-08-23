@@ -85,3 +85,11 @@ from .rlds_converter import (
     load_episodes_from_hdf5,
     hdf5_to_rlds,
 )
+
+# oxe_register is also pure-stdlib-at-module-top (the prismatic import is
+# confined to apply_soarm_spatial_registration's function body) — import
+# UNCONDITIONALLY, same rationale as normalization/rlds_converter above.
+from .oxe_register import (
+    register_soarm_spatial,
+    apply_soarm_spatial_registration,
+)
