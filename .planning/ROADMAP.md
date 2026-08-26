@@ -185,7 +185,7 @@ Plans:
   2. Task success rates on spatial and non-spatial SOARM tasks are measured and compared before and after fine-tuning
   3. Training loss curves and evaluation success rates are visible in a WandB run dashboard
 
-**Plans**: 3/3 plans complete
+**Plans**: 3/4 plans complete
 
 Plans:
 **Wave 1** (independent -- zero files_modified overlap, run fully in parallel)
@@ -196,6 +196,10 @@ Plans:
 **Wave 2** *(blocked on 06-01)*
 
 - [x] 06-02-PLAN.md — OXE dataset registration + training notebook: finetune.py LoRA r=32 invocation, resumable HF Hub checkpoint push, WandB training curves (TUNE-02, TUNE-04)
+
+**Wave 3 — gap closure** *(from 06-UAT.md blocker, test 1)*
+
+- [ ] 06-04-PLAN.md — Fix wrong `libero.datasets` import path (should be `libero.libero.datasets`) in 06a-finetune.ipynb's RLDS-conversion and OXE-registration cells (TUNE-01, TUNE-02)
 
 ## Progress
 
