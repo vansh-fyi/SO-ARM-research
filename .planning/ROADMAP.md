@@ -185,7 +185,7 @@ Plans:
   2. Task success rates on spatial and non-spatial SOARM tasks are measured and compared before and after fine-tuning
   3. Training loss curves and evaluation success rates are visible in a WandB run dashboard
 
-**Plans**: 3/4 plans complete
+**Plans**: 4/4 plans complete
 
 Plans:
 **Wave 1** (independent -- zero files_modified overlap, run fully in parallel)
@@ -199,7 +199,7 @@ Plans:
 
 **Wave 3 — gap closure** *(from 06-UAT.md blocker, test 1)*
 
-- [ ] 06-04-PLAN.md — Fix wrong `libero.datasets` import path (should be `libero.libero.datasets`) in 06a-finetune.ipynb's RLDS-conversion and OXE-registration cells (TUNE-01, TUNE-02)
+- [x] 06-04-PLAN.md — Fix wrong `libero.datasets` import path (should be `libero.libero.datasets`) in 06a-finetune.ipynb's RLDS-conversion and OXE-registration cells (TUNE-01, TUNE-02)
 
 ## Progress
 
@@ -212,4 +212,4 @@ Plans:
 | 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
 | 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
 | 5. Spatial Awareness | 4/4 | Complete    | 2026-08-10 |
-| 6. Fine-Tuning & Evaluation | 3/3 | Complete   | 2026-08-23 |
+| 6. Fine-Tuning & Evaluation | 4/4 | Complete   | 2026-08-23 |
