@@ -1,5 +1,5 @@
 ---
-status: partial
+status: diagnosed
 phase: 06-fine-tuning-evaluation
 source: [06-VERIFICATION.md]
 started: 2026-08-23T08:15:00.000Z
@@ -86,5 +86,12 @@ blocked: 4
   reason: "User reported: RLDS conversion cell and OXE registration smoke-test cell both fail with ModuleNotFoundError: No module named 'libero.datasets' when running `from libero.datasets.rlds_converter import hdf5_to_rlds` and `from libero.datasets.oxe_register import apply_soarm_spatial_registration`. Block A install and Block B bootstrap succeeded; HF Hub write auth and WandB auth both completed successfully. finetune.py torchrun cell was not reached."
   severity: blocker
   test: 1
-  artifacts: []
-  missing: []
+  root_cause: "06a-finetune.ipynb imports from the wrong module path — `libero.datasets.*` instead of `libero.libero.datasets.*`. The actual package layout has datasets nested one level deeper (LIBERO/libero/libero/datasets/{rlds_converter,oxe_register}.py), and sys.path only has LIBERO/libero/LIBERO inserted (LIBERO_PKG), so the importable top-level package is `libero` -> `libero.libero.datasets...`. Every other notebook in the repo (06b-eval.ipynb, 03a/03b, 01, 02, quick_walkthrough.ipynb) correctly uses the `libero.libero.*` prefix; only 06a-finetune.ipynb's RLDS/OXE cells were written with the shorter, incorrect path."
+  artifacts:
+    - path: "LIBERO/notebooks/06a-finetune.ipynb"
+      issue: "RLDS-conversion cell: `from libero.datasets.rlds_converter import hdf5_to_rlds` should be `from libero.libero.datasets.rlds_converter import hdf5_to_rlds`"
+    - path: "LIBERO/notebooks/06a-finetune.ipynb"
+      issue: "OXE-registration cell: `from libero.datasets.oxe_register import apply_soarm_spatial_registration` should be `from libero.libero.datasets.oxe_register import apply_soarm_spatial_registration`"
+  missing:
+    - "Fix both import statements to use the `libero.libero.datasets` prefix"
+  debug_session: ""
