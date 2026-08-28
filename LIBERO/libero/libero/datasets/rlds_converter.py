@@ -266,27 +266,34 @@ def hdf5_to_rlds(hdf5_paths: list, out_dir: str, dataset_name: str = "soarm_spat
         }
     )
 
-    os.makedirs(out_dir, exist_ok=True)
+    # Standard TFDS layout: <out_dir>/<dataset_name>/<version>/*.tfrecord +
+    # dataset_info.json (06-RESEARCH.md Pattern 1's documented output path).
+    # DatasetInfo.data_dir is used verbatim by SequentialWriter as the write
+    # target -- it does NOT auto-append name/version -- so that nesting has
+    # to be built into the path passed here, or finetune.py's
+    # tfds.builder(dataset_name, data_dir=out_dir) call won't find it later.
+    full_data_dir = os.path.join(out_dir, dataset_name, "1.0.0")
+    os.makedirs(full_data_dir, exist_ok=True)
 
-    # NOTE [MEDIUM confidence, 06-RESEARCH.md Pattern 1/Standard Stack]: this
-    # project's local libero conda env has no tensorflow_datasets installed,
-    # so tfds.core.SequentialWriter's exact constructor/method signature could
-    # not be verified against tensorflow_datasets==4.9.10's real source in
-    # this session. If this call shape differs from the installed package on
-    # Colab, adjust it there -- but keep the feature schema and the
-    # validate-then-write ordering above unchanged (Pitfall 2 / D-06).
-    dataset_identity = tfds.core.naming.DatasetIdentity(
+    # tfds.core.DatasetIdentity (NOT tfds.core.naming.DatasetIdentity --
+    # verified against tensorflow_datasets==4.9.10's actual source; the
+    # class lives in dataset_info.py and is re-exported at tfds.core level).
+    dataset_identity = tfds.core.DatasetIdentity(
         name=dataset_name,
         version=tfds.core.Version("1.0.0"),
-        data_dir=out_dir,
+        data_dir=full_data_dir,
         module_name=__name__,
     )
     dataset_info = tfds.core.DatasetInfo(builder=dataset_identity, features=step_features)
-    writer = tfds.core.SequentialWriter(dataset_info, num_shards=1)
+    # SequentialWriter(ds_info, max_examples_per_shard, ...) -- max_examples_per_shard
+    # is required (no "num_shards" kwarg exists). One shard per episode is fine
+    # at this dataset's scale; a high value just means fewer, larger shard files.
+    writer = tfds.core.SequentialWriter(dataset_info, max_examples_per_shard=1000)
     writer.initialize_splits(["train"])
-    examples = [
-        (i, {"steps": _episode_to_rlds_steps(episode)}) for i, episode in enumerate(episodes)
-    ]
+    # add_examples wants a flat list of feature dicts per split -- NOT (key, dict)
+    # tuples (that's the GeneratorBasedBuilder._generate_examples convention,
+    # which SequentialWriter does not use).
+    examples = [{"steps": _episode_to_rlds_steps(episode)} for episode in episodes]
     writer.add_examples({"train": examples})
     writer.close_all()
 
