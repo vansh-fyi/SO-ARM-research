@@ -233,6 +233,22 @@ def hdf5_to_rlds(hdf5_paths: list, out_dir: str, dataset_name: str = "soarm_spat
     import tensorflow as tf
     import tensorflow_datasets as tfds
 
+    # Hide the GPU from TF as the FIRST TF action in this process, before any
+    # actual op runs. prismatic/vla/datasets/rlds/dataset.py (imported later,
+    # by oxe_register.py's apply_soarm_spatial_registration, in the SAME
+    # Colab kernel) does the identical call at its own import time to keep TF
+    # off the GPU PyTorch is training on -- but tf.config.set_visible_devices
+    # raises RuntimeError("Visible devices cannot be modified after being
+    # initialized") if the TF context is already initialized AND the
+    # requested value differs from what's current (verified against
+    # tensorflow==2.20.0's context.py: identical-value calls are a no-op even
+    # post-init). Calling it here first means prismatic's later identical
+    # call becomes that no-op instead of crashing the OXE registration cell.
+    try:
+        tf.config.set_visible_devices([], "GPU")
+    except RuntimeError:
+        pass  # already initialized with a different value -- nothing we can do here
+
     # Feature schema matches 06-RESEARCH.md Pattern 1's step_features exactly
     # (cross-checked against openvla/modified_libero_rlds's documented shapes).
     step_features = tfds.features.FeaturesDict(
