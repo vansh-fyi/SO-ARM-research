@@ -54,7 +54,7 @@ def test_register_soarm_spatial_injects_expected_dict_shape():
         "secondary": None,
         "wrist": "eye_in_hand_rgb",
     }
-    assert entry["state_obs_keys"] == ["state", None, None]
+    assert entry["state_obs_keys"] == ["state"]
     assert entry["state_encoding"] is state_encoding_sentinel
     assert entry["action_encoding"] is action_encoding_sentinel
     assert oxe_named_mixtures["soarm_spatial"] == [("soarm_spatial", 1.0)]
