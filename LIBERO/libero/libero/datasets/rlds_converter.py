@@ -112,6 +112,7 @@ def load_episodes_from_hdf5(hdf5_paths: list) -> list:
     # LIBERO-anchored absolute import (repo ROOT on sys.path), same pattern
     # hdf5_writer.py already relies on for get_problem_info.
     from LIBERO.libero.libero.envs.bddl_utils import get_problem_info
+    from LIBERO.libero.libero import get_libero_path
 
     episodes = []
     for hdf5_path in hdf5_paths:
@@ -121,6 +122,23 @@ def load_episodes_from_hdf5(hdf5_paths: list) -> list:
             bddl_file_name = grp.attrs["bddl_file_name"]
             if isinstance(bddl_file_name, bytes):
                 bddl_file_name = bddl_file_name.decode()
+            if not os.path.exists(bddl_file_name):
+                # hdf5_writer.py bakes os.path.abspath(bddl_file_name) into the
+                # HDF5 at collection time. That absolute path is only valid on
+                # the machine that collected it -- e.g. a demo collected
+                # locally and later downloaded onto a Colab VM has a
+                # /Users/... path that doesn't exist there. Re-anchor using
+                # the portable suffix after "bddl_files/" against THIS
+                # environment's actual bddl_files root (~/.libero/config.yaml).
+                _marker = "bddl_files" + os.sep
+                _idx = bddl_file_name.rfind(_marker)
+                if _idx == -1:
+                    raise FileNotFoundError(
+                        f"bddl_file_name {bddl_file_name!r} does not exist on disk "
+                        "and has no 'bddl_files/' segment to re-anchor against"
+                    )
+                _relative = bddl_file_name[_idx + len(_marker):]
+                bddl_file_name = os.path.join(get_libero_path("bddl_files"), _relative)
             # One HDF5 file = one task (this project's dataset scope, D-04).
             language_instruction = get_problem_info(bddl_file_name)["language_instruction"]
 
