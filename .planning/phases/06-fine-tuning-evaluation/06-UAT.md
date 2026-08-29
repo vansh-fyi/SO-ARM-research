@@ -88,7 +88,27 @@ expected: |
   FinetunedOFTBackend successfully downloads and merges the adapter without an AttributeError on
   set_num_images_in_input; the divergence-check cell prints a clean pass or a clearly-flagged
   WARNING (not a silent skip).
-result: [pending]
+result: issue
+reported: |
+  BEFORE pass completed cleanly (80 episodes, 4 tasks, 20 seeds each, no errors). But the
+  aggregate result (75%, 60/80) is misleading: 3 of the 4 tasks (put_the_cream_cheese_to_the_
+  right_of_the_bowl, put_the_cream_cheese_near_the_bowl, put_the_butter_between_the_bowl_and_
+  the_cream_cheese) show PASS at steps=1 for every single episode (20/20 each). Investigated
+  live: these are Phase 5's SPAT-05 predicate-validation tasks (libero_spatial_soarm/*.bddl),
+  deliberately authored so their goal predicates (RightOfX/NearTo/LeftOfX) are satisfied by the
+  reused, already-collision-validated Phase-4 object regions AT RESET, by design (05-03-PLAN.md
+  Task 2/3, D-09) -- confirmed via test_spatial_predicates.py's own
+  test_*_task_resets_satisfy_goal_20_of_20 tests, which exist specifically to assert this. They
+  are predicate-correctness smoke tests, not manipulation-difficulty benchmark tasks -- success
+  is structurally guaranteed regardless of policy quality. Only put_the_cream_cheese_in_the_bowl
+  (0/20 before, genuine physical containment goal) carries real before/after signal.
+severity: minor
+note: |
+  User decision: proceed with only put_the_cream_cheese_in_the_bowl as the meaningful task for
+  this Test 4 pass; author additional genuinely-challenging, empirically-validated SOARM
+  manipulation tasks as separate next-phase work (a same-night attempt to just move the 3
+  smoke-test tasks' spawn regions was tried and reverted -- it broke Phase 5's intentional,
+  tested SPAT-05 invariant; see Gaps for the full investigation).
 
 ### 5. WandB dashboard shows both training curves AND eval results together
 expected: |
@@ -322,3 +342,20 @@ blocked: 0
     - "Calling poll_and_push_checkpoints() from inside the launch cell's existing polling loop instead of a separate, never-reachable cell"
   debug_session: ""
   fix_applied: "Moved push_checkpoint_to_hub/poll_and_push_checkpoints' definitions before the launch cell, fixed the sort key with a regex verified against tonight's real directory names, and call poll_and_push_checkpoints() from inside the training loop (plus once more after it exits). Removed two ad-hoc cells that were a one-off manual recovery snippet for tonight's kernel restart (hardcoded timestamp), not permanent notebook content. Committed f8dcc8d, pushed to origin/main."
+
+- truth: "The 4-task before/after benchmark in 06b-eval.ipynb (3 spatial_soarm tasks + 1 goal task) produces a meaningful signal for whether fine-tuning improved manipulation capability"
+  status: investigated, not fixed -- deferred to next phase
+  reason: "BEFORE pass: 3 of 4 tasks (right_of_the_bowl, near_the_bowl, butter_between) PASS at steps=1 for all 20/20 episodes each; only put_the_cream_cheese_in_the_bowl (0/20) behaves like a real manipulation result."
+  severity: minor
+  test: 4
+  root_cause: "NOT a bug. LIBERO/libero/libero/bddl_files/libero_spatial_soarm/*.bddl were authored in Phase 5 (05-03-PLAN.md, SPAT-05/D-09) specifically so their goal predicates (RightOfX/NearTo/LeftOfX) are satisfied by Phase 4's already-collision-validated object regions AT RESET -- confirmed via test_spatial_predicates.py's test_*_task_resets_satisfy_goal_20_of_20 tests, which exist precisely to assert this. Their purpose was proving the new predicate CLASSES evaluate spatial relations correctly (SPAT-05's actual requirement), not providing manipulation-difficulty benchmark tasks. Phase 6's 06-02-PLAN.md picked these same 3 tasks for the eval suite without accounting for that -- a task-selection mismatch between phases, not a code defect in either phase."
+  artifacts:
+    - path: "LIBERO/libero/libero/bddl_files/libero_spatial_soarm/*.bddl"
+      issue: "Correctly implements its OWN (Phase 5) design intent; incorrectly reused as Phase 6 manipulation-benchmark tasks"
+    - path: ".planning/phases/06-fine-tuning-evaluation/06-02-PLAN.md"
+      issue: "Selected these 3 tasks for the before/after benchmark without checking whether their goals were structurally guaranteed"
+  missing:
+    - "Additional genuinely-challenging, empirically-validated SOARM manipulation tasks (not stock LIBERO tasks -- collector.py's TASKS list confirms only put_the_cream_cheese_in_the_bowl has ever been through the reach/collision validation process any other SOARM task would need)"
+  debug_session: ""
+  near_miss: "First diagnosed this as a BDDL region-definition bug and, with user sign-off, redesigned + sim-validated (empirical reset/settle checks, no collision, goal correctly False at reset) new spawn regions for all 3 tasks. Running the EXISTING test_spatial_predicates.py suite against the changed files immediately failed 5 tests -- test names like test_right_of_task_resets_satisfy_goal_20_of_20 revealed the trivial-pass behavior was intentional and tested, not a bug. Reverted via git checkout before committing (working tree only, nothing was ever pushed). Lesson: run the existing test suite for a file BEFORE editing it, not just after -- would have caught this in one command instead of a multi-step simulation investigation."
+  fix_applied: "None this session -- user decision: proceed with only put_the_cream_cheese_in_the_bowl as Test 4's meaningful signal; author new, properly-validated SOARM manipulation tasks as separate next-phase work."
