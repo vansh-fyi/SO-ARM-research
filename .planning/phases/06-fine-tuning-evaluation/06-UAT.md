@@ -129,7 +129,7 @@ blocked: 0
 ## Gaps
 
 - truth: "The git clone/pull delivery cell (06a-finetune.ipynb cell 2) succeeds on every run within a given Colab VM, including after a kernel restart, without re-prompting for the GitHub token"
-  status: failed
+  status: resolved
   reason: "User reported: after restarting the Colab runtime (kernel restart within the same VM), the git clone/pull cell raises RuntimeError: git clone/pull failed -- check the token is valid and has read access to vansh-fyi/SO-ARM-research. This happens on the `git pull` (else) branch, taken because REPO_ROOT already exists on disk from the pre-restart clone."
   severity: blocker
   test: 1
@@ -140,6 +140,7 @@ blocked: 0
   missing:
     - "After a successful clone (or before the pull), configure a git credential helper (e.g. `git config credential.helper store` with credentials written via GIT_ASKPASS, or `git config credential.helper 'cache --timeout=<VM lifetime>'`) so the token is actually reusable across the runtime restart, matching the cell's stated design intent -- or, alternatively, re-run GIT_ASKPASS-backed auth on the pull path too if persisting the token to disk is undesirable"
   debug_session: ""
+  fix_applied: "This root cause was correctly diagnosed in an earlier session but never actually fixed -- the identical failure recurred live tonight, this time in 06b-eval.ipynb's own independent copy of the delivery cell (06a's copy likely also never exercised its clone-only credential setup this session, since REPO_ROOT probably already existed the first time ITS delivery cell ran too). Rewrote both notebooks' delivery cells identically: ensure ~/.git-credentials exists (getpass prompt only if missing) BEFORE deciding clone vs. pull, using credential.helper store for both uniformly -- removes the old clone-only GIT_ASKPASS special-casing entirely. Committed 227e556, pushed to origin/main."
 
 - truth: "hdf5_to_rlds produces a genuine tfds.builder-loadable RLDS dataset and apply_soarm_spatial_registration prints a registered soarm_spatial config with no traceback"
   status: failed
