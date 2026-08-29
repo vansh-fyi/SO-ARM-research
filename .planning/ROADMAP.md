@@ -213,3 +213,19 @@ Plans:
 | 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
 | 5. Spatial Awareness | 4/4 | Complete    | 2026-08-10 |
 | 6. Fine-Tuning & Evaluation | 4/4 | Complete   | 2026-08-23 |
+
+## Backlog
+
+### Phase 999.1: Camera calibration + depth camera for perception (BACKLOG)
+
+**Goal:** [Captured for future planning]
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Found while reviewing 06b-eval.ipynb's before/after benchmark videos (Phase 6 UAT, 2026-08-29):
+
+1. **Camera angle mismatch**: The agentview/front camera in the current MuJoCo scene setup does not represent the true camera view/position that will exist on the real physical SOARM arm. Needs recalibration so simulated camera views match the real robot's actual camera placement/FOV before training on more data.
+2. **Add depth camera output**: Currently only RGB (agentview + eye_in_hand) camera views are captured/trained on. Need to add a depth camera (positioned top-down or side-mounted) so depth/environment geometry data is captured alongside RGB for future fine-tuning and training runs -- gives the policy persistent environment/spatial awareness data, not just RGB.
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
