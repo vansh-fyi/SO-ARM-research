@@ -390,3 +390,18 @@ blocked: 0
     - "Resolve unnorm_key from whatever single key is actually present in the adapter's norm_stats, instead of hardcoding a name"
   debug_session: ""
   fix_applied: "Since this project trains one LoRA adapter per single HDF5 dataset (D-04), norm_stats always has exactly one key -- use it directly, fail loudly if not exactly one. Existing test's mock data already used a single-key dict, so no test changes needed; local pytest (2 passed) confirms. Committed bf9323e, pushed to origin/main."
+
+- truth: "06b-eval.ipynb's Pitfall-6 divergence-check cell and AFTER cell can access Phase 4's dataset_statistics.json and the private adapter repo on a fresh VM"
+  status: resolved
+  reason: "User reported: FileNotFoundError: /content/SoARM-Research/LIBERO/libero/datasets/soarm_spatial/dataset_statistics.json -- on the Pitfall-6 divergence-check cell, on a fresh VM run of 01-colab-env-setup.ipynb + 06b-eval.ipynb."
+  severity: blocker
+  test: 4
+  root_cause: "Two compounding gaps: (1) LIBERO/libero/datasets/ is gitignored -- 06b-eval.ipynb never had a reason to download Phase 4's training dataset the way 06a-finetune.ipynb does, since eval only needs the adapter. (2) 06b-eval.ipynb had NO HF Hub auth cell at all (unlike 06a's WRITE-token cell) -- both the divergence-check download and the AFTER cell's FinetunedOFTBackend adapter download need PRIVATE repo access, which had been silently relying on whatever token happened to already be cached on the VM's disk from a different notebook's earlier session. On a genuinely fresh VM there's no such cache."
+  artifacts:
+    - path: "LIBERO/notebooks/06b-eval.ipynb"
+      issue: "Divergence-check cell assumed dataset_statistics.json was already on local disk; notebook had no HF Hub auth cell anywhere"
+  missing:
+    - "Download dataset_statistics.json from the same HF Hub dataset repo the raw HDF5s were pushed to (vansh-fyi/soarm-spatial-demos)"
+    - "A read-only HF Hub auth cell covering every downstream cell needing private-repo access"
+  debug_session: ""
+  fix_applied: "Divergence-check cell now downloads just dataset_statistics.json via hf_hub_download (not the full ~1.7GB dataset). Added a new auth cell (Drive-token-file-or-getpass, mirroring 06a's WRITE-token cell pattern but read-only) positioned before Task/Language setup, so it covers Task setup, WandB, BEFORE, divergence-check, and AFTER. Committed 3204a02, pushed to origin/main."
