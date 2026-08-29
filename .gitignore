@@ -8,3 +8,9 @@ explorations/*
 **/.env
 **/__pycache__/
 **/.pytest_cache/
+progress-documentation/
+diagnostics/.venv/
+diagnostics/.direnv/
+diagnostics/outputs/
+.DS_Store
+.planning/research/.cache/

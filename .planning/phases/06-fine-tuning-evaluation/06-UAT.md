@@ -66,6 +66,8 @@ reported: |
   RUN_ROOT_DIR/HF_ADAPTER_REPO_ID and pushing directly, not by exercising the notebook's actual
   RESUME=True/RESUME_STEP=<N> relaunch path. That path remains unverified.
 severity: minor
+result: skipped
+reason: "Checkpoint push confirmed; RESUME=True path not exercised this session -- accepted gap, not a blocker for phase closure."
 
 ### 3. WandB training-loss curves visible
 expected: |

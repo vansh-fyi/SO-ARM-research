@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: VLA Inference Loop** - Close the loop from language prompt to rendered SOARM task video with success detection and dual-VLA support (completed 2026-08-02)
 - [x] **Phase 4: Dataset Collection** - Collect 100+ scripted SOARM demonstrations in robomimic HDF5 with state-based replay and normalization stats (completed 2026-08-03)
 - [x] **Phase 5: Spatial Awareness** - Add multi-camera perception, depth-based 3D localization, and spatial language BDDL task variants (completed 2026-08-10)
-- [x] **Phase 6: Fine-Tuning & Evaluation** - Fine-tune OpenVLA-OFT on SOARM demonstrations and benchmark spatial vs. non-spatial task success (completed 2026-08-23)
+- [x] **Phase 6: Fine-Tuning & Evaluation** - Fine-tune OpenVLA-OFT on SOARM demonstrations and benchmark spatial vs. non-spatial task success (completed 2026-08-29)
 
 ## Phase Details
 
@@ -212,4 +212,4 @@ Plans:
 | 3. VLA Inference Loop | 3/3 | Complete   | 2026-08-02 |
 | 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
 | 5. Spatial Awareness | 4/4 | Complete    | 2026-08-10 |
-| 6. Fine-Tuning & Evaluation | 4/4 | Complete   | 2026-08-23 |
+| 6. Fine-Tuning & Evaluation | 4/4 | Complete   | 2026-08-29 |

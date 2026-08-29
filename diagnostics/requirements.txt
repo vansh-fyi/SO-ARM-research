@@ -1,0 +1,4 @@
+pyserial==3.5
+feetech-servo-sdk==1.0.0
+opencv-python==5.0.0.93
+numpy==2.5.2
