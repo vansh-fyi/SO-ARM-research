@@ -307,3 +307,18 @@ blocked: 0
     - "depth_obs_keys: {primary: None, secondary: None, wrist: None} -- matches openvla-oft's own LIBERO configs' all-None pattern for datasets with no depth cameras"
   debug_session: ""
   fix_applied: "Added the missing key to both register_soarm_spatial and the file-patch text. Versioned the on-disk patch marker to v2 so this actually re-applies to a VM whose configs.py was already patched by the prior, incomplete version -- the marker-gated idempotency check would otherwise silently skip the corrected block. Local pytest (3 passed) confirms no regression. Committed 1374453, pushed to origin/main."
+
+- truth: "poll_and_push_checkpoints correctly identifies checkpoint step numbers and actually runs periodically during training"
+  status: resolved
+  reason: "Proactive review after tonight's training run, not a live crash: the checkpoint auto-push cells never actually fired during training (checkpoints had to be pushed manually after a kernel restart), and reviewing why surfaced two design bugs."
+  severity: minor
+  test: 2
+  root_cause: "(1) The sort key assumed checkpoint dirs are named '<step>_chkpt', but finetune.py names them '<run-name>--<step>_chkpt' -- basename.split('_')[0].isdigit() always failed, so every checkpoint silently sorted as step 0 (harmless with <=2 checkpoints, would prune the wrong ones with 3+). (2) The cell's own comment said to run it 'periodically... from another cell execution while training continues', which is impossible in a single Jupyter/Colab kernel since the launch cell blocks synchronously in its polling loop -- this cell could only ever run AFTER training fully stopped."
+  artifacts:
+    - path: "LIBERO/notebooks/06a-finetune.ipynb"
+      issue: "poll_and_push_checkpoints' sort key and the concurrency assumption in its own docstring were both wrong"
+  missing:
+    - "A regex-based step extraction matching the real naming pattern"
+    - "Calling poll_and_push_checkpoints() from inside the launch cell's existing polling loop instead of a separate, never-reachable cell"
+  debug_session: ""
+  fix_applied: "Moved push_checkpoint_to_hub/poll_and_push_checkpoints' definitions before the launch cell, fixed the sort key with a regex verified against tonight's real directory names, and call poll_and_push_checkpoints() from inside the training loop (plus once more after it exits). Removed two ad-hoc cells that were a one-off manual recovery snippet for tonight's kernel restart (hardcoded timestamp), not permanent notebook content. Committed f8dcc8d, pushed to origin/main."
