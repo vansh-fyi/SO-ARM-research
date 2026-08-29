@@ -74,16 +74,24 @@ class FinetunedOFTBackend(OFTBackend):
         )
 
         # Re-resolve unnorm_key against these NEW adapter-specific stats —
-        # the base checkpoint's resolved key may not exist in this dict.
-        self.unnorm_key = "libero_spatial"
-        if self.unnorm_key not in self.model.norm_stats:
-            if f"{self.unnorm_key}_no_noops" in self.model.norm_stats:
-                self.unnorm_key = f"{self.unnorm_key}_no_noops"
-            else:
-                raise KeyError(
-                    f"No libero_spatial key in adapter norm_stats. "
-                    f"Available: {list(self.model.norm_stats.keys())}"
-                )
+        # the base checkpoint's resolved key (OFTBackend's zero-shot
+        # "libero_spatial", the stock LIBERO dataset name) does not exist
+        # here. finetune.py's own dataset_statistics.json is keyed by
+        # THIS project's actual registered dataset name (oxe_register.py's
+        # "soarm_spatial", RLDS_DATASET_NAME in 06a-finetune.ipynb) --
+        # confirmed live: Available: ['soarm_spatial'], not
+        # 'libero_spatial'/'libero_spatial_no_noops'. A single-dataset LoRA
+        # fine-tune (this project's setup, D-04 -- one HDF5 = one task)
+        # always has exactly one key in this dict, so use whichever one is
+        # actually present rather than hardcoding a name that only applies
+        # to the zero-shot base checkpoint.
+        available_keys = list(self.model.norm_stats.keys())
+        if len(available_keys) != 1:
+            raise KeyError(
+                f"Expected exactly 1 key in adapter norm_stats (single-dataset "
+                f"fine-tune), found {len(available_keys)}: {available_keys}"
+            )
+        self.unnorm_key = available_keys[0]
         print(f"Using unnorm_key: {self.unnorm_key} (adapter-specific stats)")
 
     # predict() is intentionally NOT overridden — inherited verbatim from
