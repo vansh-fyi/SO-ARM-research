@@ -24,6 +24,7 @@ guarded try/except wraps the whole import, not this file internally.
 """
 
 import json
+import os
 
 from huggingface_hub import hf_hub_download, snapshot_download
 from peft import PeftModel
@@ -41,7 +42,13 @@ class FinetunedOFTBackend(OFTBackend):
         super().__init__(checkpoint=checkpoint, device=device)
 
         print(f"Downloading fine-tuned adapter from {adapter_repo_id}...")
-        adapter_dir = snapshot_download(adapter_repo_id)
+        checkpoint_dir = snapshot_download(adapter_repo_id)
+        # push_checkpoint_to_hub (06a-finetune.ipynb) uploads finetune.py's
+        # entire checkpoint directory verbatim -- the actual PEFT adapter
+        # (adapter_config.json + adapter_model.safetensors) lives in that
+        # checkpoint's own "lora_adapter/" subfolder, not at the repo root.
+        # Confirmed live via HfApi().list_repo_files(adapter_repo_id).
+        adapter_dir = os.path.join(checkpoint_dir, "lora_adapter")
 
         print(f"Merging LoRA adapter from {adapter_dir} into base checkpoint...")
         self.model = PeftModel.from_pretrained(self.model, adapter_dir).merge_and_unload()

@@ -181,9 +181,13 @@ def test_init_merges_adapter_and_reapplies_dual_image_mode(fake_adapter_deps):
 
     # PeftModel.from_pretrained was called with the base-checkpoint's loaded
     # model (fake_model, since fake_model.to() returns itself) and the
-    # adapter_dir snapshot_download resolved.
+    # snapshot_download-resolved checkpoint dir's "lora_adapter" subfolder --
+    # push_checkpoint_to_hub (06a-finetune.ipynb) uploads finetune.py's
+    # entire checkpoint directory verbatim, and the actual PEFT adapter
+    # (adapter_config.json + adapter_model.safetensors) lives in that
+    # checkpoint's own lora_adapter/ subfolder, not the repo root.
     assert fake_peft_model_cls.from_pretrained.call_args_list == [
-        mock.call(fake_model, "/fake/adapter/dir")
+        mock.call(fake_model, "/fake/adapter/dir/lora_adapter")
     ]
 
     # set_num_images_in_input(2) called TWICE: once from the inherited
