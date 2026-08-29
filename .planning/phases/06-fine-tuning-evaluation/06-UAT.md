@@ -376,3 +376,17 @@ blocked: 0
     - "os.path.join(checkpoint_dir, 'lora_adapter') before passing to PeftModel.from_pretrained()"
   debug_session: ""
   fix_applied: "Added the lora_adapter/ subfolder join; updated the existing test's mock assertion to match. Local pytest (2 passed) confirms no regression. Committed 4f6bb81, pushed to origin/main."
+
+- truth: "FinetunedOFTBackend resolves the correct unnorm_key against the adapter's own norm_stats"
+  status: resolved
+  reason: "User reported: KeyError: No libero_spatial key in adapter norm_stats. Available: ['soarm_spatial'] -- raised after the adapter successfully downloaded and merged (previous lora_adapter path fix confirmed working)."
+  severity: blocker
+  test: 4
+  root_cause: "unnorm_key resolution hardcoded 'libero_spatial' (falling back to 'libero_spatial_no_noops'), matching OFTBackend's zero-shot base-checkpoint key. The fine-tuned adapter's own dataset_statistics.json is keyed by this project's actual registered dataset name (oxe_register.py's 'soarm_spatial'), not LIBERO's stock naming."
+  artifacts:
+    - path: "LIBERO/libero/libero/vla/adapter_backend.py"
+      issue: "unnorm_key resolution assumed the base checkpoint's key name applies to the fine-tuned adapter's stats too"
+  missing:
+    - "Resolve unnorm_key from whatever single key is actually present in the adapter's norm_stats, instead of hardcoding a name"
+  debug_session: ""
+  fix_applied: "Since this project trains one LoRA adapter per single HDF5 dataset (D-04), norm_stats always has exactly one key -- use it directly, fail loudly if not exactly one. Existing test's mock data already used a single-key dict, so no test changes needed; local pytest (2 passed) confirms. Committed bf9323e, pushed to origin/main."
