@@ -359,3 +359,19 @@ blocked: 0
   debug_session: ""
   near_miss: "First diagnosed this as a BDDL region-definition bug and, with user sign-off, redesigned + sim-validated (empirical reset/settle checks, no collision, goal correctly False at reset) new spawn regions for all 3 tasks. Running the EXISTING test_spatial_predicates.py suite against the changed files immediately failed 5 tests -- test names like test_right_of_task_resets_satisfy_goal_20_of_20 revealed the trivial-pass behavior was intentional and tested, not a bug. Reverted via git checkout before committing (working tree only, nothing was ever pushed). Lesson: run the existing test suite for a file BEFORE editing it, not just after -- would have caught this in one command instead of a multi-step simulation investigation."
   fix_applied: "None this session -- user decision: proceed with only put_the_cream_cheese_in_the_bowl as Test 4's meaningful signal; author new, properly-validated SOARM manipulation tasks as separate next-phase work."
+
+- truth: "FinetunedOFTBackend loads the pushed LoRA adapter successfully"
+  status: resolved
+  reason: "User reported: ValueError: Can't find 'adapter_config.json' at '/root/.cache/huggingface/hub/models--vansh-fyi--soarm-oft-lora-20260829-052948/snapshots/<sha>' -- raised inside PeftModel.from_pretrained, called from FinetunedOFTBackend.__init__ during the AFTER-pass setup."
+  severity: blocker
+  test: 4
+  root_cause: "adapter_backend.py pointed PeftModel.from_pretrained() at the raw snapshot_download() root, assuming adapter_config.json lives there. push_checkpoint_to_hub (06a-finetune.ipynb) actually uploads finetune.py's entire checkpoint directory verbatim -- confirmed via HfApi().list_repo_files() earlier tonight -- so the PEFT adapter files live in that checkpoint's own lora_adapter/ subfolder, not the repo root. dataset_statistics.json's separate hf_hub_download call was already correct (that file IS at the repo root)."
+  artifacts:
+    - path: "LIBERO/libero/libero/vla/adapter_backend.py"
+      issue: "adapter_dir passed to PeftModel.from_pretrained() was the snapshot root, missing the lora_adapter/ subfolder"
+    - path: "LIBERO/libero/libero/vla/test_adapter_backend.py"
+      issue: "Mock assertion encoded the same incorrect assumption -- updated to match, since (unlike the BDDL near-miss above) this had a live traceback proving the old behavior was actually broken"
+  missing:
+    - "os.path.join(checkpoint_dir, 'lora_adapter') before passing to PeftModel.from_pretrained()"
+  debug_session: ""
+  fix_applied: "Added the lora_adapter/ subfolder join; updated the existing test's mock assertion to match. Local pytest (2 passed) confirms no regression. Committed 4f6bb81, pushed to origin/main."
