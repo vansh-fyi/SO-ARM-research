@@ -1,3 +1,9 @@
+# Requires Python 3.12 (cp312 wheels only -- pins below have no cp313 build).
+# On Colab: Runtime > Change runtime type > Runtime version > pin to 2026.07 or
+# earlier (Colab's "Latest" default has moved past Python 3.12; see
+# https://research.google.com/colaboratory/runtime-version-faq.html for the
+# dated version -> Python version table). Local/non-Colab installs: use
+# Python 3.12 directly (pyenv install 3.12, python3.12 -m venv .venv).
  hydra-core==1.2.0
  numpy==1.22.4 
  wandb==0.13.1 
@@ -13,3 +19,92 @@
  matplotlib==3.5.3 
  cloudpickle==2.1.0
  gym==0.25.2
+
+# ---------------------------------------------------------------------------
+# Everything below is REFERENCE ONLY -- these packages are not installed from
+# this file by Colab (each is pip-installed inline, cell-by-cell, inside the
+# notebooks cited). Kept here as a single accurate source of every exact
+# pip version this project depends on -- both so Colab version drift is
+# visible in one place, AND as the starting point for a non-Colab (e.g.
+# supercomputer/cluster) install, where a flat `pip install -r` DOES apply
+# directly to the "pip-installable" lines below. If you change a pin in a
+# notebook, update the matching line here too -- these WILL drift out of
+# sync otherwise. Verified against the actual current notebook cell source
+# on 2026-08-29 (not just comments/docs, which can go stale independently).
+#
+# On a non-Colab machine (e.g. a supercomputer node): use Python 3.12
+# directly (see the Python/CUDA note at the top of this file) and a CUDA
+# 12.1-compatible driver (matches the torch cu121 wheel below) -- adjust
+# the --index-url if the target cluster's CUDA version differs.
+# ---------------------------------------------------------------------------
+
+# --- System packages (apt, NOT pip -- install before anything else below;
+# Debian/Ubuntu package names, adjust for the target cluster's package
+# manager) -- required for MuJoCo's Python extension to build/render
+# headlessly. On a cluster with EGL/OpenGL already provisioned by the
+# module system, these may already be satisfied. ---
+# libglfw3 libglew-dev libosmesa6-dev libgles2 libglvnd0 libegl-dev libegl1 libgl1-mesa-glx
+
+# --- Colab Block A: OpenVLA-OFT / LoRA stack (identical in notebooks/01-colab-env-setup.ipynb
+# and notebooks/02-soarm-integration-check.ipynb) ---
+# --extra-index-url (not --index-url) so PyPI stays the default for every
+# other package below -- --index-url would replace it entirely and break
+# every non-PyTorch package's resolution.
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.2.0
+torchvision==0.17.0
+torchaudio==2.2.0
+mujoco==3.3.2
+gym>=0.21,<=0.26
+robosuite==1.4.0
+bddl==1.0.1
+easydict==1.9
+cloudpickle==2.1.0
+einops==0.4.1
+imageio[ffmpeg]
+opencv-python-headless>=4.7,<4.10
+numba>=0.59,<0.60
+numpy>=1.24,<2   # exact-pinned to numpy==1.26.4 by 01-colab-env-setup.ipynb's final ABI-purge gate
+timm==0.9.10
+tokenizers==0.19.1
+sentencepiece==0.1.99
+peft==0.11.1
+huggingface_hub
+draccus==0.8.0
+jsonlines
+wandb
+json-numpy
+diffusers==0.30.3   # force-pinned -- diffusers>=0.31 needs peft>=0.17, conflicts with peft==0.11.1 above
+protobuf   # reinstall -U LAST, after everything above -- transformers-fork/LIBERO installs can drag it below Colab's tensorflow_metadata gencode requirement
+
+# --- Individual commands (NOT plain requirements.txt lines -- --no-deps and
+# git+ sources can't be expressed per-package inside a `pip install -r` file;
+# --no-deps is a whole-command pip flag, not a per-line package option) ---
+# tensorflow==2.15.0 has NO cp312 wheel at all (dlimp/kvablack's own pin --
+# this project relies on Colab's stock preinstalled tensorflow instead of
+# actually installing this exact version; on a non-Colab cp312 machine,
+# substitute a version that HAS a cp312 wheel, e.g. tensorflow>=2.16, and
+# expect dlimp's own tensorflow==2.15.0 declared requirement to be
+# unsatisfiable -- that's exactly why dlimp is installed --no-deps below):
+# pip install tensorflow>=2.16   (or whatever's already present -- verify with `python -c "import tensorflow"`)
+# pip install tensorflow-graphics==2021.12.3 --no-deps
+# pip install tensorflow-datasets==4.9.10 --no-deps
+# pip install -e <path to this repo's LIBERO/> (this project's own LIBERO fork, editable)
+# git clone --depth 1 https://github.com/kvablack/dlimp && pip install --no-deps -e dlimp/
+# pip install "git+https://github.com/moojink/openvla-oft.git" --no-deps
+# pip install git+https://github.com/moojink/transformers-openvla-oft.git   # replaces transformers entirely -- do NOT also install transformers==4.40.1 from PyPI, install this LAST
+# flash-attn (optional, functional-tested at runtime, falls back to standard attention if unavailable):
+#   https://github.com/Dao-AILab/flash-attention/releases/download/v2.6.3/flash_attn-2.6.3+cu123torch2.2cxx11abiFALSE-cp312-cp312-linux_x86_64.whl
+
+# --- Colab: openpi/pi0 stack (notebooks/03b-pi0-inference-smoketest.ipynb) ---
+# Managed by openpi's own pyproject.toml (torch==2.7.1, transformers==4.53.2),
+# not pip-installed directly by this repo -- listed here for visibility only.
+# mujoco==3.3.2
+# gym==0.25.2
+# bddl==1.0.1
+
+# --- Phase 6 fine-tuning/eval (notebooks/06a-finetune.ipynb, notebooks/06b-eval.ipynb) ---
+# json-numpy (active line above) and tensorflow-datasets==4.9.10 (individual
+# command above) are now folded into Block A (01-colab-env-setup.ipynb) --
+# accelerate is what's left as genuinely Phase-6-specific, on top of Block A:
+accelerate==1.14.0
