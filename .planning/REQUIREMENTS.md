@@ -142,27 +142,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TUNE-02 | Phase 6 | Complete |
 | TUNE-03 | Phase 6 | Complete |
 | TUNE-04 | Phase 6 | Complete |
-| CAM-01 | TBD (roadmap) | Pending |
-| DEPTH-01 | TBD (roadmap) | Pending |
-| DEPTH-02 | TBD (roadmap) | Pending |
-| DEPTH-03 | TBD (roadmap) | Pending |
-| BENCH-01 | TBD (roadmap) | Pending |
-| BENCH-02 | TBD (roadmap) | Pending |
-| BENCH-03 | TBD (roadmap) | Pending |
-| BENCH-04 | TBD (roadmap) | Pending |
-| OBJ-01 | TBD (roadmap) | Pending |
-| OBJ-02 | TBD (roadmap) | Pending |
-| DATA-05 | TBD (roadmap) | Pending |
-| TUNE-05 | TBD (roadmap) | Pending |
-| TUNE-06 | TBD (roadmap) | Pending |
+| CAM-01 | Phase 7 | Pending |
+| DEPTH-01 | Phase 7 | Pending |
+| DEPTH-02 | Phase 7 | Pending |
+| DEPTH-03 | Phase 7 | Pending |
+| BENCH-01 | Phase 8 | Pending |
+| BENCH-02 | Phase 8 | Pending |
+| BENCH-03 | Phase 8 | Pending |
+| BENCH-04 | Phase 8 | Pending |
+| OBJ-01 | Phase 8 | Pending |
+| OBJ-02 | Phase 8 | Pending |
+| DATA-05 | Phase 9 | Pending |
+| TUNE-05 | Phase 9 | Pending |
+| TUNE-06 | Phase 9 | Pending |
 
 **Coverage:**
 
 - v1 requirements: 24 total
-- v1.1 requirements: 17 total
-- Mapped to phases: 24 (v1) — v1.1 mapping pending roadmap creation
-- Unmapped: 0 (v1) ✓ / 17 (v1.1, pending roadmap)
+- v1.1 requirements: 13 total
+- Mapped to phases: 24 (v1) + 13 (v1.1) = 37
+- Unmapped: 0 (v1) ✓ / 0 (v1.1) ✓
 
 ---
 *Requirements defined: 2026-07-07*
-*Last updated: 2026-08-30 after defining milestone v1.1 requirements*
+*Last updated: 2026-08-30 after roadmap creation for milestone v1.1 (Phases 7-9); corrected v1.1 requirement count from a prior miscount of 17 to the actual 13 enumerated IDs (CAM-01, DEPTH-01/02/03, BENCH-01/02/03/04, OBJ-01/02, DATA-05, TUNE-05/06).*
