@@ -43,8 +43,43 @@ Requirements for initial research pipeline. Each maps to roadmap phases.
 
 - [x] **TUNE-01**: Robomimic HDF5 dataset is converted to RLDS format compatible with OpenVLA fine-tuning pipeline
 - [x] **TUNE-02**: OpenVLA-OFT is fine-tuned on SOARM demonstrations using LoRA (r=32) on Colab A100
-- [ ] **TUNE-03**: Spatial vs non-spatial task success rates are benchmarked before and after fine-tuning
-- [ ] **TUNE-04**: Training metrics and evaluation results are tracked with WandB
+- [x] **TUNE-03**: Spatial vs non-spatial task success rates are benchmarked before and after fine-tuning
+- [x] **TUNE-04**: Training metrics and evaluation results are tracked with WandB
+
+## v1.1 Requirements
+
+Requirements for milestone v1.1 (Perception Fidelity & Checkpoint Benchmark). Addresses a UAT-surfaced flaw in Phase 6's benchmark (3 of 4 eval tasks pass trivially at object spawn) and adds camera/depth perception fidelity work (SEED-001).
+
+### Camera Calibration
+
+- [ ] **CAM-01**: Sim agentview/front camera is recalibrated (position, angle, FOV) to match the real SOARM camera placement, closing the sim-to-real view gap
+
+### Depth Perception
+
+- [ ] **DEPTH-01**: A depth camera stream is added to the SOARM MuJoCo scene and exposed as a robosuite/LIBERO observation
+- [ ] **DEPTH-02**: Depth frames are persisted alongside RGB in the HDF5 dataset writer
+- [ ] **DEPTH-03**: Depth frames are carried through the RLDS converter into the fine-tuning dataset
+
+### Checkpoint Benchmark Suite
+
+- [ ] **BENCH-01**: The 3 spawn-trivial spatial tasks (`RightOfX`/`NearTo`/`LeftOfX` predicates satisfied at t=0) are excluded from success-rate benchmark aggregates
+- [ ] **BENCH-02**: A new benchmark task suite of ~8-15 tasks is authored, organized into LIBERO-style categories (mirroring spatial/object/goal or an equivalent split)
+- [ ] **BENCH-03**: Each benchmark task defines checkpoint/sub-goal predicates (e.g. reach→grasp→lift→place, ~4 steps) individually markable as passed/failed during an episode
+- [ ] **BENCH-04**: Evaluation reports per-checkpoint and final success rate plus generalization splits (seen vs unseen object positions/instructions), at the same 20-episode/task cadence as Phase 6
+
+### Object Pool
+
+- [ ] **OBJ-01**: Existing LIBERO objects are surveyed and filtered for SOARM compatibility (≤84mm graspable width, placeable within ~0.45m reach)
+- [ ] **OBJ-02**: At least 1-3 new custom objects are authored (MJCF asset + registration) via the `custom_object_example.ipynb` workflow to diversify the benchmark object pool
+
+### Dataset Collection (v1.1)
+
+- [ ] **DATA-05**: Demonstrations are collected (scripted and/or teleoperated) for every task in the new checkpoint benchmark suite
+
+### Fine-Tuning & Evaluation (v1.1)
+
+- [ ] **TUNE-05**: OpenVLA-OFT is re-fine-tuned (LoRA r=32) on the expanded dataset, including depth-augmented observations
+- [ ] **TUNE-06**: The re-fine-tuned model is evaluated on the new checkpoint benchmark suite with before/after comparison tracked in WandB
 
 ## v2 Requirements
 
@@ -105,15 +140,29 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SPAT-05 | Phase 5 | Complete |
 | TUNE-01 | Phase 6 | Complete |
 | TUNE-02 | Phase 6 | Complete |
-| TUNE-03 | Phase 6 | Pending |
-| TUNE-04 | Phase 6 | Pending |
+| TUNE-03 | Phase 6 | Complete |
+| TUNE-04 | Phase 6 | Complete |
+| CAM-01 | TBD (roadmap) | Pending |
+| DEPTH-01 | TBD (roadmap) | Pending |
+| DEPTH-02 | TBD (roadmap) | Pending |
+| DEPTH-03 | TBD (roadmap) | Pending |
+| BENCH-01 | TBD (roadmap) | Pending |
+| BENCH-02 | TBD (roadmap) | Pending |
+| BENCH-03 | TBD (roadmap) | Pending |
+| BENCH-04 | TBD (roadmap) | Pending |
+| OBJ-01 | TBD (roadmap) | Pending |
+| OBJ-02 | TBD (roadmap) | Pending |
+| DATA-05 | TBD (roadmap) | Pending |
+| TUNE-05 | TBD (roadmap) | Pending |
+| TUNE-06 | TBD (roadmap) | Pending |
 
 **Coverage:**
 
 - v1 requirements: 24 total
-- Mapped to phases: 24
-- Unmapped: 0 ✓
+- v1.1 requirements: 17 total
+- Mapped to phases: 24 (v1) — v1.1 mapping pending roadmap creation
+- Unmapped: 0 (v1) ✓ / 17 (v1.1, pending roadmap)
 
 ---
 *Requirements defined: 2026-07-07*
-*Last updated: 2026-07-07 after initial definition*
+*Last updated: 2026-08-30 after defining milestone v1.1 requirements*
