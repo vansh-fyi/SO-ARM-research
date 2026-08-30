@@ -20,11 +20,31 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 - [X] Spatial awareness: multi-camera views fed to VLA during task execution — Validated in Phase 5 (SPAT-02): both OFTBackend and Pi0Backend consume genuinely distinct agentview + eye_in_hand views via each checkpoint's native dual-image API; confirmed live on Colab GPU (05-04 gap fix + retest, 2026-08-17)
 - [X] Spatial awareness: 3D scene understanding (object positions in space) — Validated in Phase 5 (SPAT-01/03/04): `depth_xyz.py`'s camera-derived back-projection pipeline matches MuJoCo ground truth within ~0.02m using real Colab (Linux egl) instance-segmentation rendering
 - [X] Spatial awareness: spatial language grounding in prompts ("left of the box", "near the wall") — Validated in Phase 5 (SPAT-05): 3 new BDDL spatial-relation tasks + binary predicate classes, local test suite green
+- [X] Fine-tuning pipeline: collected SOARM demos used to fine-tune VLA on our robot — Validated in Phase 6: OpenVLA-OFT LoRA (r=32) fine-tuned on the 120-demo dataset via RLDS conversion + OXE registration, checkpoint pushed to HF Hub, training curves in WandB
+- [X] Evaluation benchmark: task suite measuring spatial understanding quality — Validated in Phase 6, but with a known design flaw: 3 of 4 eval tasks use spatial-relation predicates (RightOfX/NearTo/LeftOfX) satisfied at object spawn, passing at step 1 regardless of policy quality; only `put_the_cream_cheese_in_the_bowl` (an `On` predicate) requires genuine manipulation. This gap is what v1.1 addresses.
+
+## Current Milestone: v1.1 Perception Fidelity & Checkpoint Benchmark
+
+**Goal:** Fix the sim-to-real camera gap, add depth perception, and replace the flawed spatial-task benchmark with a checkpoint-scored task suite — then re-collect demonstrations and re-fine-tune on it.
+
+**Target features:**
+- Camera calibration: recalibrate sim agentview/front camera to match real SOARM camera placement/FOV
+- Depth camera: new depth observation stream plumbed through robosuite/LIBERO obs → HDF5 writer → RLDS converter
+- Retire the 3 spawn-trivial spatial tasks from success metrics (RightOfX/NearTo/LeftOfX predicates satisfied at t=0)
+- New benchmark suite(s) mirroring LIBERO's spatial/object/goal category structure, sized ~8-15 tasks
+- Each task scored via checkpoint/sub-goal predicates (e.g. reach→grasp→lift→place, ~4 steps) instead of single binary success
+- Object pool: survey existing LIBERO objects fitting SOARM constraints (≤84mm, in-reach) + author a few new custom objects via `custom_object_example.ipynb`
+- Evaluation: success rate + generalization splits (seen/unseen positions or instructions), same 20-episode/task cadence
+- Full loop: author tasks → collect demos → re-run LoRA fine-tuning → re-evaluate on expanded suite
 
 ### Active
 
-- [ ] Fine-tuning pipeline: collected SOARM demos used to fine-tune VLA on our robot
-- [ ] Evaluation benchmark: task suite measuring spatial understanding quality
+- [ ] Camera calibration matching real SOARM camera placement/FOV
+- [ ] Depth camera observation stream (sim + dataset pipeline)
+- [ ] Checkpoint-scored benchmark task suite (~8-15 tasks, LIBERO-style categories)
+- [ ] Expanded object pool (existing SOARM-compatible LIBERO objects + a few custom objects)
+- [ ] Demo re-collection for the expanded task suite
+- [ ] Re-fine-tuned VLA + re-evaluation with success rate + generalization splits
 
 ### Out of Scope
 
@@ -60,6 +80,8 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 | Upgrade SOARM gripper to roboninecom 84mm parallel gripper (Phase 4, 2026-08-03) | Stock ~2-3cm jaw physically can't grasp ANY LIBERO object (smallest 4cm); roboninecom is real/printable (STEP+STL), 120-150N, same STS3215 servo. Modeled faithfully at 84mm. Also a real hardware upgrade for the eventual physical arm. | ✓ Committed (ad0b0d0); sim re-validated — 120 real demos collected on `put_the_cream_cheese_in_the_bowl` |
 | Retarget Phase 4 off the 3 frozen bowl→plate tasks to a sub-84mm in-reach pick-place task (2026-08-03) | Bowl (11cm) exceeds even the 84mm jaw AND the plate place-target (~0.5m) is beyond the arm's ~0.45m reach; a small object with both pick+place in-reach is completable | ✓ Committed (5675163); collision-corridor fix (6ecd160) unblocked full 120-demo collection |
 | Route both camera views through each VLA backend's native multi-image API, not a manual tile/concat fallback (Phase 5 D-02, 2026-08-10) | RESEARCH.md confirmed both OpenVLA-OFT and π0/openpi checkpoints have native dual-image support at the API/checkpoint level — a manual tile would silently degrade both models below their trained input distribution | ✓ Committed; OFTBackend needed a follow-up fix (`set_num_images_in_input(2)` + corrected agentview/eye_in_hand channel order, 05-04) after the initial implementation crashed on real Colab GPU inference — confirmed working end-to-end 2026-08-17 |
+| Retire spawn-trivial spatial predicates as benchmark success criteria; require checkpoint/sub-goal predicates for all new v1.1 tasks (2026-08-30) | Phase 6 UAT found 3 of 4 eval tasks (RightOfX/NearTo/LeftOfX) are satisfied by object spawn position alone — pass at step 1 with 100% success regardless of policy quality, drowning out the one task (`On` predicate) that actually measures manipulation. Confirmed live: 100%/100%/100% before AND after fine-tuning on the trivial 3, vs 0%/0% on the real task. | — Pending |
+| Target ~8-15 tasks for the v1.1 benchmark suite, mirroring LIBERO's 10-tasks-per-category convention | Research (LIBERO paper, MemoryVLA, VITA, Qwen-VLA) shows small custom-embodiment VLA benchmarks converge on 5-15 tasks for real-world-scale evaluation legs, vs. 50-150+ for large published sim suites | — Pending |
 
 ## Evolution
 
@@ -82,4 +104,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-08-17 — Phase 5 (Spatial Awareness) complete: multi-camera VLA input, depth→XYZ 3D localization, and 3 spatial-language BDDL tasks all validated on Colab GPU/Linux-egl. Next: Phase 6 (Fine-Tuning & Evaluation) — LoRA fine-tune OpenVLA-OFT on the 120-demo SOARM dataset, benchmark before/after in WandB. Note for future phases: SO-ARM101 is a small ~500g-payload arm — tasks must keep objects (<=84mm) and targets within ~0.45m reach.*
+*Last updated: 2026-08-30 — Milestone v1.0 complete (Phases 1-6, ending with Phase 6: Fine-Tuning & Evaluation, 2026-08-29). Started milestone v1.1 (Perception Fidelity & Checkpoint Benchmark): fixes a UAT-surfaced benchmark flaw (3 of 4 eval tasks pass trivially at spawn) and adds camera calibration + depth perception (SEED-001). Note for future phases: SO-ARM101 is a small ~500g-payload arm — tasks must keep objects (<=84mm) and targets within ~0.45m reach.*
