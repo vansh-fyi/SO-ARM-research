@@ -12,5 +12,8 @@ progress-documentation/
 diagnostics/.venv/
 diagnostics/.direnv/
 diagnostics/outputs/
+control/.venv/
+control/.direnv/
+control/outputs/
 .DS_Store
 .planning/research/.cache/

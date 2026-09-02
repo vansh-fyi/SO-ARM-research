@@ -167,7 +167,7 @@ self-tapping screws (servo kit).
 
 | Result | Date | Notes |
 |---|---|---|
-|  |  |  |
+| ✅ PASS | 2026-08-25 | Done during main arm assembly, see `UAT/assembly/main/UAT.md` Step 6: camera holder attached to wrist joint horn (4x M3x6mm), gripper main frame attached to holder (4x self-tapping), servo cable routed into the arm's daisy chain (ID 6). |
 
 ---
 
@@ -186,7 +186,7 @@ python camera_test.py
 
 | Result | Date | Notes |
 |---|---|---|
-|  |  |  |
+| ✅ PASS | 2026-08-25 | IMX335 mounted with spacer + 4x M2x8 screws + 4x M2 nuts. Camera confirmed capturing via `camera_test.py` (1920x1080). Hit a transient OpenCV/AVFoundation crash on first two attempts (`raised unknown C++ exception!`) — resolved by unplugging/replugging the USB cable, forcing clean re-enumeration; hardware itself was never at fault (confirmed alive via QuickTime throughout). |
 
 ---
 
@@ -194,12 +194,12 @@ python camera_test.py
 
 Only after Steps 1-10 all pass. Raise torque back toward normal operating range and
 retest full range of motion + grip on a real object, using the calibrated bounds
-above (open ~38-39, closed ~3533):
+above (open = 3, closed = 3594):
 
 ```
 python servo_set_torque_limit.py /dev/tty.usbserial-XXXX 6 --limit 1000
-python servo_drive_to_stall.py /dev/tty.usbserial-XXXX 6 --offset -3500   # drive to fully open
-python servo_drive_to_stall.py /dev/tty.usbserial-XXXX 6 --offset 3500   # drive to fully closed
+python servo_drive_to_stall.py /dev/tty.usbserial-XXXX 6 --offset -3600   # drive to fully open
+python servo_drive_to_stall.py /dev/tty.usbserial-XXXX 6 --offset 3600   # drive to fully closed
 ```
 
 Then manually place a small object between the jaws (something under 84mm, e.g. a
@@ -208,7 +208,7 @@ without the frame flexing/cracking.
 
 | Result | Object used | Gripped without slipping? | Date | Notes |
 |---|---|---|---|---|
-|  |  |  |  |  |
+| ✅ PASS | Pomodoro timer (round dial) | Yes | 2026-08-25 | Full torque (1000) restored, full stroke exercised (open=3 to closed stall=3594). First close attempt via `servo_drive_to_stall.py` gripped but then visibly relaxed - traced to that script auto-releasing torque after detecting stall (script design, not a servo safety feature). Redone with `servo_move_test.py` (holds torque by default): stopped at 1280 (consistent with the earlier 1270 contact point), object held firm under tug-test, no visible frame flexing/cracking. |
 
 ---
 
@@ -216,14 +216,31 @@ without the frame flexing/cracking.
 
 | All steps pass? | Date | Tested by |
 |---|---|---|
-|  |  |  |
+| ✅ Yes (11/11) | 2026-08-25 | Vansh |
 
-**Gripper raw-tick calibration (servo ID 6):**
-- **Fully open: raw ~38-39**
-- **Fully closed: raw ~3533** (confirmed genuine stall via `servo_drive_to_stall.py`,
+**Gripper raw-tick calibration (servo ID 6) — RECALIBRATED 2026-08-25 (current,
+final):**
+- **Fully open: raw 3** (confirmed via genuine stall detection, `servo_drive_to_stall.py`)
+- **Fully closed: raw 3594** (confirmed via genuine stall detection)
+- Full stroke ≈ 3591 raw ticks
+- Direction convention: positive offset = closing, negative = opening (unchanged)
+
+**Recalibration note (2026-08-25):** original calibration (open ~38, closed ~3533)
+invalidated after a screw-related mishap during handling (since resolved) shifted the
+gear's mesh phase on the shaft. Re-ran the open/closed discovery from scratch.
+Hit two rounds of noisy intermediate readings during the process (an unexplained
+242-tick position jump, then a one-off corrupted read reporting 1519 when the servo
+was actually at 101) - both were communication glitches, not real position changes,
+resolved by re-verifying with `servo_drive_to_stall.py`'s genuine polling-based stall
+detection rather than trusting single reads or visual judgment alone. Final numbers
+above are stall-confirmed and closely match the ~100/~3560 manually-observed values
+from earlier in the process (within normal mechanical variance).
+
+**Previous calibration (superseded, kept for history):**
+- Fully open: raw ~38-39
+- Fully closed: raw ~3533 (confirmed genuine stall via `servo_drive_to_stall.py`,
   torque capped at 500, offset 3500 with comfortable margin - not a timeout)
 - Full stroke ≈ 3495 raw ticks, entirely within the encoder's 0-4095 range
-- Direction convention: positive offset = closing, negative = opening
 
 **Calibration history (for context, not re-actionable):** the servo's factory zero
 point originally landed *inside* the gripper's working range (near raw 0), making the

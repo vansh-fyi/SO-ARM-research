@@ -71,7 +71,10 @@ python servo_move_test.py /dev/tty.usbserial-XXXX 1
 ```
 
 Nudges the given servo ID by a small offset (default +100 ticks, ~8.8°) and confirms
-it actually moved. Releases torque afterward.
+it actually moved, polling until it genuinely stops rather than a fixed timer.
+**Keeps torque holding by default** (safe for weight-bearing arm joints — cutting
+power mid-travel lets them drop under gravity); pass `--release` to release torque
+after the move (fine for something light/unloaded like the gripper).
 
 ## 4. Set servo max torque limit
 
@@ -105,7 +108,11 @@ Tracked step-by-step checklists live under `UAT/`:
   rail → adapter → bus scan → per-servo move → load check → cameras). **Do this
   first**, before assembling anything.
 - [`UAT/assembly/gripper/UAT.md`](./UAT/assembly/gripper/UAT.md) — gripper assembly.
-- `UAT/assembly/main/UAT.md` — full arm assembly (added once the gripper is done).
+- [`UAT/assembly/main/UAT.md`](./UAT/assembly/main/UAT.md) — full 5-joint arm
+  assembly (base to wrist) + gripper integration + full-arm functional test.
+- [`UAT/function/UAT.md`](./UAT/function/UAT.md) — laptop-based control (LeRobot)
+  plus still/video capture on the mounted cameras, ending with a full episode
+  recording dry run (joint data + camera frames together).
 
 ## Adding more diagnostics
 
