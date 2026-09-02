@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-08-30)
 Phase: 7 of 9 (Camera & Depth Perception)
 Plan: — (not yet planned)
 Status: Ready to plan
-Last activity: 2026-08-30 — ROADMAP.md created for milestone v1.1 (Phases 7-9); 13/13 v1.1 requirements mapped, 0 orphans
+Last activity: 2026-09-02 - Completed quick task 260902-kcf: Update PROJECT.md: physical hardware integration is now an active parallel track (not out of scope)
 
 Progress: [███████░░░] 67% (6/9 phases complete)
 
@@ -87,6 +87,12 @@ None yet.
 - 04 embodiment note for Phase 7/8/9: SO-ARM101 is a small ~500g-payload desktop arm; new tasks/objects must keep objects AND targets within ~0.45m reach, objects ≤84mm to be graspable, AND avoid placing objects on the base's forward centerline (y~0 close to the base) — the arm's own forearm sweeps through that corridor and will collide with anything sitting there.
 - 05 PRE-EXISTING TEST DEBT (found 2026-08-10, still open): (1) `test_hdf5_writer.py::test_schema_and_obs_key_naming` asserts `gripper_states.shape[1] == 1` — stale, never updated after the D-07 84mm 2-DOF parallel-gripper upgrade; actual shape is 2. (2) `test_replay.py::test_verify_full_obs_regeneration_passes_on_04_02_output` fails with a pixel mismatch in `(demo_1, 0, agentview_rgb)` — likely MuJoCo offscreen-render non-determinism, not investigated. Candidate cleanup for Phase 7 (touches the same HDF5 writer / camera rendering code).
 - 05 LESSON — private-repo sync friction recurred: the outer repo has repeatedly drifted commits-ahead of `origin/main` without being pushed — Colab always clones/pulls from `origin/main`. Check `git status -sb` for an "ahead" count before telling the user to `git pull` on Colab, every session.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260902-kcf | Update PROJECT.md: physical hardware integration is now an active parallel track (not out of scope) | 2026-09-02 | 1b4201c | [260902-kcf-update-project-md-physical-hardware-inte](./quick/260902-kcf-update-project-md-physical-hardware-inte/) |
 
 ## Deferred Items
 
