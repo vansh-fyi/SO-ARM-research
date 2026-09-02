@@ -49,7 +49,6 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 ### Out of Scope
 
 - Real-3DQA point cloud data as training input — inspiration only, not in this pipeline
-- Physical SOARM hardware integration — simulation-first; real robot testing is a later milestone after sim pipeline is validated
 - Real-time interactive REPL (deferred; start with rendered output)
 
 ## Context
@@ -60,6 +59,7 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 - Google Colab is the compute platform for GPU-accelerated VLA inference (π0 or OpenVLA are leading candidates — open-source, trained on robot manipulation data)
 - Dataset serves dual purpose: fine-tuning the VLA on SOARM kinematics AND benchmarking spatial understanding
 - Spatial awareness goal is three-layered: multi-camera perception, 3D object localization, and spatial language understanding
+- Physical SOARM hardware bring-up is underway as a parallel track running OUTSIDE the v1.1 milestone/phase structure — tracked via UATs in `diagnostics/UAT/` rather than `.planning/phases/`, and it does not replace or compete with v1.1's sim-only scope: `diagnostics/UAT/components/UAT.md` (electronics bring-up, complete, 7/7 steps), `diagnostics/UAT/assembly/gripper/UAT.md` (gripper build + calibration, complete, 11/11 steps), `diagnostics/UAT/assembly/main/UAT.md` (5-joint arm assembly, complete, 10/10 steps), `diagnostics/UAT/function/UAT.md` (LeRobot-based laptop control + camera recording, in progress). Control software lives in `control/` (a separate venv from `diagnostics/`), uses HuggingFace LeRobot for real-robot control, and requires Python 3.12 (not the system default 3.14, which crashes LeRobot's config parser).
 
 ## Constraints
 
@@ -82,6 +82,7 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 | Route both camera views through each VLA backend's native multi-image API, not a manual tile/concat fallback (Phase 5 D-02, 2026-08-10) | RESEARCH.md confirmed both OpenVLA-OFT and π0/openpi checkpoints have native dual-image support at the API/checkpoint level — a manual tile would silently degrade both models below their trained input distribution | ✓ Committed; OFTBackend needed a follow-up fix (`set_num_images_in_input(2)` + corrected agentview/eye_in_hand channel order, 05-04) after the initial implementation crashed on real Colab GPU inference — confirmed working end-to-end 2026-08-17 |
 | Retire spawn-trivial spatial predicates as benchmark success criteria; require checkpoint/sub-goal predicates for all new v1.1 tasks (2026-08-30) | Phase 6 UAT found 3 of 4 eval tasks (RightOfX/NearTo/LeftOfX) are satisfied by object spawn position alone — pass at step 1 with 100% success regardless of policy quality, drowning out the one task (`On` predicate) that actually measures manipulation. Confirmed live: 100%/100%/100% before AND after fine-tuning on the trivial 3, vs 0%/0% on the real task. | — Pending |
 | Target ~8-15 tasks for the v1.1 benchmark suite, mirroring LIBERO's 10-tasks-per-category convention | Research (LIBERO paper, MemoryVLA, VITA, Qwen-VLA) shows small custom-embodiment VLA benchmarks converge on 5-15 tasks for real-world-scale evaluation legs, vs. 50-150+ for large published sim suites | — Pending |
+| Start physical hardware bring-up in parallel with v1.1 rather than waiting for sim validation to complete | Physical parts arrived and needed bring-up/testing; this work doesn't block or compete with the sim-focused v1.1 phases since it lives entirely outside the phase/ROADMAP structure (tracked via diagnostics/UAT/ instead) | ✓ Committed |
 
 ## Evolution
 
