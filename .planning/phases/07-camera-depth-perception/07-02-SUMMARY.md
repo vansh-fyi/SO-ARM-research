@@ -147,3 +147,7 @@ None - no external service configuration required.
 ---
 *Phase: 07-camera-depth-perception*
 *Completed: 2026-09-05*
+
+## Self-Check: PASSED
+
+All created/modified files confirmed present on disk; all three task/summary commit hashes (`8f9ab3d`, `125edac`, `facbfb2`) confirmed in `git log`.
