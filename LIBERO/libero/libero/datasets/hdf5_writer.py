@@ -49,12 +49,16 @@ from LIBERO.libero.libero.envs.bddl_utils import get_problem_info
 OBS_KEY_MAPPING = {
     "agentview_rgb": "agentview_image",
     "eye_in_hand_rgb": "robot0_eye_in_hand_image",
+    "agentview_depth": "agentview_depth",  # robosuite's own key name, no rename needed
     "gripper_states": "robot0_gripper_qpos",
     "joint_states": "robot0_joint_pos",
 }
 
-# Which renamed keys are uint8 images vs. float proprio arrays.
+# Which renamed keys are uint8 images vs. float proprio arrays vs. depth maps.
 _RGB_KEYS = ("agentview_rgb", "eye_in_hand_rgb")
+# agentview-only per D-05 (only the real overhead AR0144 is stereo/depth-capable;
+# eye_in_hand's real IMX335 wrist cam has no depth channel).
+_DEPTH_KEYS = ("agentview_depth",)
 _STATE_KEYS = ("gripper_states", "joint_states")
 
 
@@ -97,6 +101,11 @@ def gather_demonstrations_as_hdf5(
         camera_widths=camera_size,
         has_renderer=False,
         has_offscreen_renderer=True,
+        # Renders depth for BOTH agentview and robot0_eye_in_hand globally —
+        # robosuite has no per-camera depth toggle in 1.4.0. agentview-only
+        # persistence (D-05) is enforced below, by which keys are written,
+        # not by suppressing rendering here.
+        camera_depths=True,
     )
     regen_env.reset()
 
@@ -158,12 +167,23 @@ def gather_demonstrations_as_hdf5(
                 obs_grp.create_dataset(
                     key, data=np.array(obs_acc[key], dtype=np.uint8)
                 )
+            for key in _DEPTH_KEYS:
+                # obs_acc[key] is already (H, W, 1)-shaped per step, in the
+                # sim's native normalized [0, 1] range straight from
+                # robosuite's offscreen renderer — this function performs no
+                # unit conversion (e.g. to metric meters) before writing, so
+                # depth_xyz.py's downstream consumer contract holds.
+                obs_grp.create_dataset(
+                    key, data=np.array(obs_acc[key], dtype=np.float32)
+                )
             for key in _STATE_KEYS:
                 # Coerce each per-step proprio value to at least 1-D before
                 # stacking so the dataset is 2-D (N, D) as robomimic's obs schema
-                # expects. SOARM's 1-DOF gripper returns robot0_gripper_qpos as a
-                # 0-d scalar (unlike Panda's (2,)); without atleast_1d it would
-                # stack to a malformed (N,) instead of (N, 1).
+                # expects. SOARM's 84mm 2-DOF parallel gripper (D-07 upgrade)
+                # returns robot0_gripper_qpos as shape (2,); atleast_1d also
+                # guards any future gripper variant returning a 0-d scalar,
+                # which would otherwise stack to a malformed (N,) instead of
+                # (N, D).
                 stacked = np.array(
                     [np.atleast_1d(v) for v in obs_acc[key]], dtype=np.float64
                 )
