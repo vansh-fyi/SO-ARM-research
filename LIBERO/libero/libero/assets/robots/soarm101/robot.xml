@@ -105,8 +105,8 @@
                             <body name="right_hand" pos="5.55112e-17 -0.0611 0.0181" quat="0.0172091 -0.0172091 0.706897 0.706897">
                                 <joint axis="0 0 1" name="wrist_roll" type="hinge" limited="true" range="-2.7438472969992493 2.841206309382605" damping="0.60" frictionloss="0.052" armature="0.028"/>
                                 <inertial pos="0.000213627 0.000245138 -0.025187" mass="0.087" fullinertia="2.75087e-05 4.33657e-05 3.45059e-05 -3.35241e-07 -5.7352e-06 -5.17847e-08"/>
-                                <!-- This camera points out from the eef (starting pose from Panda; tuned in plan 02-04). -->
-                                <camera mode="fixed" name="eye_in_hand" pos="0.14 0 0.02" quat="0.664463 -0.241845 0.241845 -0.664463" fovy="75"/>
+                                <!-- This camera points out from the eef (starting pose from Panda; tuned in plan 02-04). Re-tuned in plan 07-01 (CAM-01/D-06): quat recomputed as a look-at-the-grip-site solve so the sim view matches the real IMX335 wrist mount's down/inward tilt toward the jaw convergence point. -->
+                                <camera mode="fixed" name="eye_in_hand" pos="0.14 0 0.02" quat="0.524990 0.473144 0.473637 0.525537" fovy="75"/>
                                 <geom type="mesh" contype="0" conaffinity="0" group="1" pos="0.0077 0.0001 -0.0234" quat="0.707107 -0.707107 1.66015e-15 6.45094e-15" mesh="sts3215_03a_v1" material="sts3215_03a_v1_material"/>
                                 <geom type="mesh" group="0" pos="0.0077 0.0001 -0.0234" quat="0.707107 -0.707107 1.66015e-15 6.45094e-15" mesh="sts3215_03a_v1" name="right_hand_servo_collision"/>
                                 <!-- to add gripper -->
