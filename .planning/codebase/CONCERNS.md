@@ -1,113 +1,123 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-07-07
+**Analysis Date:** 2026-09-05
 
 ## Tech Debt
 
-**Hardcoded relative paths in `render_scenes.py`:**
-- Issue: `pc_dir = "Real-3DQA/point_clouds"` and `output_dir = "perspective_images"` are bare relative strings, not constructed from `__file__`. The script breaks silently if not invoked from `explorations/`.
-- Files: `explorations/render_scenes.py:101-102`
-- Impact: Produces `FileNotFoundError` or writes output to an unexpected location when the working directory differs.
-- Fix approach: Replace with `Path(__file__).resolve().parent / "Real-3DQA" / "point_clouds"` and a matching output path, matching the pattern used in `explorations/real3dqa/explore.py` and `explorations/lib/explore.py`.
+**Stale HDF5 gripper-shape test assertion:**
+- Issue: `test_schema_and_obs_key_naming` in `LIBERO/libero/libero/datasets/test_hdf5_writer.py` asserts `gripper_states.shape[1] == 1`, but this was never updated after the D-07 gripper upgrade (stock ~2-3cm jaw → roboninecom 84mm 2-DOF parallel gripper). Actual shape is now 2.
+- Files: `LIBERO/libero/libero/datasets/test_hdf5_writer.py`
+- Impact: Test fails/misleads on every run touching HDF5 writing; masks real regressions in obs-key schema validation.
+- Fix approach: Update assertion to `== 2` and add a comment documenting the D-07 gripper DOF change. Logged in `.planning/STATE.md` as candidate cleanup for Phase 7 (touches same HDF5/camera code).
 
-**Duplicated exploration scripts for the same dataset:**
-- Issue: Three near-identical LIBERO exploration scripts exist: `explorations/lib/explore.py` (current), `explorations/real3dqa/explore.py`, and the now-deleted `libero/explore.py` / `real3dqa/explore.py` at repo root (still tracked as deleted in git: ` D libero/explore.py`, ` D real3dqa/explore.py`). The deleted files linger in git history without a clean migration note.
-- Files: `explorations/lib/explore.py`, `explorations/real3dqa/explore.py`
-- Impact: Confusion about the canonical exploration entry point; future contributors may edit the wrong file.
-- Fix approach: Commit the deletions of `libero/explore.py` and `real3dqa/explore.py` that are currently staged. Add a top-level `README.md` or `explorations/README.md` pointing to the correct scripts.
+**Replay obs-regeneration pixel mismatch (undiagnosed):**
+- Issue: `test_verify_full_obs_regeneration_passes_on_04_02_output` in `LIBERO/libero/libero/datasets/test_replay.py` fails with a pixel mismatch in `(demo_1, 0, agentview_rgb)`. Suspected MuJoCo offscreen-render non-determinism, but not investigated.
+- Files: `LIBERO/libero/libero/datasets/test_replay.py`
+- Impact: Unknown whether replay-based obs regeneration is trustworthy for demo re-collection (Phase 9 depends on this).
+- Fix approach: Root-cause whether the mismatch is renderer non-determinism (seed/GL context) vs. a real state-replay bug; both open since 2026-08-10 per `.planning/STATE.md`.
 
-**`sys.path` mutation in `create_scene.py`:**
-- Issue: `sys.path.insert(0, LIBERO_PATH)` at module level in `explorations/create_scene.py:14` overrides the import order for any process that imports this module. There is also a stale, deleted `requirements.txt` in the repo root (` D requirements.txt` in git status) while `explorations/requirements.txt` and `LIBERO/requirements.txt` define separate incompatible dependency sets.
-- Files: `explorations/create_scene.py:13-16`
-- Impact: Silent import shadowing; version conflicts between `explorations/requirements.txt` (loose `torch>=1.11.0`) and `LIBERO/requirements.txt` (pinned `numpy==1.22.4`, `gym==0.25.2`).
-- Fix approach: Package LIBERO as an editable install (`pip install -e LIBERO/`) and remove the path hack. Consolidate or clearly document which `requirements.txt` governs which script.
+**Ultralytics installed but unused:**
+- Issue: `ultralytics==8.4.138` is pinned in `control/requirements.txt` "for the planned YOLO object-follow feature (adapting XLeRobot's `3_so100_yolo_ee_follow.py`) - not yet wired into any script."
+- Files: `control/requirements.txt`
+- Impact: Unused heavyweight dependency inflates install size/time in the `control/` venv; risk of silent version drift before the feature is actually built.
+- Fix approach: Either build the YOLO follow script soon or move the pin to a comment-only TODO until implementation starts.
 
-**Unimplemented predicate logic in LIBERO:**
-- Issue: `LIBERO/libero/libero/envs/predicates/base_predicates.py:72` contains a TODO for center-of-mass region checking that is commented out. This means certain spatial predicates may pass incorrectly during task evaluation.
-- Files: `LIBERO/libero/libero/envs/predicates/base_predicates.py:72`
-- Impact: Incorrect task success signals for tasks requiring center-of-mass containment checks.
-- Fix approach: Implement the region check or open a tracked issue if the upstream LIBERO library is expected to provide this.
+**No shared library across exploration/control/diagnostics scripts:**
+- Issue: `explorations/`, `control/`, and `diagnostics/` each resolve paths, servo protocol constants, and MuJoCo env setup independently with no shared module.
+- Files: `explorations/create_scene.py`, `explorations/soarm_sanity.py`, `diagnostics/servo_scan.py`, `diagnostics/servo_move_test.py`, `diagnostics/servo_set_id.py`, `diagnostics/servo_set_torque_limit.py`, `diagnostics/servo_torque.py`, `diagnostics/servo_drive_to_stall.py`, `diagnostics/servo_set_protection.py`
+- Impact: Protocol constants (e.g. `STS_PROTOCOL_END`, `ADDR_PRESENT_POSITION`, baud tables) are duplicated across diagnostics scripts; a bug fix in one script's servo addressing must be manually propagated to the others.
+- Fix approach: Extract a small `diagnostics/servo_common.py` (or similar) for shared Feetech STS3215 protocol constants and port-handling helpers.
 
-**TODO stubs in PackNet and lifelong evaluation:**
-- Issue: `LIBERO/libero/lifelong/algos/packnet.py:251` and `LIBERO/libero/lifelong/evaluate.py:5` both contain `TODO: find a better way` comments indicating unresolved design decisions in the lifelong learning path management code.
-- Files: `LIBERO/libero/lifelong/algos/packnet.py:251`, `LIBERO/libero/lifelong/evaluate.py:5`
-- Impact: The current approach may not scale to larger task suites or alternate model architectures.
-- Fix approach: Document the intended design, or replace with a clean abstraction once the research direction is clearer.
+**Repo-ahead-of-origin drift (recurring, cross-session):**
+- Issue: The outer repo has repeatedly drifted commits-ahead of `origin/main` without being pushed, and Colab always clones/pulls from `origin/main` — meaning Colab work can silently run against stale code.
+- Files: n/a (repo-level git workflow issue)
+- Impact: Confusing failures during Colab runs when local fixes were never pushed; wasted debugging time diagnosing "bugs" that were already fixed locally.
+- Fix approach: Check `git status -sb` for an "ahead" count before telling the user to `git pull` on Colab, every session (documented as a standing lesson in `.planning/STATE.md`).
 
 ## Known Bugs
 
-**`render_scenes.py` unpacks 4-tuple without validation:**
-- Symptoms: `coords, colors, _, _ = data` at line 115 assumes each `.pth` file always contains exactly a 4-element tuple. A malformed or differently-structured file raises a `ValueError` with no diagnostic message.
-- Files: `explorations/render_scenes.py:115`
-- Trigger: Loading any `.pth` file that does not match the `(xyz, rgb, labels, instance_ids)` schema.
-- Workaround: None; the script crashes silently mid-batch.
-
-**`bird_eye_grid` in `real3dqa/explore.py` loads annotations unconditionally after grid rendering:**
-- Symptoms: `main()` always calls `load_annotations()` and prints a sample, even when `--scene` is provided and no annotations are relevant to the output. If the annotations directory is absent (e.g., only point clouds downloaded), it silently returns an empty list rather than informing the user.
-- Files: `explorations/real3dqa/explore.py:120-124`
-- Trigger: Running with `--scene` argument and no `annotations/` directory present.
-- Workaround: None; misleading output (`Total QA pairs: 0`) with no explanation.
+**Trivial pass-at-spawn on 3 of 4 Phase 6 eval tasks:**
+- Symptoms: `RightOfX`, `NearTo`, and `LeftOfX` eval tasks pass at 100% both before AND after fine-tuning — they are satisfied by the object's spawn position without requiring any real manipulation. Only the one real `On`-predicate task showed genuine 0%→improvement signal.
+- Files: LIBERO benchmark task/predicate definitions consumed via `LIBERO/libero/libero/bddl_files/` and Phase 6 eval outputs (`06b_eval_videos/`)
+- Trigger: Run the Phase 6 checkpoint benchmark suite; spatial-predicate tasks are satisfied trivially by initial object placement.
+- Workaround: None yet — root cause of the v1.1 BENCH-01..04 requirements (Phase 8 is chartered to fix task/object placement so predicates are not trivially satisfied at spawn).
 
 ## Security Considerations
 
-**`torch.load` with `weights_only=False`:**
-- Risk: `torch.load(path, weights_only=False)` in `explorations/render_scenes.py:114` and `explorations/real3dqa/explore.py:34` deserializes arbitrary Python objects. Malicious `.pth` files can execute code at load time.
-- Files: `explorations/render_scenes.py:114`, `explorations/real3dqa/explore.py:34`
-- Current mitigation: None. Files are downloaded from Hugging Face (`Oliver-Ma/Real-3DQA`) which is a public, untrusted source.
-- Recommendations: If the `.pth` files store only tensors and numpy arrays, switch to `weights_only=True`. If that is not possible because the files contain non-tensor objects, add a checksum verification step after download (the LIBERO benchmark already ships `LIBERO/benchmark_scripts/shasum_files.py` as a pattern to follow).
-
-**No checksum verification for downloaded datasets:**
-- Risk: `explorations/download_real3dqa.py` downloads ~300 MB from Hugging Face with no integrity check after download.
-- Files: `explorations/download_real3dqa.py`
-- Current mitigation: None.
-- Recommendations: After `snapshot_download`, verify file checksums using a manifest, similar to `LIBERO/benchmark_scripts/shasum_files.py`.
+**No secrets detected in tracked files:**
+- Risk: None identified — no `.env`, credentials, or hardcoded API keys found in `explorations/`, `control/`, `diagnostics/`, or `LIBERO/` during this audit.
+- Files: n/a
+- Current mitigation: `explorations/data/` and other data directories are gitignored.
+- Recommendations: Continue excluding `HF_ADAPTER_REPO_ID` and any Colab secrets from being committed; verify `.gitignore` covers `.venv/` directories under `control/` and `diagnostics/` (both contain full virtualenvs with `site-packages` — confirm these are not accidentally tracked).
 
 ## Performance Bottlenecks
 
-**Point cloud rendering via Python PIL loop:**
-- Problem: `render_scenes.py:92-94` renders each point as an individual `draw.ellipse()` call inside a Python `for` loop. For large scenes with millions of points, this is extremely slow.
-- Files: `explorations/render_scenes.py:92-94`
-- Cause: PIL has no vectorized drawing API; every point is a separate Python-level call.
-- Improvement path: Use `matplotlib` scatter (already a dependency) with `s=1` and `rasterized=True`, or render directly to a numpy array using array indexing (`image[y_int, x_int] = color`).
-
-**`collect_first_frames` iterates entire parquet rows:**
-- Problem: `explorations/lib/explore.py:64` uses `df.iterrows()` over every row of each parquet file to find the first frame of each episode. `iterrows()` is the slowest pandas iteration method.
-- Files: `explorations/lib/explore.py:64`
-- Cause: Row-by-row Python iteration instead of a vectorized group-by or `drop_duplicates` on `episode_index`.
-- Improvement path: Replace with `df.drop_duplicates(subset="episode_index", keep="first")` after reading only the needed columns with `pd.read_parquet(..., columns=[...])`.
+**No significant bottlenecks identified in this pass.**
+- The codebase is research/exploration-scale (single-episode rendering, single-arm servo control); no high-throughput or latency-critical paths were found that warrant explicit performance concern documentation at this time.
 
 ## Fragile Areas
 
-**LIBERO path bootstrap in `create_scene.py`:**
-- Files: `explorations/create_scene.py:13-16`
-- Why fragile: The path `os.path.join(os.path.dirname(__file__), "LIBERO")` assumes `create_scene.py` is located in `explorations/` and that `explorations/LIBERO/` is a symlink or copy of the LIBERO package. Moving the file or cloning without the `LIBERO/` subtree present causes a silent import failure.
-- Safe modification: Install LIBERO as a proper package and remove the path injection.
-- Test coverage: No tests; only manual visual inspection.
+**LIBERO import path setup:**
+- Files: `explorations/create_scene.py`, `explorations/soarm_sanity.py`
+- Why fragile: Both scripts manually insert `explorations/LIBERO` into `sys.path` before importing `libero.*`, and both hardcode `MUJOCO_GL=glfw` inline for macOS headless rendering (documented as an architectural constraint — `osmesa` is Linux-only and would silently fail on macOS if swapped in). Any new script importing LIBERO must replicate this exact pattern or fail with unclear import errors.
+- Safe modification: Any new LIBERO-consuming script must set `MUJOCO_GL` and extend `sys.path` before the first `import libero` statement; do not assume it's set globally.
+- Test coverage: No test verifies this setup pattern; failures surface only at runtime with cryptic MuJoCo/GL errors.
 
-**Fixed action dimension in `create_scene.py`:**
-- Files: `explorations/create_scene.py:56`
-- Why fragile: `np.zeros(7)` hard-codes a 7-DOF action space. If the task or robot configuration changes this dimensionality, the physics settling loop fails with a MuJoCo dimension mismatch error.
-- Safe modification: Read action dimension from `env.action_space.shape[0]` instead.
-- Test coverage: None.
+**`~/.libero/config.yaml` first-import interactive prompt:**
+- Files: LIBERO package import surface (`LIBERO/libero/`)
+- Why fragile: The first import of LIBERO reads `~/.libero/config.yaml` from the user's home directory; if absent, the package prompts interactively, causing `EOFError` in non-interactive contexts (Colab, CI, scripted runs).
+- Safe modification: Any automation (Colab notebook cells, CI, scripted diagnostics) must ensure `~/.libero/config.yaml` exists before the first LIBERO import.
+- Test coverage: None — this is a known operational gotcha, not test-covered.
+
+**Physical hardware scripts have no automated tests:**
+- Files: `diagnostics/servo_scan.py`, `diagnostics/servo_move_test.py`, `diagnostics/servo_drive_to_stall.py`, `diagnostics/servo_set_protection.py`, `diagnostics/servo_set_id.py`, `diagnostics/servo_set_torque_limit.py`, `diagnostics/servo_torque.py`, `diagnostics/camera_test.py`, `control/keyboard_joint_control.py`, `control/record_episode.py`, `control/joint_jog.py`
+- Why fragile: These scripts directly drive physical Feetech STS3215 servos over serial (torque limits, ID assignment, stall-drive protection tuning) — incorrect protocol constants or baud handling can physically damage hardware (e.g. `servo_drive_to_stall.py`, `servo_set_protection.py`). There is no simulation/mocking layer; verification is manual (`diagnostics/UAT/`).
+- Safe modification: Changes to servo addressing constants (`ADDR_PRESENT_POSITION`, protocol end byte, baud tables) must be manually cross-checked against the Feetech STS3215 control table before running against real hardware; test on a single servo ID first via `--ids` scoping.
+- Test coverage: `diagnostics/UAT/` contains manual UAT procedures, not automated tests — no CI or simulated hardware-in-the-loop coverage exists.
+
+## Scaling Limits
+
+**Not applicable at current project scale.**
+- This is a single-researcher, Colab-GPU-budget project (SO-ARM101 desktop arm, single-arm single-camera setup). No scaling concerns were identified — the relevant constraints are compute-budget and physical-embodiment limits (see Missing Critical Features / embodiment note below), not software scaling.
+
+## Dependencies at Risk
+
+**Loose/unpinned dependency versions in `explorations/requirements.txt`:**
+- Risk: `explorations/requirements.txt` uses loose lower-bound pins (`>=1.11.0`, `>=1.21.0`, `>=1.4.0`, etc.) with no lockfile, while `LIBERO/requirements.txt` and `control/requirements.txt` use exact pins.
+- Impact: Exploration scripts can silently pick up breaking upstream releases (numpy, torch, transformers) between runs, especially problematic given the project's own documented note that transformers version conflicts exist between LIBERO training and VLA inference (hence "two separate Colab kernel groups needed").
+- Migration plan: Pin `explorations/requirements.txt` to exact versions matching what's validated on Colab, mirroring the `control/requirements.txt` pinning pattern already adopted (`chore(control): pin requirements.txt to actual installed versions`).
+
+**No SOARM URDF/MJCF from vendor — derived model:**
+- Risk: The SOARM MJCF used in simulation is derived from `so101_new_calib.xml` rather than an authoritative vendor model (documented research decision), since no official SOARM URDF/MJCF exists.
+- Impact: Any physical/simulated mismatch (mass, joint limits, gripper geometry) traces back to this derived model, not a vendor spec — compounds with the D-07 gripper upgrade (roboninecom 84mm parallel gripper) which required custom MJCF modeling (see MEMORY.md `soarm-gripper-mjcf-modeling-notes`).
+- Migration plan: None planned; this is an accepted project constraint, not a bug — flagged here for future debugging context when sim-to-real discrepancies appear.
 
 ## Missing Critical Features
 
-**No unified project README or setup guide:**
-- Problem: There is no top-level `README.md` (only `LIBERO/README.md` and `explorations/Real-3DQA/README.md`). New contributors have no documented path for: setting up the environment, which `requirements.txt` to use, how to download datasets, or which scripts to run in what order.
-- Blocks: Reproducibility; onboarding additional collaborators.
+**Physical hardware transfer deferred to v2, but now an active parallel track:**
+- Problem: `PHYS-01` to `PHYS-03` (SOARM hardware transfer) were originally deferred to v2, but per the most recent quick task (`260902-kcf`), physical hardware integration is now an active parallel track — yet `.planning/STATE.md`'s "Deferred Items" table still lists it as "v2 deferred."
+- Blocks: Risk of stale planning docs causing confusion about whether physical-hardware work (`control/`, `diagnostics/`) is in-scope for the current milestone.
+- Files: `.planning/STATE.md` (Deferred Items table), `.planning/PROJECT.md`
 
-**No test suite:**
-- Problem: There are zero test files (`*.test.py`, `*_test.py`, `test_*.py`) in the custom code under `explorations/`. All verification is manual and visual.
-- Blocks: Automated CI, regression detection, confident refactoring.
+**Embodiment constraint must be respected by all new Phase 7/8/9 tasks:**
+- Problem: SO-ARM101 is a small ~500g-payload desktop arm. New tasks/objects must keep objects AND targets within ~0.45m reach, objects ≤84mm graspable width (post D-07 gripper upgrade), and avoid the base's forward centerline collision corridor (the forearm sweeps through y≈0 near the base).
+- Blocks: Any new BDDL task/object authored in Phase 8 without respecting these constraints will produce ungraspable or arm-colliding tasks — this is the binding constraint carried forward from Phase 4.
+- Files: LIBERO BDDL task files under `LIBERO/libero/libero/bddl_files/`, referenced in `.planning/STATE.md` Blockers/Concerns.
 
 ## Test Coverage Gaps
 
-**All exploration scripts untested:**
-- What is not tested: Dataset loading, point-cloud rendering, LIBERO environment initialization, annotation parsing.
-- Files: `explorations/render_scenes.py`, `explorations/real3dqa/explore.py`, `explorations/lib/explore.py`, `explorations/create_scene.py`, `explorations/download_real3dqa.py`
-- Risk: Regressions in data loading or rendering go undetected until manual inspection.
-- Priority: Medium — these are currently research/exploration scripts, but any promotion to pipeline components will need coverage.
+**No automated tests for `control/` and `diagnostics/` scripts:**
+- What's not tested: `control/keyboard_joint_control.py`, `control/record_episode.py`, `control/joint_jog.py`, and all `diagnostics/servo_*.py` / `diagnostics/camera_test.py` scripts — all physical-hardware-facing.
+- Files: `control/*.py`, `diagnostics/*.py`
+- Risk: Regressions in servo protocol handling, torque limits, or recording logic could go unnoticed until run against physical hardware, with potential for hardware damage (torque/stall scripts) or silent data-quality loss (episode recording).
+- Priority: Medium — mitigated by manual UAT procedures in `diagnostics/UAT/`, but no regression safety net exists for future refactors.
+
+**Two pre-existing open test failures in LIBERO dataset layer:**
+- What's not tested/passing: `test_hdf5_writer.py::test_schema_and_obs_key_naming` (stale gripper shape assertion) and `test_replay.py::test_verify_full_obs_regeneration_passes_on_04_02_output` (pixel mismatch, undiagnosed) — see Tech Debt above.
+- Files: `LIBERO/libero/libero/datasets/test_hdf5_writer.py`, `LIBERO/libero/libero/datasets/test_replay.py`
+- Risk: Both tests touch the exact data pipeline (HDF5 writing, obs replay) that Phase 7 (camera & depth perception) and Phase 9 (demo re-collection) depend on — undiagnosed failures here could mask real regressions introduced by upcoming camera/depth pipeline changes.
+- Priority: High — explicitly flagged in `.planning/STATE.md` as candidate cleanup for Phase 7 since it touches the same HDF5/camera-rendering code path.
 
 ---
 
-*Concerns audit: 2026-07-07*
+*Concerns audit: 2026-09-05*
