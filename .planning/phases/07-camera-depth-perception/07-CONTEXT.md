@@ -32,7 +32,7 @@ Codebase scouting found the sim-side depth *rendering* is already solved (robosu
 
 ### Claude's Discretion
 - Exact new `fovy`/`quat` numeric values for both `agentview` and `eye_in_hand` — derive from AR0144 datasheet specs + estimated placement (agentview) and from the reference photos (eye_in_hand) during research/planning.
-- Depth storage dtype/precision in HDF5 (float32 raw meters vs. quantized) — not discussed, left to planner.
+- **CORRECTION (post-research, 2026-09-05):** depth storage is NOT "raw meters vs. quantized" — robosuite's `camera_depths=True` returns normalized `[0,1]` depth, not metric meters. Persist raw normalized float32 as-is (matches the existing Phase 5 `depth_xyz.py` consumer's documented input contract). Converting to meters before writing would break that consumer. See RESEARCH.md Pitfall 2.
 - RLDS depth feature type (plain `Tensor`, not `Image`, per TFDS/OXE convention — already confirmed via codebase scout of `rlds_converter.py`).
 - Physical stand design specifics (cradle wall thickness, clamp mechanism) — implementation detail for whoever prints it; not a software planning concern beyond documenting the target mount position it produces.
 
@@ -48,10 +48,12 @@ Codebase scouting found the sim-side depth *rendering* is already solved (robosu
 - `.planning/REQUIREMENTS.md` — CAM-01, DEPTH-01, DEPTH-02, DEPTH-03 definitions
 
 ### Camera config (sim)
-- `LIBERO/libero/libero/envs/bddl_base_domain.py:275-293` — `_setup_camera()`, the authoritative override point for `agentview`/`canonical_agentview` pos/quat (no `fovy` currently set here — will need one added)
-- `LIBERO/libero/libero/assets/robots/soarm101/robot.xml:108-109` — `eye_in_hand` camera element (`fovy="75"`, current quat) — the fovy-on-camera-element syntax precedent to follow for agentview too
+- **CORRECTION (post-research, 2026-09-05):** `bddl_base_domain.py`'s `_setup_camera()` is **dead code** for every task this project actually uses. All registered SOARM tasks map to `Libero_Tabletop_Manipulation`, which fully overrides `_setup_camera()` independently (no `super()` call). The `agentview` fovy/pos/quat fix MUST land in `LIBERO/libero/libero/envs/problems/libero_tabletop_manipulation.py`'s `_setup_camera()`, not the base class. See `07-RESEARCH.md` Pitfall 1 for the full verification (grep across all 6 problem-class files + all `.bddl` task files).
+- `LIBERO/libero/libero/envs/problems/libero_tabletop_manipulation.py` — `_setup_camera()`, the ACTUAL override point reached by this project's tasks; fix `agentview`'s pos/quat/fovy here via `mujoco_arena.set_camera(camera_attribs={"fovy": "43"})` (43° = AR0144 vertical FOV, see RESEARCH.md)
+- `LIBERO/libero/libero/envs/bddl_base_domain.py:275-293` — the base-class `_setup_camera()`, unreachable by current tasks; optionally also patch for Phase 8 future-proofing per RESEARCH.md Open Question 2, but this alone does NOT fix `agentview`
+- `LIBERO/libero/libero/assets/robots/soarm101/robot.xml:108-109` — `eye_in_hand` camera element (`fovy="75"`, current quat) — the fovy-on-camera-element syntax precedent; this is a *different* code path (static XML) from `agentview`'s (constructed via Python `set_camera()`), not a "which is more correct" distinction
 - `LIBERO/libero/libero/envs/env_wrapper.py:32-35` — default `camera_names` list and `camera_depths` constructor kwarg (already threaded through to robosuite)
-- `LIBERO/libero/libero/envs/problems/libero_coffee_table_manipulation.py:187-202` — example of a problem file overriding `agentview` pos/quat per-scene (pattern to be aware of if other problem files need consistent recalibration)
+- Other problem-class files (`libero_kitchen_tabletop_manipulation.py`, `libero_coffee_table_manipulation.py`, `libero_living_room_tabletop_manipulation.py`, `libero_floor_manipulation.py`, `libero_study_tabletop_manipulation.py`) each independently override `_setup_camera()` too — out of this phase's scope (this project's registered SOARM tasks only use `libero_tabletop_manipulation.py`), but worth knowing they exist if Phase 8 introduces tasks under a different problem domain
 
 ### Depth rendering (already solved, reference only)
 - `LIBERO/libero/libero/envs/test_camera_config.py:86-109` — proof that `camera_depths=True` yields non-degenerate `agentview_depth`/`robot0_eye_in_hand_depth` obs keys
@@ -69,7 +71,8 @@ Codebase scouting found the sim-side depth *rendering* is already solved (robosu
 ### Real hardware specs
 - `diagnostics/PARTS_LIST.md:133-141` — camera part specs (IMX335 5MP wrist cam, AR0144 2MP stereo overhead cam, 52mm baseline)
 - `diagnostics/PARTS_LIST.md:157-163` — "Not yet resolved" section documenting the overhead mount gap and the generic-tripod-base + custom-cradle plan
-- `progress-documentation/images/20260827_121030-2.jpg`, `20260827_121037-2.jpg`, `20260827_121100-2.jpg`, `20260827_121104-2.jpg`, `20260827_121106-2.jpg`, `20260827_121114-2.jpg` — reference photos of the real IMX335 wrist camera mount and tilt angle
+- **CORRECTION (post-research, 2026-09-05):** the filename `20260827_121104-2.jpg` listed below does not exist on disk. The actual 8 files present matching `20260827_121*` are: `20260827_121004-2.jpg`, `20260827_121029-2.jpg`, `20260827_121030-2.jpg`, `20260827_121035-2.jpg`, `20260827_121037-2.jpg`, `20260827_121100-2.jpg`, `20260827_121106-2.jpg`, `20260827_121114-2.jpg`. Use all 8 as the reference set.
+- `progress-documentation/images/20260827_121030-2.jpg`, `20260827_121037-2.jpg`, `20260827_121100-2.jpg`, `20260827_121106-2.jpg`, `20260827_121114-2.jpg`, plus `20260827_121004-2.jpg`, `20260827_121029-2.jpg`, `20260827_121035-2.jpg` — reference photos of the real IMX335 wrist camera mount and tilt angle
 - `control/outputs/step5_test/camera_0.png` — sample real camera capture (note: taken with arm in a vertical test pose, not representative of an operating grasp angle — use with caution as a framing reference)
 
 </canonical_refs>
