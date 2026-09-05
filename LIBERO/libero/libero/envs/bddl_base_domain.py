@@ -283,15 +283,16 @@ class BDDLBaseDomain(SingleArmEnv):
                 0.6380177736282349,
             ],
         )
+        # CAM-01: mirrors the recalibrated agentview pose/FOV from
+        # Libero_Tabletop_Manipulation._setup_camera() (the reachable
+        # override every registered SOARM task actually uses) -- defensive
+        # future-proofing in case a future benchmark task registers under a
+        # problem domain that doesn't override _setup_camera() itself.
         mujoco_arena.set_camera(
             camera_name="agentview",
-            pos=[0.5886131746834771, 0.0, 1.4903500240372423],
-            quat=[
-                0.6380177736282349,
-                0.3048497438430786,
-                0.30484986305236816,
-                0.6380177736282349,
-            ],
+            pos=[0.5, 0.0, 1.45],
+            quat=[0.635968, 0.309103, 0.309103, 0.635968],
+            camera_attribs={"fovy": "43"},
         )
 
     def _load_model(self):
