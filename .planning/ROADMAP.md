@@ -219,7 +219,17 @@ Plans:
   3. Depth frames are persisted in the HDF5 dataset writer alongside RGB for a recorded demo, verified by loading the file and inspecting the depth array's shape/dtype per timestep
   4. Depth frames survive the RLDS conversion — a converted TFDS record includes a depth field readable by the fine-tuning data loader
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1** (independent -- zero files_modified overlap, run fully in parallel)
+
+- [ ] 07-01-PLAN.md — Camera recalibration: agentview fovy/pos/quat fix (reachable override, not dead-code base class) + eye_in_hand look-at-grip-site quat correction + human sign-off vs. reference photos (CAM-01)
+- [ ] 07-02-PLAN.md — Depth rendering + HDF5 persistence: camera_depths=True threading, _DEPTH_KEYS/OBS_KEY_MAPPING extension, stale gripper_states test-debt fix (DEPTH-01, DEPTH-02)
+
+**Wave 2** *(blocked on 07-02)*
+
+- [ ] 07-03-PLAN.md — RLDS conversion + OXE registration: agentview_depth Tensor FeaturesDict, depth_obs_keys["primary"] registration, legacy-dataset skip handling (DEPTH-03)
 
 ### Phase 8: Checkpoint Benchmark Suite
 
