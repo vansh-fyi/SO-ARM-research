@@ -387,9 +387,12 @@ See Pattern 4 above (full code block).
 | A4 | `soarm_gripper.xml`'s `right_gripper` root body attaches to `right_hand` at exactly identity with no additional robosuite-side mount offset (Pitfall 5) | Pattern 2 | Medium — if robosuite's gripper-mount mechanism applies an additional offset, the look-at quat's target coordinates would be wrong; mitigated by recommending empirical visual verification before finalizing |
 | A5 | robosuite `v1.4.1` GitHub tag's `arena.py`/`camera_utils.py` source is representative of the project's pinned `1.4.0` (a fetched-from-GitHub tag one patch version ahead of the pin, since 1.4.0 isn't separately browsable via raw GitHub in the same way) | Standard Stack, Pattern 1, Pitfall 2 | Low — `set_camera`/`get_real_depth_map` are stable, long-standing APIs; no changelog evidence of a behavioral change between 1.4.0 and 1.4.1 for these specific functions |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+*Resolved during planning (07-01-PLAN.md) — see notes under each question.*
 
 1. **Does the look-at-the-grip-site quat actually match the real mount's tilt, or does the real photo show a shallower/steeper angle?**
+   - **Resolved:** 07-01 Task 3 is a blocking human-verify checkpoint that renders the candidate quat and compares it against the reference photos before sign-off, rather than treating either value as final.
    - What we know: the current shipped quat's boresight is ~50° off the reach axis (very steep downward tilt); the closed-form look-at-grip-site target is only ~6° off the reach axis (nearly horizontal); these differ by ~44°.
    - What's unclear: which of these — or something in between — actually matches what the 4 available reference photos show. Photogrammetric angle estimation from the photos wasn't attempted in this research pass (would require identifying corresponding points/known dimensions in the images); the photos were reviewed qualitatively.
    - Recommendation: the planner should schedule a render-and-compare-against-reference-photos verification step (mirroring Phase 2 plan 02-04's original empirical tuning) rather than treating either quat as final. Start from the look-at candidate (it's grounded in known mount geometry, unlike a pure guess) and adjust the `up_hint` parameter or add a small extra rotation if the rendered framing doesn't match.
@@ -397,12 +400,11 @@ See Pattern 4 above (full code block).
 2. **Should `bddl_base_domain.py`'s `_setup_camera()` also be updated for consistency/documentation, even though it's not reached by current tasks?**
    - What we know: it's dead code today (Pitfall 1).
    - What's unclear: whether Phase 8's new benchmark tasks (BENCH-02) will register under a problem domain that DOES reach the base class method, or whether they'll also use `LIBERO_Tabletop_Manipulation` (in which case they'd inherit `libero_tabletop_manipulation.py`'s fix automatically).
-   - Recommendation: fix `libero_tabletop_manipulation.py` (required); optionally also fix `bddl_base_domain.py` as defensive documentation (low cost, protects Phase 8 if it introduces a new problem domain) — leave the decision to the planner/task-breakdown level.
+   - **Resolved:** 07-01 Task 1 fixes `libero_tabletop_manipulation.py` (required) and mirrors the fix into `bddl_base_domain.py` as defensive documentation, protecting Phase 8 if it introduces a new problem domain.
 
 3. **Two of CONTEXT.md's six listed reference-photo filenames don't exist on disk.**
    - What we know: `progress-documentation/images/20260827_121104-2.jpg` does not exist; the actual files present are `20260827_121004-2.jpg`, `20260827_121029-2.jpg`, `20260827_121030-2.jpg`, `20260827_121035-2.jpg`, `20260827_121037-2.jpg`, `20260827_121100-2.jpg`, `20260827_121106-2.jpg`, `20260827_121114-2.jpg` (8 files, not the 6 named in CONTEXT.md).
-   - What's unclear: whether CONTEXT.md's filenames were slightly mistyped or refer to since-renamed/removed files.
-   - Recommendation: the planner/executor should use the actual 8 files present in `progress-documentation/images/` matching the `20260827_121*` pattern as the reference set, not the exact 6 filenames listed in CONTEXT.md.
+   - **Resolved:** CONTEXT.md was corrected to the actual 8-file set (2026-09-05); 07-01's tasks use this corrected reference set.
 
 ## Environment Availability
 
