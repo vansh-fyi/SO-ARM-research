@@ -86,15 +86,27 @@ def test_schema_and_obs_key_naming(paths):
         assert obs_keys == {
             "agentview_rgb",
             "eye_in_hand_rgb",
+            "agentview_depth",
             "gripper_states",
             "joint_states",
         }
         assert "agentview_image" not in obs_keys
         assert "robot0_gripper_qpos" not in obs_keys
+        # agentview-only depth per D-05 — the real eye_in_hand wrist cam has
+        # no depth capability, so no eye_in_hand_depth key should ever appear.
+        assert "eye_in_hand_depth" not in obs_keys
+        assert "robot0_eye_in_hand_depth" not in obs_keys
 
         assert f["data"]["demo_1"]["obs"]["agentview_rgb"].shape[1:] == (128, 128, 3)
-        # SOARM's 1-DOF gripper, not Panda's 2.
-        assert f["data"]["demo_1"]["obs"]["gripper_states"].shape[1] == 1
+        # SOARM's 84mm 2-DOF parallel gripper (D-07 upgrade), not Panda's 2
+        # in name only — happens to also be 2, but for a different mechanism.
+        assert f["data"]["demo_1"]["obs"]["gripper_states"].shape[1] == 2
+
+        depth_data = f["data"]["demo_1"]["obs"]["agentview_depth"][()]
+        assert depth_data.dtype == np.float32
+        assert depth_data.shape[1:] == (128, 128, 1)
+        assert np.all((depth_data >= 0.0) & (depth_data <= 1.0))
+
         # off-by-one fix verified
         assert len(f["data"]["demo_1"]["states"]) == len(
             f["data"]["demo_1"]["actions"]
@@ -173,6 +185,7 @@ def test_schema_matches_across_sources(tmp_path):
         expected_keys = {
             "agentview_rgb",
             "eye_in_hand_rgb",
+            "agentview_depth",
             "gripper_states",
             "joint_states",
         }
