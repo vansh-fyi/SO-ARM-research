@@ -7,10 +7,13 @@ STL files and per-vendor docs (BOMs, assembly guides) live in
 `progress-documentation/3d_print_stls/` — this file is the flat purchased/printed
 inventory.
 
-Status: **order complete** for everything below — but see **Pending Hardware Change**
-just below: the 6x 7.4V servos are slated for replacement with 12V/30kg·cm units.
+Status: **order complete** for everything below. The 7.4V→12V/30kg·cm servo swap
+described below is **done** (confirmed via `diagnostics/UAT/function/UAT.md`,
+2026-09-09 — follower recalibrated on the new servos, all 7 function UAT steps
+passing), and the leader arm (below, reusing the removed 7.4V servos) is built,
+calibrated, and confirmed working via real leader-follower teleop.
 
-## Pending Hardware Change — 7.4V → 12V/30kg·cm servo swap
+## Servo swap — 7.4V → 12V/30kg·cm (complete)
 
 **Decision (2026-09-02, finalized):** replacing all 6 Feetech STS3215 servos (7.4V,
 C001, 19.5kg·cm stall per official datasheet) with **STS3215-C018 (12V, 30kg·cm,
@@ -77,7 +80,13 @@ resting positions (not commanded to move). Servo 2 (shoulder_lift) has the
 overheat/failure history above and should be re-tested for baseline health (not
 assumed fine) before reuse in the leader arm below.
 
-## Leader Arm (planned, reusing removed 7.4V servos)
+## Leader Arm (built, reusing removed 7.4V servos)
+
+**Status (2026-09-09):** built, calibrated (`soarm_leader_01`), and confirmed
+working via real leader-follower teleop in `diagnostics/UAT/function/UAT.md`
+Step 3b. One assembly issue found and fixed along the way: servo IDs 2 and 3
+were physically swapped (elbow_flex/shoulder_lift) — see that UAT's "Known
+issues" for the diagnosis and fix.
 
 **Plan (2026-09-02):** once the 6 C001 servos come out of the follower for the 12V
 swap, reuse them to build a leader arm rather than discarding them. Leader arms are
