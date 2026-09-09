@@ -131,7 +131,11 @@ def control_loop(robot, keyboard, start_positions, kp=0.5, control_freq=30):
                         if joint == "gripper":
                             new_target = max(0.0, min(100.0, current_target + direction * 5.0))
                         else:
-                            new_target = current_target + direction
+                            # RANGE_M100_100 joints (see so_follower.py Motor() norm_mode) - unclamped
+                            # accumulation here let repeated presses drive the target past +-100
+                            # indefinitely, pushing the servo into its mechanical hard stop and
+                            # tripping overload protection (observed on wrist_flex).
+                            new_target = max(-100.0, min(100.0, current_target + direction))
                         target_positions[joint] = new_target
                         print(f"{joint}: target -> {new_target:.1f}")
 
@@ -173,21 +177,24 @@ def main():
     # connect(calibrate=False) skips write_calibration() - apply the saved
     # calibration.json explicitly so hardware position limits match what
     # lerobot-calibrate recorded (see joint_jog.py for the full explanation).
-    robot.bus.write_calibration(robot.calibration)
+    # Min/Max_Position_Limit are EEPROM addresses the servo rejects while torque
+    # is enabled ("Incorrect status packet"), so this must happen with torque off,
+    # same as the library's own calibrate() path (so_follower.py disable_torque()
+    # before its write_calibration() calls).
+    with robot.bus.torque_disabled():
+        robot.bus.write_calibration(robot.calibration)
 
-    # LeRobot's configure() sets a uniform P=16/I=0/D=32 for every joint. On
-    # shoulder_lift specifically (heaviest gravity load in this arm's geometry,
-    # overheated 3x this session under sustained holding), a stiff P-gain fights
-    # every tiny position error continuously, drawing more sustained current than
-    # a gentler gain that tolerates a small amount of sag. Lower P/D here trades
-    # some positional stiffness for real thermal margin - a deliberate choice,
-    # not a bug workaround. elbow_flex gets the same treatment since it's also
-    # been under repeated stress today.
-    for motor in ("shoulder_lift", "elbow_flex"):
-        with robot.bus.torque_disabled():
-            robot.bus.write("P_Coefficient", motor, 10)
-            robot.bus.write("D_Coefficient", motor, 24)
-        print(f"{motor}: gentler holding gains applied (P=10, D=24, vs default P=16, D=32)")
+    # Previously this reduced shoulder_lift/elbow_flex to P=10/D=24 (vs LeRobot's
+    # default P=16/D=32) because the OLD 7.4V/19.5kg-cm servos overheated 3x under
+    # sustained holding - a softer gain tolerated more sag to cut sustained current.
+    # Follower has since been rebuilt with 12V/30kg-cm servos (see PARTS_LIST.md,
+    # "Pending Hardware Change" - gains/protection settings explicitly flagged there
+    # as needing re-verification, not carryover, after the swap). A soft gain is
+    # actually the wrong direction on the new hardware: more sag under load means
+    # the servo corrects harder/longer to hold position, building sustained current
+    # over time - a plausible cause of the overload trip seen lifting a payload with
+    # the old P=10/D=24 values still applied. Reverted to LeRobot's stock gains;
+    # re-tune only if the new servos show their own overheating pattern.
 
     keyboard.connect()
     print("Connected.")
