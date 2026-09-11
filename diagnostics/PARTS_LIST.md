@@ -4,7 +4,7 @@ Everything sourced for the physical SO-ARM101 follower arm + roboninecom paralle
 gripper build. Kept here as the single source of truth for what's on hand.
 
 STL files and per-vendor docs (BOMs, assembly guides) live in
-`progress-documentation/3d_print_stls/` — this file is the flat purchased/printed
+`progress-documentation/hardware/` — this file is the flat purchased/printed
 inventory.
 
 Status: **order complete** for everything below. The 7.4V→12V/30kg·cm servo swap
@@ -99,7 +99,7 @@ given the follower-role failures above.
 - Leader-specific printed parts (not previously printed — this build was
   follower-only): `Handle_SO101.stl`, `Trigger_SO101.stl`, `Wrist_Roll_SO101.stl`,
   from the same vendored STL source as the follower arm
-  (`progress-documentation/3d_print_stls/arm/`).
+  (`progress-documentation/hardware/arm/`).
 - No additional servos to buy — 6 come out of the follower (5 arm joints + gripper),
   exactly enough for a 6-servo leader arm.
 
@@ -132,7 +132,7 @@ slower variant) — will function, but will feel stiffer to hand-move than the
 
 ## Fasteners — SO-ARM101 arm assembly
 
-Full per-step breakdown in `progress-documentation/3d_print_stls/arm/docs/screws-checklist.md`.
+Full per-step breakdown in `progress-documentation/hardware/arm/docs/screws-checklist.md`.
 
 | Part | Qty | Role |
 |---|---|---|
@@ -159,9 +159,9 @@ Waveshare IMX335 (B) (same as (C) but -36% lens distortion vs (C)'s -1.22%).
 ## Printed parts (not purchased — 3D printed from vendored STLs)
 
 - SO-ARM101 arm: 13 STL parts, `LIBERO/libero/libero/assets/robots/soarm101/assets/`
-  (mirrored in `progress-documentation/3d_print_stls/arm/`)
+  (mirrored in `progress-documentation/hardware/arm/`)
 - roboninecom parallel gripper: 16 STL parts + STEP CAD,
-  `progress-documentation/3d_print_stls/gripper_upstream_full/`
+  `progress-documentation/hardware/gripper_upstream_full/`
 
 ## Not yet resolved
 

@@ -44,7 +44,7 @@ SoARM-Research/
 │   ├── requirements.txt / .venv/
 │   └── outputs/                # Camera test images
 ├── progress-documentation/    # Physical build docs and 3D print STLs
-│   └── 3d_print_stls/arm/, gripper_sim_meshes/, gripper_upstream_full/
+│   └── hardware/arm/, ar0144_mount/, gripper_sim_meshes/, gripper_upstream_full/
 ├── 06b_eval_videos/           # Generated eval videos: before/ and after/ per episode
 ├── docs/                      # Project-level markdown docs (PHASES-1-3-EXPLAINER.md)
 ├── .planning/                 # GSD planning state

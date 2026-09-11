@@ -4,7 +4,7 @@ Step-by-step build + verification checklist for the 5-joint follower arm (base t
 wrist), condensed from the official assembly guide at
 [huggingface.co/docs/lerobot/so101](https://huggingface.co/docs/lerobot/so101) and
 this repo's own fastener breakdown at
-[`progress-documentation/3d_print_stls/arm/docs/screws-checklist.md`](../../../../progress-documentation/3d_print_stls/arm/docs/screws-checklist.md).
+[`progress-documentation/hardware/arm/docs/screws-checklist.md`](../../../../progress-documentation/hardware/arm/docs/screws-checklist.md).
 The HF page has photos for exact part orientation at each step — use it alongside
 this checklist for visual reference; this file adds the pass/fail checkpoints and
 servo-ID tracking specific to this project's setup.

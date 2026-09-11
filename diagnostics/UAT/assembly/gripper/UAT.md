@@ -2,7 +2,7 @@
 
 Step-by-step build + verification checklist for the follower gripper. Based on the
 vendor's own assembly guide (mirrored at
-[`progress-documentation/3d_print_stls/gripper_upstream_full/docs/assembly-guide.md`](../../../../progress-documentation/3d_print_stls/gripper_upstream_full/docs/assembly-guide.md)),
+[`progress-documentation/hardware/gripper_upstream_full/docs/assembly-guide.md`](../../../../progress-documentation/hardware/gripper_upstream_full/docs/assembly-guide.md)),
 adapted so each step has a concrete pass/fail check instead of just an instruction.
 
 **Prerequisite:** [`UAT/components/UAT.md`](../../components/UAT.md) fully passed
