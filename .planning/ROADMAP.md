@@ -23,7 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Dataset Collection** - Collect 100+ scripted SOARM demonstrations in robomimic HDF5 with state-based replay and normalization stats (completed 2026-08-03)
 - [x] **Phase 5: Spatial Awareness** - Add multi-camera perception, depth-based 3D localization, and spatial language BDDL task variants (completed 2026-08-10)
 - [x] **Phase 6: Fine-Tuning & Evaluation** - Fine-tune OpenVLA-OFT on SOARM demonstrations and benchmark spatial vs. non-spatial task success (completed 2026-08-29)
-- [ ] **Phase 7: Camera & Depth Perception** - Recalibrate the sim camera to match real SOARM placement/FOV and plumb a depth observation stream through the HDF5 writer and RLDS converter
+- [x] **Phase 7: Camera & Depth Perception** - Recalibrate the sim camera to match real SOARM placement/FOV and plumb a depth observation stream through the HDF5 writer and RLDS converter (completed 2026-09-12)
 - [ ] **Phase 8: Checkpoint Benchmark Suite** - Survey/author a SOARM-compatible object pool and a new ~8-15 task checkpoint-scored benchmark suite, retiring the 3 spawn-trivial spatial tasks from success metrics
 - [ ] **Phase 9: Benchmark Data Collection & Re-Fine-Tuning** - Collect demonstrations for the new benchmark suite and re-fine-tune/re-evaluate OpenVLA-OFT with before/after results in WandB
 
@@ -219,7 +219,7 @@ Plans:
   3. Depth frames are persisted in the HDF5 dataset writer alongside RGB for a recorded demo, verified by loading the file and inspecting the depth array's shape/dtype per timestep
   4. Depth frames survive the RLDS conversion — a converted TFDS record includes a depth field readable by the fine-tuning data loader
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 Plans:
 **Wave 1** (independent -- zero files_modified overlap, run fully in parallel)
@@ -229,7 +229,7 @@ Plans:
 
 **Wave 2** *(blocked on 07-02)*
 
-- [ ] 07-03-PLAN.md — RLDS conversion + OXE registration: agentview_depth Tensor FeaturesDict, depth_obs_keys["primary"] registration, legacy-dataset skip handling (DEPTH-03)
+- [x] 07-03-PLAN.md — RLDS conversion + OXE registration: agentview_depth Tensor FeaturesDict, depth_obs_keys["primary"] registration, legacy-dataset skip handling (DEPTH-03)
 
 ### Phase 8: Checkpoint Benchmark Suite
 
@@ -274,6 +274,6 @@ Plans:
 | 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
 | 5. Spatial Awareness | 4/4 | Complete    | 2026-08-10 |
 | 6. Fine-Tuning & Evaluation | 4/4 | Complete   | 2026-08-29 |
-| 7. Camera & Depth Perception | 2/3 | In Progress|  |
+| 7. Camera & Depth Perception | 3/3 | Complete   | 2026-09-12 |
 | 8. Checkpoint Benchmark Suite | 0/TBD | Not started | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Not started | - |
