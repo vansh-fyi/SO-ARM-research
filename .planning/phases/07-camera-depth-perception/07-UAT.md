@@ -3,7 +3,7 @@ status: testing
 phase: 07-camera-depth-perception
 source: [07-VERIFICATION.md]
 started: 2026-09-12T07:05:00Z
-updated: 2026-09-12T07:05:00Z
+updated: 2026-09-12T15:10:00Z
 ---
 
 ## Current Test
@@ -36,14 +36,14 @@ expected: |
   Once the physical overhead-camera mount (D-01/D-02/D-03) is built and photographed,
   render `agentview` with the current recalibrated pos/quat/fovy and visually compare
   against the real photo — sim framing should resemble the real overhead view.
-result: [pending — blocked on physical hardware not yet built; tracked via the parallel physical-hardware track, not a Phase 7 blocker]
+result: PASSED (2026-09-12) — physical mount installed mid-phase, ahead of the original D-04 timeline. Captured a live still from the connected AR0144 stereo camera, built an interactive live-render tuning tool (`diagnostics/tune_agentview.py`) with a real-demo-stage selector, and iterated pos/quat/fovy against the real photo until framing matched. Applied `pos=[0.3244,-0.0081,1.4509] quat=[0.663562,0.250002,0.244879,0.661226] fovy=35.63` to `libero_tabletop_manipulation.py` (+ `bddl_base_domain.py` mirror), user-approved side by side, both camera tests re-passed. Commit `1be5f28`.
 
 ## Summary
 
 total: 2
-passed: 0
+passed: 1
 issues: 0
-pending: 2
+pending: 1
 skipped: 0
 blocked: 0
 
