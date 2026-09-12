@@ -219,13 +219,13 @@ Plans:
   3. Depth frames are persisted in the HDF5 dataset writer alongside RGB for a recorded demo, verified by loading the file and inspecting the depth array's shape/dtype per timestep
   4. Depth frames survive the RLDS conversion — a converted TFDS record includes a depth field readable by the fine-tuning data loader
 
-**Plans**: 3 plans
+**Plans**: 1/3 plans executed
 
 Plans:
 **Wave 1** (independent -- zero files_modified overlap, run fully in parallel)
 
 - [ ] 07-01-PLAN.md — Camera recalibration: agentview fovy/pos/quat fix (reachable override, not dead-code base class) + eye_in_hand look-at-grip-site quat correction + human sign-off vs. reference photos (CAM-01)
-- [ ] 07-02-PLAN.md — Depth rendering + HDF5 persistence: camera_depths=True threading, _DEPTH_KEYS/OBS_KEY_MAPPING extension, stale gripper_states test-debt fix (DEPTH-01, DEPTH-02)
+- [x] 07-02-PLAN.md — Depth rendering + HDF5 persistence: camera_depths=True threading, _DEPTH_KEYS/OBS_KEY_MAPPING extension, stale gripper_states test-debt fix (DEPTH-01, DEPTH-02)
 
 **Wave 2** *(blocked on 07-02)*
 
@@ -274,6 +274,6 @@ Plans:
 | 4. Dataset Collection | 5/5 | Complete    | 2026-08-03 |
 | 5. Spatial Awareness | 4/4 | Complete    | 2026-08-10 |
 | 6. Fine-Tuning & Evaluation | 4/4 | Complete   | 2026-08-29 |
-| 7. Camera & Depth Perception | 0/TBD | Not started | - |
+| 7. Camera & Depth Perception | 1/3 | In Progress|  |
 | 8. Checkpoint Benchmark Suite | 0/TBD | Not started | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Not started | - |
