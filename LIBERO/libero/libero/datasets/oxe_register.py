@@ -74,12 +74,14 @@ def register_soarm_spatial(
     produce a 9-dim proprio (7 real + 2 padding) instead of the intended
     7-dim (``REQUIRED_PROPRIO_DIM``).
 
-    ``depth_obs_keys`` is required unconditionally, even with no depth
-    cameras: ``materialize.py``'s ``make_oxe_dataset_kwargs`` does
+    ``depth_obs_keys`` is required unconditionally, even when ``load_depth``
+    stays unset: ``materialize.py``'s ``make_oxe_dataset_kwargs`` does
     ``dataset_kwargs["depth_obs_keys"].items()`` with no ``.get()`` fallback
     -- it's only popped from the returned kwargs *after* that access, when
-    ``load_depth`` is False. All-``None`` values (no depth) matches the
-    pattern openvla-oft's own LIBERO configs use.
+    ``load_depth`` is False. ``"primary"`` is ``"agentview_depth"`` (D-05,
+    DEPTH-03) -- only the overhead camera is stereo/depth-capable in real
+    hardware; ``"wrist"`` stays ``None`` since the real IMX335 wrist camera
+    has no depth capability.
     """
     oxe_dataset_configs[dataset_name] = {
         "image_obs_keys": {
@@ -87,7 +89,7 @@ def register_soarm_spatial(
             "secondary": None,
             "wrist": "eye_in_hand_rgb",
         },
-        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": "agentview_depth", "secondary": None, "wrist": None},
         "state_obs_keys": ["state"],
         "state_encoding": state_encoding,
         "action_encoding": action_encoding,
@@ -158,14 +160,14 @@ def apply_soarm_spatial_registration(dataset_name: str = "soarm_spatial") -> dic
     # fix). Multiple versions' blocks coexisting in the same file is
     # harmless: each is a plain dict-key reassignment, so the LAST one
     # executed (this file's own append order) simply wins.
-    marker = f"# --- {dataset_name} runtime registration v2 (SoARM-Research, oxe_register.py) ---"
+    marker = f"# --- {dataset_name} runtime registration v3 (SoARM-Research, oxe_register.py) ---"
 
     _patch_installed_file(
         configs_mod.__file__,
         marker,
         f'''OXE_DATASET_CONFIGS["{dataset_name}"] = {{
     "image_obs_keys": {{"primary": "agentview_rgb", "secondary": None, "wrist": "eye_in_hand_rgb"}},
-    "depth_obs_keys": {{"primary": None, "secondary": None, "wrist": None}},
+    "depth_obs_keys": {{"primary": "agentview_depth", "secondary": None, "wrist": None}},
     "state_obs_keys": ["state"],
     "state_encoding": StateEncoding.POS_EULER,
     "action_encoding": ActionEncoding.EEF_POS,
