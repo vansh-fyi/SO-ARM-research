@@ -290,9 +290,9 @@ class BDDLBaseDomain(SingleArmEnv):
         # problem domain that doesn't override _setup_camera() itself.
         mujoco_arena.set_camera(
             camera_name="agentview",
-            pos=[0.5, 0.0, 1.45],
-            quat=[0.635968, 0.309103, 0.309103, 0.635968],
-            camera_attribs={"fovy": "43"},
+            pos=[0.3244, -0.0081, 1.4509],
+            quat=[0.663562, 0.250002, 0.244879, 0.661226],
+            camera_attribs={"fovy": "35.63"},
         )
 
     def _load_model(self):

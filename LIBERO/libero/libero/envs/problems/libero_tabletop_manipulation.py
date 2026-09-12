@@ -185,15 +185,17 @@ class Libero_Tabletop_Manipulation(BDDLBaseDomain):
                     )
 
     def _setup_camera(self, mujoco_arena):
-        # CAM-01: recalibrated for the real AR0144 overhead camera's
-        # documented vertical FOV (43 deg) and a lower/closer desk-clamp-mount
-        # appropriate pose over the workspace, replacing the unmodified
-        # Panda-benchmark default this project inherited.
+        # CAM-01: recalibrated for the real AR0144 overhead camera. The
+        # initial datasheet-derived guess (fovy 43, a lower/closer pose) was
+        # superseded once the physical mount was installed: human-tuned via
+        # an interactive live-render comparison against an actual photo from
+        # the connected camera (same tuning approach as eye_in_hand, plan
+        # 07-01 checkpoint), across multiple stages of a real recorded demo.
         mujoco_arena.set_camera(
             camera_name="agentview",
-            pos=[0.5, 0.0, 1.45],
-            quat=[0.635968, 0.309103, 0.309103, 0.635968],
-            camera_attribs={"fovy": "43"},
+            pos=[0.3244, -0.0081, 1.4509],
+            quat=[0.663562, 0.250002, 0.244879, 0.661226],
+            camera_attribs={"fovy": "35.63"},
         )
 
         # For visualization purpose

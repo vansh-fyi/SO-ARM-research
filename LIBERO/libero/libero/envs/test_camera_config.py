@@ -81,11 +81,13 @@ def test_rgb_cameras_non_degenerate_spatial():
             assert frame.std() > 0, f"{key} frame is degenerate (zero variance)"
 
         # CAM-01 regression: agentview's vertical FOV must be the
-        # AR0144-datasheet-derived 43 deg, not MuJoCo's unset 45 deg default.
+        # human-tuned real-camera-matched value (35.63 deg, tuned against a
+        # live photo from the physical overhead mount), not MuJoCo's unset
+        # 45 deg default or the earlier untuned 43 deg datasheet guess.
         sim = env.env.sim
         agentview_fovy = sim.model.cam_fovy[sim.model.camera_name2id("agentview")]
-        assert abs(agentview_fovy - 43.0) < 1e-6, (
-            f"agentview cam_fovy expected 43.0, got {agentview_fovy}"
+        assert abs(agentview_fovy - 35.63) < 1e-2, (
+            f"agentview cam_fovy expected 35.63, got {agentview_fovy}"
         )
     finally:
         env.close()
