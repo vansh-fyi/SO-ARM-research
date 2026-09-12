@@ -53,54 +53,90 @@ _REAL_LANGUAGE_INSTRUCTION = "put the cream cheese on the bowl"
 def _synthetic_episode(rng, t=3, h=4, w=4):
     agentview_rgb = rng.integers(0, 255, size=(t, h, w, 3), dtype=np.uint8)
     eye_in_hand_rgb = rng.integers(0, 255, size=(t, h, w, 3), dtype=np.uint8)
+    # Uniform [0,1) values are valid normalized depth by construction --
+    # unlike state/actions (rng.normal), depth must stay in-range.
+    agentview_depth = rng.random(size=(t, h, w, 1)).astype(np.float32)
     state = rng.normal(size=(t, 7)).astype(np.float32)
     actions = rng.normal(size=(t, 7)).astype(np.float32)
-    return agentview_rgb, eye_in_hand_rgb, state, actions
+    return agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions
 
 
 def test_validate_episode_arrays_accepts_well_formed_episode():
     rng = np.random.default_rng(0)
-    agentview_rgb, eye_in_hand_rgb, state, actions = _synthetic_episode(rng, t=3)
+    agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions = _synthetic_episode(
+        rng, t=3
+    )
 
     # No exception raised.
-    validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, state, actions)
+    validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions)
 
 
 def test_validate_episode_arrays_rejects_wrong_action_dim():
     rng = np.random.default_rng(1)
-    agentview_rgb, eye_in_hand_rgb, state, actions = _synthetic_episode(rng, t=3)
+    agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions = _synthetic_episode(
+        rng, t=3
+    )
     actions = actions[:, :6]  # last-dim 6, not 7
 
     with pytest.raises(ValueError):
-        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, state, actions)
+        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions)
 
 
 def test_validate_episode_arrays_rejects_mismatched_episode_length():
     rng = np.random.default_rng(2)
-    agentview_rgb, eye_in_hand_rgb, state, actions = _synthetic_episode(rng, t=3)
+    agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions = _synthetic_episode(
+        rng, t=3
+    )
     actions = actions[:2]  # 2 timesteps vs. state's 3
 
     with pytest.raises(ValueError):
-        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, state, actions)
+        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions)
 
 
 def test_validate_episode_arrays_rejects_non_uint8_image():
     rng = np.random.default_rng(3)
-    agentview_rgb, eye_in_hand_rgb, state, actions = _synthetic_episode(rng, t=3)
+    agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions = _synthetic_episode(
+        rng, t=3
+    )
     agentview_rgb = agentview_rgb.astype(np.float32)
 
     with pytest.raises(ValueError):
-        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, state, actions)
+        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions)
 
 
 def test_validate_episode_arrays_rejects_nan_state():
     rng = np.random.default_rng(4)
-    agentview_rgb, eye_in_hand_rgb, state, actions = _synthetic_episode(rng, t=3)
+    agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions = _synthetic_episode(
+        rng, t=3
+    )
     state = state.copy()
     state[0, 0] = np.nan
 
     with pytest.raises(ValueError):
-        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, state, actions)
+        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions)
+
+
+def test_validate_episode_arrays_rejects_wrong_dtype_depth():
+    rng = np.random.default_rng(7)
+    agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions = _synthetic_episode(
+        rng, t=3
+    )
+    agentview_depth = agentview_depth.astype(np.float64)
+
+    with pytest.raises(ValueError):
+        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions)
+
+
+def test_validate_episode_arrays_rejects_out_of_range_depth():
+    rng = np.random.default_rng(8)
+    agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions = _synthetic_episode(
+        rng, t=3
+    )
+    agentview_depth = agentview_depth.copy()
+    agentview_depth[0, 0, 0, 0] = 1.5
+
+    with pytest.raises(ValueError):
+        validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions)
 
 
 def _write_synthetic_hdf5(path, rng, demo_lengths=(3, 2)):
@@ -119,6 +155,10 @@ def _write_synthetic_hdf5(path, rng, demo_lengths=(3, 2)):
             obs.create_dataset(
                 "eye_in_hand_rgb",
                 data=rng.integers(0, 255, size=(t, 4, 4, 3), dtype=np.uint8),
+            )
+            obs.create_dataset(
+                "agentview_depth",
+                data=rng.random(size=(t, 4, 4, 1)).astype(np.float32),
             )
             obs.create_dataset(
                 "joint_states", data=rng.normal(size=(t, 5)).astype(np.float64)
@@ -143,6 +183,8 @@ def test_load_episodes_from_hdf5_preserves_episode_boundaries_and_derives_langua
         assert episode["language_instruction"] == _REAL_LANGUAGE_INSTRUCTION
         assert episode["state"].shape[-1] == 7
         assert episode["actions"].shape[-1] == 7
+        assert episode["agentview_depth"].dtype == np.float32
+        assert episode["agentview_depth"].shape[-1] == 1
 
 
 def test_hdf5_to_rlds_writes_tfds_loadable_dataset(tmp_path):
@@ -157,15 +199,28 @@ def test_hdf5_to_rlds_writes_tfds_loadable_dataset(tmp_path):
 
     assert n == 2
     # Round-trip proof (Pitfall 2): does not raise.
-    tfds.builder("test_soarm_spatial", data_dir=out_dir).info
+    info = tfds.builder("test_soarm_spatial", data_dir=out_dir).info
+    # Schema-level depth check (07-03, DEPTH-03): confirms the persisted
+    # dataset_info.json declares agentview_depth as a float32 Tensor, matching
+    # this file's own step_features construction.
+    assert "agentview_depth" in info.features["steps"]["observation"]
+    assert info.features["steps"]["observation"]["agentview_depth"].dtype == np.float32
 
 
 def test_hdf5_to_rlds_against_real_dataset(tmp_path):
     pytest.importorskip("tensorflow_datasets")
+    import h5py  # local import, matches this file's importorskip-adjacent pattern.
 
     paths = sorted(glob.glob(_REAL_DATASET_GLOB))
     if not paths:
         pytest.skip("No real soarm_spatial *_demo.hdf5 dataset found on disk")
+
+    with h5py.File(paths[0], "r") as f:
+        if "agentview_depth" not in f["data"]["demo_1"]["obs"]:
+            pytest.skip(
+                "real dataset predates Phase 7 depth persistence (07-02) -- "
+                "will be superseded by Phase 9's DATA-05 depth-augmented re-collection"
+            )
 
     out_dir = str(tmp_path / "rlds_out_real")
     n = hdf5_to_rlds(paths, out_dir, dataset_name="test_soarm_spatial_real")
