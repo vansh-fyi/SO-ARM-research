@@ -32,8 +32,10 @@ REQUIRED_PROPRIO_DIM = 7
 REQUIRED_ACTION_DIM = 7
 
 
-def validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, state, actions) -> None:
-    """Fail-loud schema/shape/dtype validation for one episode's four arrays.
+def validate_episode_arrays(
+    agentview_rgb, eye_in_hand_rgb, agentview_depth, state, actions
+) -> None:
+    """Fail-loud schema/shape/dtype validation for one episode's five arrays.
 
     Raises ``ValueError`` (naming the offending array and the actual vs.
     expected shape/dtype) for any malformed input -- never silently pads or
@@ -42,6 +44,7 @@ def validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, state, actions) -> N
     arrays = {
         "agentview_rgb": agentview_rgb,
         "eye_in_hand_rgb": eye_in_hand_rgb,
+        "agentview_depth": agentview_depth,
         "state": state,
         "actions": actions,
     }
@@ -59,6 +62,27 @@ def validate_episode_arrays(agentview_rgb, eye_in_hand_rgb, state, actions) -> N
             )
         if arr.shape[-1] != 3:
             raise ValueError(f"{name} last dim must be 3 (RGB), got shape={arr.shape}")
+
+    if agentview_depth.dtype != np.float32:
+        raise ValueError(
+            f"agentview_depth must be dtype=float32, got dtype={agentview_depth.dtype}"
+        )
+    if agentview_depth.ndim != 4:
+        raise ValueError(
+            "agentview_depth must be ndim==4 (T, H, W, 1), got "
+            f"ndim={agentview_depth.ndim} shape={agentview_depth.shape}"
+        )
+    if agentview_depth.shape[-1] != 1:
+        raise ValueError(
+            f"agentview_depth last dim must be 1, got shape={agentview_depth.shape}"
+        )
+    if not np.all(np.isfinite(agentview_depth)):
+        raise ValueError("agentview_depth contains NaN or Inf")
+    if not np.all((agentview_depth >= 0.0) & (agentview_depth <= 1.0)):
+        raise ValueError(
+            "agentview_depth must be normalized in [0.0, 1.0], got "
+            f"min={agentview_depth.min()} max={agentview_depth.max()}"
+        )
 
     if state.ndim != 2:
         raise ValueError(
@@ -105,7 +129,11 @@ def load_episodes_from_hdf5(hdf5_paths: list) -> list:
     survive into the RLDS conversion (TUNE-01, D-04).
 
     Returns one dict per episode:
-    ``{"agentview_rgb", "eye_in_hand_rgb", "state", "actions", "language_instruction"}``.
+    ``{"agentview_rgb", "eye_in_hand_rgb", "agentview_depth", "state", "actions",
+    "language_instruction"}``. ``agentview_depth`` is read directly (no
+    ``.get()``-style fallback) -- a legacy pre-Phase-7 HDF5 missing this key
+    raises a plain ``KeyError`` here (D-DEPTH-03, see rlds_converter.py's
+    module docstring and 07-03-PLAN.md's Task 1 rationale).
     """
     import h5py  # local import: keep this module importable with no sim stack.
 
@@ -152,6 +180,7 @@ def load_episodes_from_hdf5(hdf5_paths: list) -> list:
 
                 agentview_rgb = np.asarray(obs["agentview_rgb"], dtype=np.uint8)
                 eye_in_hand_rgb = np.asarray(obs["eye_in_hand_rgb"], dtype=np.uint8)
+                agentview_depth = np.asarray(obs["agentview_depth"], dtype=np.float32)
                 state = np.concatenate(
                     [
                         np.asarray(obs["joint_states"]),
@@ -165,6 +194,7 @@ def load_episodes_from_hdf5(hdf5_paths: list) -> list:
                     {
                         "agentview_rgb": agentview_rgb,
                         "eye_in_hand_rgb": eye_in_hand_rgb,
+                        "agentview_depth": agentview_depth,
                         "state": state,
                         "actions": actions,
                         "language_instruction": language_instruction,
@@ -185,6 +215,7 @@ def _episode_to_rlds_steps(episode: dict) -> list:
                 "observation": {
                     "agentview_rgb": episode["agentview_rgb"][t],
                     "eye_in_hand_rgb": episode["eye_in_hand_rgb"][t],
+                    "agentview_depth": episode["agentview_depth"][t],
                     "state": episode["state"][t],
                 },
                 "action": episode["actions"][t],
@@ -222,6 +253,7 @@ def hdf5_to_rlds(hdf5_paths: list, out_dir: str, dataset_name: str = "soarm_spat
             validate_episode_arrays(
                 episode["agentview_rgb"],
                 episode["eye_in_hand_rgb"],
+                episode["agentview_depth"],
                 episode["state"],
                 episode["actions"],
             )
@@ -262,6 +294,9 @@ def hdf5_to_rlds(hdf5_paths: list, out_dir: str, dataset_name: str = "soarm_spat
                             ),
                             "eye_in_hand_rgb": tfds.features.Image(
                                 shape=(None, None, 3), dtype=np.uint8
+                            ),
+                            "agentview_depth": tfds.features.Tensor(
+                                shape=(None, None, 1), dtype=np.float32
                             ),
                             "state": tfds.features.Tensor(
                                 shape=(REQUIRED_PROPRIO_DIM,), dtype=np.float32
