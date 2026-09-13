@@ -23,6 +23,17 @@ import cv2
 import numpy as np
 
 IN_DEFAULT = Path(__file__).resolve().parent / "outputs" / "stereo_calib"
+OUTLIER_THRESHOLD_FACTOR = 2.0  # drop pairs whose per-image RMS exceeds this x the median
+
+
+def per_image_errors(objpoints, imgpoints, mtx, dist, rvecs, tvecs):
+    """Per-calibration-image reprojection RMS (px), one value per image."""
+    errors = []
+    for i in range(len(objpoints)):
+        projected, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, dist)
+        diff = imgpoints[i].reshape(-1, 2) - projected.reshape(-1, 2)
+        errors.append(float(np.sqrt(np.mean(np.sum(diff**2, axis=1)))))
+    return errors
 OUT_NPZ = Path(__file__).resolve().parent / "stereo_calibration.npz"
 OUT_JSON = Path(__file__).resolve().parent / "stereo_calibration.json"
 OUT_SANITY_PNG = Path(__file__).resolve().parent / "outputs" / "stereo_calib_sanity_disparity.png"
@@ -88,11 +99,51 @@ def main():
     if len(objpoints) < 8:
         raise SystemExit("Too few usable pairs after re-detection -- capture more.")
 
-    print("Calibrating left lens intrinsics...")
+    print("Pass 1/2: calibrating with all pairs to find per-pair outliers "
+          "(e.g. bent/non-flat board captures)...")
+    rms_l0, mtx_l0, dist_l0, rvecs_l0, tvecs_l0 = cv2.calibrateCamera(
+        objpoints, imgpoints_l, img_size, None, None
+    )
+    rms_r0, mtx_r0, dist_r0, rvecs_r0, tvecs_r0 = cv2.calibrateCamera(
+        objpoints, imgpoints_r, img_size, None, None
+    )
+    err_l = per_image_errors(objpoints, imgpoints_l, mtx_l0, dist_l0, rvecs_l0, tvecs_l0)
+    err_r = per_image_errors(objpoints, imgpoints_r, mtx_r0, dist_r0, rvecs_r0, tvecs_r0)
+    per_pair_err = [max(a, b) for a, b in zip(err_l, err_r)]  # worst of the two lenses
+
+    median_err = float(np.median(per_pair_err))
+    threshold = median_err * OUTLIER_THRESHOLD_FACTOR
+    print(f"  all-pairs RMS: left {rms_l0:.4f}px, right {rms_r0:.4f}px  "
+          f"(median per-pair error: {median_err:.4f}px, outlier threshold: {threshold:.4f}px)")
+    print("  per-pair reprojection error:")
+    keep_idx = []
+    for i, (name, e) in enumerate(zip(used_pairs, per_pair_err)):
+        flag = " <-- OUTLIER, dropping" if e > threshold else ""
+        print(f"    {name}: {e:.4f}px{flag}")
+        if e <= threshold:
+            keep_idx.append(i)
+
+    n_dropped = len(used_pairs) - len(keep_idx)
+    if n_dropped:
+        print(f"\n  Dropping {n_dropped} outlier pair(s) (likely bent board / bad detection), "
+              f"re-running calibration on the remaining {len(keep_idx)}.")
+        objpoints = [objpoints[i] for i in keep_idx]
+        imgpoints_l = [imgpoints_l[i] for i in keep_idx]
+        imgpoints_r = [imgpoints_r[i] for i in keep_idx]
+        used_pairs = [used_pairs[i] for i in keep_idx]
+        if len(objpoints) < 8:
+            raise SystemExit(
+                f"Only {len(objpoints)} pairs survive outlier rejection -- need at least 8. "
+                "Capture more (keeping the board flat this time)."
+            )
+    else:
+        print("\n  No outliers above threshold -- all pairs look consistent.")
+
+    print("\nPass 2/2: calibrating left lens intrinsics on the clean set...")
     rms_l, mtx_l, dist_l, _, _ = cv2.calibrateCamera(objpoints, imgpoints_l, img_size, None, None)
     print(f"  left reprojection RMS: {rms_l:.4f} px")
 
-    print("Calibrating right lens intrinsics...")
+    print("Calibrating right lens intrinsics on the clean set...")
     rms_r, mtx_r, dist_r, _, _ = cv2.calibrateCamera(objpoints, imgpoints_r, img_size, None, None)
     print(f"  right reprojection RMS: {rms_r:.4f} px")
 
@@ -123,6 +174,8 @@ def main():
         "pattern_corners": list(pattern_size),
         "num_pairs_used": len(objpoints),
         "num_pairs_captured": len(left_paths),
+        "outlier_pairs_dropped": n_dropped,
+        "pairs_used": used_pairs,
         "reprojection_rms_left_px": rms_l,
         "reprojection_rms_right_px": rms_r,
         "reprojection_rms_stereo_px": rms_stereo,

@@ -1,0 +1,129 @@
+{
+  "img_size_px": [
+    1280,
+    720
+  ],
+  "square_mm": 19.0,
+  "pattern_corners": [
+    9,
+    6
+  ],
+  "num_pairs_used": 29,
+  "num_pairs_captured": 30,
+  "outlier_pairs_dropped": 1,
+  "pairs_used": [
+    "pair_000_left.png",
+    "pair_001_left.png",
+    "pair_003_left.png",
+    "pair_004_left.png",
+    "pair_005_left.png",
+    "pair_006_left.png",
+    "pair_007_left.png",
+    "pair_008_left.png",
+    "pair_009_left.png",
+    "pair_010_left.png",
+    "pair_011_left.png",
+    "pair_012_left.png",
+    "pair_013_left.png",
+    "pair_014_left.png",
+    "pair_015_left.png",
+    "pair_016_left.png",
+    "pair_017_left.png",
+    "pair_018_left.png",
+    "pair_019_left.png",
+    "pair_020_left.png",
+    "pair_021_left.png",
+    "pair_022_left.png",
+    "pair_023_left.png",
+    "pair_024_left.png",
+    "pair_025_left.png",
+    "pair_026_left.png",
+    "pair_027_left.png",
+    "pair_028_left.png",
+    "pair_029_left.png"
+  ],
+  "reprojection_rms_left_px": 0.24429093717705203,
+  "reprojection_rms_right_px": 0.25147520843233206,
+  "reprojection_rms_stereo_px": 0.25374865141142994,
+  "baseline_mm": 57.7850448829934,
+  "camera_matrix_left": [
+    [
+      837.667518946937,
+      0.0,
+      663.5872006305314
+    ],
+    [
+      0.0,
+      807.1802719146481,
+      359.7088916527171
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "camera_matrix_right": [
+    [
+      815.0739225164082,
+      0.0,
+      661.1827197773389
+    ],
+    [
+      0.0,
+      785.737611673827,
+      367.23024102093757
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "dist_coeffs_left": [
+    [
+      0.19157109339097844,
+      -0.22575392335156352,
+      -0.01849973808581754,
+      -0.002916610057495271,
+      0.18138798795666808
+    ]
+  ],
+  "dist_coeffs_right": [
+    [
+      0.18288744327169018,
+      -0.20912836006933458,
+      -0.01673068229789643,
+      -0.005528732955027764,
+      0.12305925766404976
+    ]
+  ],
+  "R": [
+    [
+      0.9999887303588522,
+      0.004264290672838721,
+      -0.002086858967056752
+    ],
+    [
+      -0.004281370127416426,
+      0.9999568074798955,
+      -0.008249426916294003
+    ],
+    [
+      0.0020515908761034067,
+      0.008258268563854677,
+      0.9999637953322131
+    ]
+  ],
+  "T_mm": [
+    [
+      -56.937074450647614
+    ],
+    [
+      -0.3464331300584159
+    ],
+    [
+      -9.857025373679951
+    ]
+  ]
+}
