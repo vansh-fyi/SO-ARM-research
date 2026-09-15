@@ -1,18 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Perception Fidelity & Checkpoint Benchmark
-current_phase: 07
-current_phase_name: Camera & Depth Perception
-status: executing
-stopped_at: Phase 7 context gathered
-last_updated: "2026-09-05T16:59:02.155Z"
-last_activity: 2026-09-05
-last_activity_desc: Phase 07 execution started
+milestone: v2.0
+milestone_name: Real-Hardware MLLM Manipulation Benchmark
+status: planning
+last_updated: "2026-09-15T09:40:08.919Z"
+last_activity: 2026-09-15
 progress:
-  total_phases: 9
+  total_phases: 0
   completed_phases: 0
-  total_plans: 3
+  total_plans: 0
   completed_plans: 0
   percent: 0
 ---
@@ -28,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-08-30)
 
 ## Current Position
 
-Phase: 07 (Camera & Depth Perception) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 07
-Last activity: 2026-09-11 - Completed quick task 260911-h5h: Create a 3D-printable STL mount bracket for the Waveshare AR0144 Stereo USB Camera module
-
-Progress: [███████░░░] 67% (6/9 phases complete)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-09-15 — Milestone v2.0 started
 
 ## Performance Metrics
 

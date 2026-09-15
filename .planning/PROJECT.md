@@ -23,13 +23,13 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 - [X] Fine-tuning pipeline: collected SOARM demos used to fine-tune VLA on our robot — Validated in Phase 6: OpenVLA-OFT LoRA (r=32) fine-tuned on the 120-demo dataset via RLDS conversion + OXE registration, checkpoint pushed to HF Hub, training curves in WandB
 - [X] Evaluation benchmark: task suite measuring spatial understanding quality — Validated in Phase 6, but with a known design flaw: 3 of 4 eval tasks use spatial-relation predicates (RightOfX/NearTo/LeftOfX) satisfied at object spawn, passing at step 1 regardless of policy quality; only `put_the_cream_cheese_in_the_bowl` (an `On` predicate) requires genuine manipulation. This gap is what v1.1 addresses.
 
-## Current Milestone: v1.1 Perception Fidelity & Checkpoint Benchmark
+## Paused Milestone: v1.1 Perception Fidelity & Checkpoint Benchmark
+
+**Status: PAUSED (not cancelled)** as of 2026-09-15 — superseded in active focus by v2.0 (below). Phase 7 (Camera & Depth Perception, sim-side) completed 2026-09-12. Phases 8-9 (Checkpoint Benchmark Suite; Benchmark Data Collection & Re-Fine-Tuning) remain defined in ROADMAP.md but are not being executed. Resume this sim/VLA track by returning to Phase 8 if/when this project comes back to it.
 
 **Goal:** Fix the sim-to-real camera gap, add depth perception, and replace the flawed spatial-task benchmark with a checkpoint-scored task suite — then re-collect demonstrations and re-fine-tune on it.
 
-**Target features:**
-- Camera calibration: recalibrate sim agentview/front camera to match real SOARM camera placement/FOV
-- Depth camera: new depth observation stream plumbed through robosuite/LIBERO obs → HDF5 writer → RLDS converter
+**Deferred features (unchanged from before pause):**
 - Retire the 3 spawn-trivial spatial tasks from success metrics (RightOfX/NearTo/LeftOfX predicates satisfied at t=0)
 - New benchmark suite(s) mirroring LIBERO's spatial/object/goal category structure, sized ~8-15 tasks
 - Each task scored via checkpoint/sub-goal predicates (e.g. reach→grasp→lift→place, ~4 steps) instead of single binary success
@@ -37,19 +37,37 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 - Evaluation: success rate + generalization splits (seen/unseen positions or instructions), same 20-episode/task cadence
 - Full loop: author tasks → collect demos → re-run LoRA fine-tuning → re-evaluate on expanded suite
 
+## Current Milestone: v2.0 Real-Hardware MLLM Manipulation Benchmark
+
+**Goal:** Replace VLA policies with a provider-agnostic multimodal LLM (MLLM) as the arm controller on the REAL physical SO-ARM101 (no simulation), piloted first on a free HuggingFace-hosted model, with full reasoning-trace logging and synced RGB+depth+joint episode recording — benchmarked against Yu & Qiu 2026's SO-101 methodology (arXiv:2606.08881: 4 execution-centric tasks, 4-category failure taxonomy, recovery-rate metric) so results are comparable to their reported VLA/ACT numbers.
+
+**Target features:**
+- Depth camera reliability fix: resolve the AR0144 stereo module's specular-glint/exposure object-measurement failure (diagnostics/UAT/function/depth/UAT.md, currently IN PROGRESS) before trusting depth as MLLM input
+- Provider-agnostic MLLM router/interface (supports OpenAI/Anthropic/Gemini-style APIs architecturally) — first working end-to-end run targets a free HuggingFace-hosted multimodal model to avoid burning paid API budget during development
+- Plan-then-execute control loop: MLLM is called per sub-goal (reach→grasp→lift→place-style checkpoints) with a fast local controller executing each step via the existing `control/` LeRobot USB-serial bridge — no new microcontroller/ESP32 needed
+- Full reasoning-trace capture: every MLLM call's rationale/thought process logged and traceable per episode, not just the final action — first-class requirement, not incidental logging
+- Extended synced episode recorder (building on `control/record_episode.py`): wrist RGB + overhead stereo depth (raw depth values, not just RGB) + joint state + reasoning trace + action, per timestep, per task run — forming the new benchmark dataset
+- Task suite mirrors the paper: start with Pen Transfer (paper's simplest/highest-success task) to validate the full loop end-to-end, then expand to Selective Color Sorting, Multi-Object Packing, and Precision Pen Placement
+- Failure taxonomy scoring (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) + semantic/execution failure aggregation + Recovery Rate metric, applied to MLLM task runs for direct comparison against the paper's π0.5/SmolVLA/Wall-X/ACT results
+- Multi-provider swap-in once the pipeline is validated on the free HF model
+
 ### Active
 
-- [ ] Camera calibration matching real SOARM camera placement/FOV
-- [ ] Depth camera observation stream (sim + dataset pipeline)
-- [ ] Checkpoint-scored benchmark task suite (~8-15 tasks, LIBERO-style categories)
-- [ ] Expanded object pool (existing SOARM-compatible LIBERO objects + a few custom objects)
-- [ ] Demo re-collection for the expanded task suite
-- [ ] Re-fine-tuned VLA + re-evaluation with success rate + generalization splits
+- [ ] Depth camera object-measurement reliability fixed and validated on real objects
+- [ ] Provider-agnostic MLLM router + control API wrapping `control/`'s LeRobot bridge
+- [ ] Plan-then-execute control loop with full reasoning-trace logging per episode
+- [ ] Extended episode recorder: synced wrist RGB + raw depth + joint state + reasoning trace + action
+- [ ] Pen Transfer task working end-to-end on the free HuggingFace MLLM pilot
+- [ ] Remaining 3 paper tasks (Selective Color Sorting, Multi-Object Packing, Precision Pen Placement) implemented
+- [ ] Failure taxonomy + semantic/execution aggregation + Recovery Rate metric computed for MLLM task runs
+- [ ] At least one additional (paid) MLLM provider wired in via the router, for cross-provider comparison
 
 ### Out of Scope
 
 - Real-3DQA point cloud data as training input — inspiration only, not in this pipeline
 - Real-time interactive REPL (deferred; start with rendered output)
+- New microcontroller/embedded hardware (ESP32 etc.) — existing USB-serial LeRobot control bridge already covers arm control
+- Fine-tuning any policy on collected v2.0 data — this milestone evaluates MLLMs zero/few-shot via prompting, not training; comparability to the paper's fine-tuned baselines is a caveat to note in results, not a gap to close by fine-tuning
 
 ## Context
 
@@ -83,6 +101,12 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 | Retire spawn-trivial spatial predicates as benchmark success criteria; require checkpoint/sub-goal predicates for all new v1.1 tasks (2026-08-30) | Phase 6 UAT found 3 of 4 eval tasks (RightOfX/NearTo/LeftOfX) are satisfied by object spawn position alone — pass at step 1 with 100% success regardless of policy quality, drowning out the one task (`On` predicate) that actually measures manipulation. Confirmed live: 100%/100%/100% before AND after fine-tuning on the trivial 3, vs 0%/0% on the real task. | — Pending |
 | Target ~8-15 tasks for the v1.1 benchmark suite, mirroring LIBERO's 10-tasks-per-category convention | Research (LIBERO paper, MemoryVLA, VITA, Qwen-VLA) shows small custom-embodiment VLA benchmarks converge on 5-15 tasks for real-world-scale evaluation legs, vs. 50-150+ for large published sim suites | — Pending |
 | Start physical hardware bring-up in parallel with v1.1 rather than waiting for sim validation to complete | Physical parts arrived and needed bring-up/testing; this work doesn't block or compete with the sim-focused v1.1 phases since it lives entirely outside the phase/ROADMAP structure (tracked via diagnostics/UAT/ instead) | ✓ Committed |
+| Pause v1.1 (sim/VLA) rather than cancel or complete it; start v2.0 as a distinct real-hardware MLLM track (2026-09-15) | Physical SO-ARM101 hardware bring-up (leader+follower teleop, calibrated cameras) is far enough along that the more interesting research question is now how a general-purpose multimodal LLM performs as a zero/few-shot controller on real hardware, benchmarked like Yu & Qiu 2026's SO-101 paper — not fine-tuning VLA policies in sim. v1.1's benchmark-flaw fix is still valid work, just not the current priority. | — Pending |
+| Provider-agnostic MLLM router, piloted first on a free HuggingFace-hosted model before wiring paid providers (2026-09-15) | Avoids burning real API money while the control loop, reasoning-trace logging, and episode recorder are still being built/debugged; architecture must not lock in a single vendor since cross-provider comparison is an explicit v2.0 goal | — Pending |
+| Plan-then-execute MLLM control loop (sub-goal-level calls, not per-tick) (2026-09-15) | Real API latency makes per-tick MLLM calls impractical for smooth control; sub-goal-level calls (reach→grasp→lift→place) also produce richer, more analyzable reasoning traces and map naturally onto the paper's checkpoint-style task structure | — Pending |
+| Fix AR0144 depth-camera object-measurement reliability before starting MLLM task work, not in parallel (2026-09-15) | v2.0 requires recording raw depth values per episode as a first-class dataset field; building the MLLM control loop against known-unreliable depth risks having to redo recording/validation work once depth is fixed | — Pending |
+| Start the task suite with Pen Transfer only, then expand to the paper's other 3 tasks (2026-09-15) | Pen Transfer is the paper's simplest, highest-success task (70-95% across all evaluated policies) — validates the full MLLM control + reasoning-trace + recording pipeline before investing in the props/setup for harder tasks (color sorting, multi-object packing, precision insertion) | — Pending |
+| No new microcontroller (ESP32 etc.) for arm control (2026-09-15) | `control/`'s existing LeRobot USB-serial bridge to the Feetech servos already provides full joint-level control end-to-end (UAT signed off through Step 7) — the "API router" need is a software wrapper around this bridge, not new embedded hardware | ✓ Committed |
 
 ## Evolution
 
@@ -105,4 +129,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-08-30 — Milestone v1.0 complete (Phases 1-6, ending with Phase 6: Fine-Tuning & Evaluation, 2026-08-29). Started milestone v1.1 (Perception Fidelity & Checkpoint Benchmark): fixes a UAT-surfaced benchmark flaw (3 of 4 eval tasks pass trivially at spawn) and adds camera calibration + depth perception (SEED-001). Note for future phases: SO-ARM101 is a small ~500g-payload arm — tasks must keep objects (<=84mm) and targets within ~0.45m reach.*
+*Last updated: 2026-09-15 — Paused milestone v1.1 (Perception Fidelity & Checkpoint Benchmark) after Phase 7 completion; Phases 8-9 remain defined but not executed. Started milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark): pivots from sim/VLA to a real SO-ARM101 pipeline where a provider-agnostic MLLM controls the arm via the existing `control/` LeRobot bridge, benchmarked against Yu & Qiu 2026's SO-101 paper methodology. Note for future phases: SO-ARM101 is a small ~500g-payload arm — tasks must keep objects (<=84mm) and targets within ~0.45m reach. Real hardware assets already working: leader+follower teleop, calibrated AR0144 stereo camera (object-measurement reliability still open), IMX335 wrist camera, `control/record_episode.py` synced recorder.*

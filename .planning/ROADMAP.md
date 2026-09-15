@@ -24,8 +24,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Spatial Awareness** - Add multi-camera perception, depth-based 3D localization, and spatial language BDDL task variants (completed 2026-08-10)
 - [x] **Phase 6: Fine-Tuning & Evaluation** - Fine-tune OpenVLA-OFT on SOARM demonstrations and benchmark spatial vs. non-spatial task success (completed 2026-08-29)
 - [x] **Phase 7: Camera & Depth Perception** - Recalibrate the sim camera to match real SOARM placement/FOV and plumb a depth observation stream through the HDF5 writer and RLDS converter (completed 2026-09-12)
-- [ ] **Phase 8: Checkpoint Benchmark Suite** - Survey/author a SOARM-compatible object pool and a new ~8-15 task checkpoint-scored benchmark suite, retiring the 3 spawn-trivial spatial tasks from success metrics
-- [ ] **Phase 9: Benchmark Data Collection & Re-Fine-Tuning** - Collect demonstrations for the new benchmark suite and re-fine-tune/re-evaluate OpenVLA-OFT with before/after results in WandB
+- [ ] **Phase 8: Checkpoint Benchmark Suite** ⏸ PAUSED (2026-09-15, v1.1 paused for v2.0 — see PROJECT.md) - Survey/author a SOARM-compatible object pool and a new ~8-15 task checkpoint-scored benchmark suite, retiring the 3 spawn-trivial spatial tasks from success metrics
+- [ ] **Phase 9: Benchmark Data Collection & Re-Fine-Tuning** ⏸ PAUSED (2026-09-15, v1.1 paused for v2.0 — see PROJECT.md) - Collect demonstrations for the new benchmark suite and re-fine-tune/re-evaluate OpenVLA-OFT with before/after results in WandB
+
+**v2.0 phases (Real-Hardware MLLM Manipulation Benchmark) continue numbering from Phase 10 below — see PROJECT.md for the v2.0 milestone goal.**
 
 ## Phase Details
 
