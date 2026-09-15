@@ -1,474 +1,268 @@
 # Pitfalls Research
 
-**Domain:** VLA + LIBERO/MuJoCo robot simulation (SOARM / OpenVLA / π0 / Google Colab)
-**Researched:** 2026-07-07
-**Confidence:** MEDIUM (cross-checked websearch against official docs and GitHub issues)
-
----
+**Domain:** Real-hardware MLLM-as-controller robot manipulation (zero/few-shot multimodal LLM driving a physical SO-ARM101 via a plan-then-execute loop)
+**Researched:** 2026-09-15
+**Confidence:** MEDIUM (cross-checked web sources on LLM-robot safety, HF Inference API limits, structured-output reliability, and VLM spatial grounding; no single authoritative "gotchas" doc exists for this exact stack — synthesized from adjacent literature + the target paper's own methodology)
 
 ## Critical Pitfalls
 
-These cause total failure — the pipeline does not run at all, or produces completely wrong output.
-
----
-
-### Pitfall 1: OpenVLA VRAM Overrun on Colab T4
+### Pitfall 1: No independent safety envelope between the MLLM output and the actuators
 
 **What goes wrong:**
-OpenVLA-7b requires approximately 21 GB VRAM in bfloat16. The free Colab T4 provides 15 GB. Loading the model either crashes with OOM or (worse, with `device_map="auto"`) silently spreads layers across CPU and GPU, then crashes on the first tensor concatenation. Using `.to("cuda:0")` on a single 11 GB card also fails.
+The control loop treats whatever the MLLM returns as a trusted command and sends it straight to the LeRobot USB-serial bridge. A hallucinated coordinate, a stale/cached response replayed after a timeout, or a plausible-but-wrong sub-goal ("move to picked-up-pen position" when no pen was ever detected) drives the arm into the table, into itself, into the camera rig, or into a joint limit at commanded velocity. Because the loop is plan-then-execute with real API latency (seconds, not milliseconds), there is no human-in-the-loop reflex time once execution starts — the arm is already moving by the time a bad plan would be noticed.
 
 **Why it happens:**
-Researchers see "7B parameters" and assume it fits in 15 GB with the same math as language-only models. Robot VLAs carry large vision encoders (ViT-L/14 in OpenVLA) in addition to the LLM backbone, pushing the footprint above language-only 7B estimates.
+Teams build the "happy path" first (MLLM → parse → send to servos) because that's what makes the demo work, and defer safety limits as "polish." VLM/LLM-controlled robots are documented as prone to hallucinated object references, logically inconsistent plans, and unsafe control code when nothing sits between planner output and actuator input — this is a known, named risk class in the LLM-robotics safety literature, not a hypothetical.
 
 **How to avoid:**
-- Use Colab Pro with A100 (40 GB) for OpenVLA inference.
-- Alternatively use openpi (the Physical Intelligence open-source reimplementation of π0) which achieves ~15 Hz on 24 GB GPUs.
-- For T4, apply 4-bit QLoRA loading — but verify flash-attn version compatibility first (see Pitfall 8).
-- Do NOT use `device_map="auto"` on multi-GPU rigs with heterogeneous VRAM sizes.
+- Put hard joint-position and joint-velocity clamps (derived from the arm's physical limits, not just LIBERO/sim values) in the local controller, *below* the MLLM interface — the MLLM should never be able to command a value outside physically-safe range, full stop.
+- Add a workspace bounding-box check (in the same mm frame used for calibration) that rejects any target outside the arm's ~0.45m reach or below the table plane before the local controller ever moves.
+- Add a watchdog timeout independent of the MLLM call: if a sub-goal's local execution exceeds an expected time bound (e.g. "reach" taking >2x nominal), stop and re-plan rather than continuing to actuate toward a possibly-wrong target.
+- Rate-limit maximum per-step joint delta (both in the "plan" step size and in the local controller's motion profile) so a bad target produces a slow, interruptible motion, not a fast unpredictable one.
+- Keep a physical/software e-stop reachable during every run — this is a real robot, not a sim episode.
 
 **Warning signs:**
-- `CUDA out of memory` on model load
-- `Expected all tensors to be on the same device` during the first inference call
-- Suspiciously long first-token latency (model partially on CPU)
+- Any code path where a parsed MLLM output flows directly into `control/`'s send-position call without passing through a clamp/bounds-check function first.
+- No unit test exercising "MLLM returns nonsense/out-of-range/malformed" and asserting the arm does not move unsafely.
+- Watching the arm "twitch" or jump between waypoints during early testing and shrugging it off as "just needs a better prompt."
 
-**Phase to address:** Phase 1 — Colab environment setup and VLA loading. Must be validated before any downstream work.
+**Phase to address:**
+Router/control-loop phase — this must be architected into the control loop itself (a hard boundary between planner output and actuator input), not bolted on after Pen Transfer already works. Retrofitting safety clamps after tasks are running risks having validated task behavior against an unsafe baseline.
 
 ---
 
-### Pitfall 2: π0 (Physical Intelligence) Is Not Self-Hostable — Use openpi
+### Pitfall 2: Building the live control loop against the free HF Inference API's serverless behavior instead of its actual SLA-free reality
 
 **What goes wrong:**
-Researchers try to install or download the Physical Intelligence π0 model directly and find it unavailable. The original π0 is accessible only through PI's API or partnership agreements. Time is wasted trying to scrape weights or set up a non-existent pip package.
+The free HuggingFace-hosted model pilot is chosen specifically to avoid burning paid budget, but the serverless free tier has no uptime SLA, enforces aggressive rate limiting (very low free-tier caps, roughly one request per model per short window, 429s under any concurrent/retry load), and pays a 30–60s cold-start tax whenever the model has been idle for ~15-20 minutes between sub-goal calls. A control loop written assuming "call the API, get a response in a few seconds" will stall mid-episode, and worse, a naive retry loop against a rate-limited endpoint can itself look like a runaway process (rapid repeated requests, backoff not implemented) while the arm sits mid-motion or, worse, a delayed/queued response arrives late and gets executed against a scene that has since changed (e.g. gripper already closed, object already moved).
 
 **Why it happens:**
-The paper "π0: A Vision-Language-Action Flow Model for General Robot Control" is widely cited. The model name "π0" appears in discussions alongside open-source VLAs, causing confusion about availability.
+Developers prototype against the API when it's "warm" (recently called), see fast responses, and don't design for the cold-start / rate-limit case until it happens in a live demo. The free tier's lack of SLA is easy to overlook because nothing in normal light testing surfaces it.
 
 **How to avoid:**
-Use `openpi` (github.com/Physical-Intelligence/openpi) — this is the separately released open-source codebase with open weights including `pi0` and `pi0-fast` checkpoints. This is the correct starting point. Alternatively use OpenVLA (github.com/openvla/openvla), which is fully open-source and fine-tuned checkpoints for LIBERO exist on HuggingFace.
+- Design explicit timeout + local fallback behavior from day one: if the MLLM call doesn't return within N seconds, the local controller holds position (does not guess, does not continue the previous sub-goal blindly) and either retries once with backoff or aborts the episode cleanly.
+- Never execute a response that arrives after the local controller has already moved on or timed out — timestamp/tag each request and discard stale responses rather than acting on them late.
+- Send a lightweight "ping" or keep the model warm with a low-frequency dummy call between real sub-goals during a session, or budget the first call of every episode as a throwaway cold-start call before the real plan request.
+- Implement real exponential backoff on 429s, and cap total retries — a tight retry loop against a rate-limited free endpoint will get the router blocked further, compounding the outage mid-episode.
+- Treat "free HF model" as a development/debugging convenience, not a benchmarking-grade dependency — expect and log timeout/rate-limit events as first-class episode metadata, since they will happen during real sessions.
 
 **Warning signs:**
-- Searching PyPI for `pi0` or `physical-intelligence` returns nothing relevant
-- Any instruction saying to "download π0 from Physical Intelligence" without a direct weight URL
+- No timeout configured on the HTTP call to the Inference API (relying on library defaults).
+- No test that simulates a slow/failed API response and checks the arm's resulting behavior.
+- Episodes silently missing reasoning-trace entries with no logged reason why.
 
-**Phase to address:** Phase 1 — VLA selection. Decide at project start: openpi or OpenVLA. The choice affects all downstream integration.
+**Phase to address:**
+Router/control-loop phase — the router's job description already includes "provider-agnostic," so timeout/backoff/fallback-on-failure must be part of its interface contract from the start, since every provider (including future paid ones) needs the same treatment.
 
 ---
 
-### Pitfall 3: MuJoCo Headless Rendering Fails Because MUJOCO_GL Set After Import
+### Pitfall 3: Assuming the MLLM will reliably return a strictly parseable action every time
 
 **What goes wrong:**
-On Colab (no display server), `import mujoco` or `import robosuite` crashes with an OpenGL error, or renders silently fail (black frames). The environment variable `MUJOCO_GL` must be set to `"egl"` **before** any MuJoCo-related import. Setting it in a later cell has no effect.
+The control loop expects each MLLM response to parse cleanly into a structured sub-goal/action (e.g. JSON with target position, gripper state). In practice, general-purpose multimodal LLMs (especially smaller/free-tier-hosted ones) drift from the requested schema under real image inputs: they wrap JSON in prose, add trailing commentary, use inconsistent key names, invent extra fields, or occasionally refuse/hedge ("I cannot determine the exact position..."). Research on structured-output reliability confirms this is not a solved problem — schema-constrained decoding reduces but does not eliminate the failure rate, and *forcing* strict JSON-mode constraints on smaller models has been shown to badly degrade the underlying reasoning quality in some cases. A brittle parser that assumes well-formed output will either crash the control loop mid-episode or, worse, silently misparse a field (e.g. picks up the wrong number as the z-coordinate) and drives the arm on bad data without erroring.
 
 **Why it happens:**
-Colab cells execute sequentially, and researchers often install packages in one cell and set env vars in another after the import has already happened. GLFW (the default) requires a windowed display and crashes headless. OSMesa is software-only and does not use the Colab GPU.
+Teams prompt-engineer against a handful of manual test cases where the output looks fine, then wire the parser directly to those examples without handling the long tail of format drift that shows up under varied scenes/lighting/task states.
 
 **How to avoid:**
-```python
-import os
-os.environ["MUJOCO_GL"] = "egl"
-os.environ["PYOPENGL_PLATFORM"] = "egl"
-# Only THEN import robosuite or mujoco
-import robosuite
-```
-Put this at the very top of the notebook before any other imports. Verify EGL is available by running `!dpkg -l | grep -i egl` in a Colab cell.
+- Use a small number (3-5) of few-shot examples in the prompt showing the *exact* output schema, including at least one example of an ambiguous/uncertain case and how it should still conform to the schema (e.g. a documented "confidence: low" or "target: null" convention rather than free text).
+- Parse defensively: extract the JSON object from surrounding prose (e.g. bracket-matching) rather than assuming the entire response is valid JSON; validate every field's type and range before use.
+- On parse failure, do not guess a default target — treat it as an execution failure, log it as a distinct failure mode, hold position, and either re-prompt once with an explicit "your last response didn't match the schema" correction or abort the sub-goal.
+- If the chosen HF model supports it, prefer constrained/guided generation (grammar or JSON-schema-enforced decoding) over prompt-only enforcement, but validate empirically that constraining the model doesn't destroy its actual spatial reasoning — test both raw and constrained modes.
+- Log every raw MLLM response (not just the parsed action) — this is already required for the reasoning-trace goal, so make the raw-text field the source of truth for debugging parse failures.
 
 **Warning signs:**
-- `GLFW initialization failed` or `cannot connect to X server`
-- Black or zero-size rendered frames
-- `mujoco.MuJocoException: Could not initialize OpenGL` on first `env.render()` call
+- Parser code uses a bare `json.loads(response)` with no exception handling.
+- No logged count of parse-failure-vs-success rate per episode — you won't notice this is a problem until it silently corrupts a benchmark run.
+- Prompt has no explicit output-format examples, only a natural-language instruction like "return the target position."
 
-**Phase to address:** Phase 1 — Colab environment setup. Must be the first cell in every notebook.
+**Phase to address:**
+Router/control-loop phase for the parser/schema contract itself; extend into the Pen Transfer phase as the point where the schema gets stress-tested against real (not synthetic) model outputs and hardened before expanding to harder tasks.
 
 ---
 
-### Pitfall 4: SOARM Not Natively Supported in robosuite — Must Build Robot Class
+### Pitfall 4: Treating MLLM pixel-space output as directly usable millimeter-scale robot coordinates
 
 **What goes wrong:**
-LIBERO is built on robosuite, which ships with Panda, UR5, Sawyer, etc. SOARM (SO100/SO101) is not in robosuite's robot registry. Attempting to pass `robots="SOARM"` raises `KeyError`. Researchers assume a URDF file is sufficient — it is not. robosuite requires a full Python `RobotModel` subclass, an MJCF file, and a controller config JSON.
+When asked "where is the pen," a general multimodal LLM answers in terms of what it can see in the 2D image — pixel coordinates, rough fractional position ("center-left of the frame"), or qualitative direction — not calibrated 3D world coordinates in the arm's base frame. Directly mapping this to a joint or end-effector command (even via a naive fixed image-to-world scale factor) produces errors that are small in pixels but large in real millimeters, especially perspective-dependent (near/far from camera) and dependent on which camera (wrist vs overhead stereo) supplied the image the MLLM reasoned over. On a ~500g-payload, ~0.45m-reach arm with small objects (a pen, small blocks), a few centimeters of error is the difference between a clean grasp and a miss or collision — this project's own margin for error is much tighter than typical VLA benchmarks written for larger/more forgiving embodiments. General VLMs are also documented to have materially weaker spatial/depth reasoning than embodiment-specific VLA policies, since they weren't trained on grounded 3D robot data.
 
 **Why it happens:**
-SOARM URDF/MJCF files exist in TheRobotStudio/SO-ARM100 repository and MuJoCo Menagerie. Researchers find these files and assume they can be dropped directly into robosuite without additional wiring.
+It's tempting to ask the MLLM directly for "x, y, z in mm" and trust the number, since the prompt can request that format — but the model is pattern-matching plausible-looking numbers from pixel appearance, not doing real geometric back-projection, and will confidently return precise-looking coordinates that are not calibrated to this arm's frame or this camera's intrinsics/extrinsics.
 
 **How to avoid:**
-Build the integration in layers:
-1. Convert SOARM URDF to MJCF using `mujoco`'s built-in converter or the `onshape-to-robot` pipeline (already used by TheRobotStudio).
-2. Create a `ManipulatorModel` subclass in `robosuite/models/robots/manipulators/soarm.py` with correct `eef_name`, `arm_type`, `dof`, and `actuator_config`.
-3. Write a controller config JSON specifying joint names matching the MJCF exactly.
-4. Register the robot with `@register_robot` decorator.
-
-Use the TechLabs Aachen SmolVLA+robosuite SO100 integration (Medium article) as a reference — they solved exactly this problem.
+- Never let the MLLM output final world-frame mm coordinates directly for execution. Instead, have it output pixel coordinates (or a bounding box) in a *named, specified* image (e.g. "overhead depth camera frame"), and do the pixel→world conversion explicitly and deterministically using the existing calibrated stereo depth pipeline (the same back-projection approach already validated in the sim work, `depth_xyz.py`-equivalent for real hardware) rather than trusting the model's numeric guess.
+- Make the depth-camera reliability fix (already the first roadmap phase) a hard prerequisite for any MLLM spatial grounding — pixel→mm conversion is only as good as the depth values feeding it, and the AR0144 module's specular-glint/exposure failures were already known to corrupt object-measurement before this milestone started.
+- Sanity-check every converted coordinate against the known workspace bounds and against the previous known object position (reject implausible jumps) before it becomes a control target — this doubles as the safety clamp in Pitfall 1.
+- If asking the MLLM for spatial relations (e.g. "left of," "closer to") rather than raw coordinates, still ground the final numeric target through the calibrated pipeline, not the model's own coordinate guess — use the MLLM for semantic/relational reasoning, use calibrated geometry for the actual numbers.
+- Document and test which image (wrist RGB vs overhead stereo) the MLLM was shown for each spatial judgment, since pixel→world math differs per camera and mixing them up is an easy silent bug.
 
 **Warning signs:**
-- `KeyError: 'SOARM'` when creating environment
-- Simulation starts but the arm explodes or flies off (wrong inertia or joint limits)
-- Controller reports wrong number of joints
+- Prompt asks the MLLM to output "position in mm" or "joint angles" directly.
+- No explicit calibration/transform step visible between "MLLM output" and "controller input" in the code — coordinates just "flow through."
+- Grasp attempts consistently miss in one direction/axis (a systematic bias, not random noise) — a strong sign of an uncalibrated or wrongly-oriented transform rather than model unreliability.
 
-**Phase to address:** Phase 2 — SOARM MJCF integration. This is the highest-complexity build task and should be the first thing resolved after the Colab environment is stable.
+**Phase to address:**
+Router/control-loop phase for the interface contract (MLLM outputs pixel/relational judgments only); depends on the depth-camera-fix phase being complete and validated first, per the locked build order — do not let MLLM task work (Pen Transfer onward) start against still-unreliable depth.
 
 ---
 
-### Pitfall 5: MJCF Inertia Matrix Errors Cause Silent Physics Corruption
+### Pitfall 5: Comparing zero-shot MLLM results to the paper's fine-tuned-policy numbers without accounting for methodology mismatches
 
 **What goes wrong:**
-An invalid inertia matrix (diagonal elements must satisfy A+B≥C for all permutations) causes a compile error. Worse, malformed inertial blocks — often from bad URDF→MJCF conversion — produce simulations that appear to run but behave wrong: arms slowly drift, objects jitter, controllers produce unexpected torques.
+Yu & Qiu's SO-101 benchmark (arXiv:2606.08881) fine-tunes and evaluates policies (π0.5, SmolVLA, Wall-X, ACT) that were trained via teleoperated demonstrations on the exact tasks being scored, using a failure taxonomy and recovery-rate metric designed around continuous closed-loop policy execution at typically-fast control-frequency. Applying the same taxonomy/metric to a zero-shot, plan-then-execute MLLM controller and reporting numbers "against the paper" implies a level of comparability that doesn't exist: the MLLM has never seen this task/embodiment/environment, operates at sub-goal granularity (seconds between decisions, not a continuous policy), and its failure modes may not map cleanly onto categories designed for a trained policy's execution errors (e.g. "Repetition Loop" and "State Mismatch" may look different or need redefinition when the "policy" is a discrete plan-then-execute sub-goal sequence rather than a continuous action stream). Reporting a bare success-rate or recovery-rate number side-by-side with the paper's table, without this caveat, invites readers (including future-you) to draw an apples-to-apples conclusion that isn't warranted — this exact caveat is already flagged as a known risk in the project's own Key Decisions log (fine-tuning is explicitly out of scope, and comparability is called out as "a caveat to note in results, not a gap to close").
 
 **Why it happens:**
-CAD-derived URDF files often have inertia values estimated from bounding boxes or copy-pasted from a similar robot. The URDF→MJCF converter does not validate physics correctness. Mesh-based inertia inference can silently fall back to surface inertia for flat meshes.
+Benchmark tables are seductive — reusing the paper's exact metric definitions and task set feels rigorous, but it silently launders the difference between "trained specifically on this" and "never seen this before" into a single comparable-looking column. The pressure to produce a clean comparison table (for a paper, README, or presentation) pushes toward this shortcut.
 
 **How to avoid:**
-- After conversion, run `mujoco.MjModel.from_xml_path("soarm.xml")` and check for compiler warnings.
-- Set `<compiler inertiafromgeom="auto"/>` only if you want MuJoCo to infer inertia automatically; remove explicit `<inertial>` tags if they came from bad estimates.
-- Verify collision meshes do not overlap in the default pose (adjacent meshes create large contact forces at initialization).
-- Use the SO101 MJCF from MuJoCo Menagerie as a starting point — it has been validated.
+- Keep the same task suite and failure-taxonomy *categories* for comparability of vocabulary, but report MLLM results in a clearly separate table/section explicitly labeled zero-shot/few-shot, with the fine-tuned baselines' numbers shown only as reference context, never merged into one ranked table implying head-to-head competition.
+- Adapt the recovery-rate metric's operational definition explicitly for the plan-then-execute loop (e.g. define "recovery" at the sub-goal-replan boundary, not at the trained-policy's continuous-correction granularity) and document that adaptation alongside the number.
+- Preserve and report the same 20-episodes-per-task cadence from the paper for internal statistical consistency across this project's own runs, but do not present it as matching the paper's episode-to-episode conditions (different day, different lighting, different exact object instances, different operator) — those are confounds the paper's own eval controlled for that a zero-shot re-run cannot guarantee it also controlled for.
+- Explicitly log and report the MLLM-specific failure modes that don't exist in the paper's taxonomy at all (structured-output parse failures, API timeout/rate-limit failures, coordinate-conversion errors) as a distinct failure category rather than force-fitting them into the paper's four categories — this is itself a finding worth reporting, not noise to hide.
+- Write the "gaps from the paper's methodology" caveat once, prominently, near the top of any results writeup — not buried in a footnote — since this is the single most likely way results get over-interpreted by anyone (including future collaborators) skimming a comparison table.
 
 **Warning signs:**
-- `mujoco.MuJocoException: inertia must satisfy A+B>=C`
-- Robot arm shaking or exploding on first `env.step()`
-- Contact forces > 1000 N at initialization (check `data.cfrc_ext`)
+- A results table with fine-tuned-policy rows and zero-shot-MLLM rows in the same ranked list with no visual/textual separation.
+- Recovery-rate computed and reported without documenting how "recovery" was operationally redefined for a plan-then-execute loop.
+- No distinct bucket for infrastructure failures (API timeout, parse failure, rate limit) — these get miscounted as task/execution failures, inflating the apparent task-difficulty relative to the paper's cleaner trained-policy failure modes.
 
-**Phase to address:** Phase 2 — SOARM MJCF integration. Validate physics before writing any Python wrappers.
-
----
-
-## Moderate Pitfalls
+**Phase to address:**
+Metrics phase (failure taxonomy + Recovery Rate implementation) — the adaptation and caveat must be designed into the metric implementation itself, not added as prose after the numbers are already computed and shared.
 
 ---
 
-### Pitfall 6: Action Playback Drift — Cannot Replay Demonstrations by Actions Alone
+### Pitfall 6: Blind open-loop execution between MLLM calls with no mid-sub-goal visual feedback
 
 **What goes wrong:**
-When trying to replay collected LIBERO/robosuite demonstrations, replayed trajectories diverge from the originals. Known issue: states in replayed trajectories can differ by more than 1 unit from logged states (LIBERO GitHub issue #16). The robosuite documentation explicitly warns: "action playback trajectories tend to drift over time and should not be relied upon to accurately replicate demonstrations."
+Plan-then-execute means the MLLM is called once per sub-goal (reach→grasp→lift→place), and the local controller then executes that sub-goal open-loop until it reports completion, at which point the *next* MLLM call gets a fresh image. Between those two calls, the arm is moving based on a single stale snapshot of the world — if the object shifts (bumped by the gripper, rolls, or the initial grasp partially slips), there is no MLLM in the loop to notice until the next scheduled call, by which point the sub-goal may already have executed against outdated assumptions (e.g. "lift" executing on a gripper that closed on air). This is a different failure mode than the paper's fine-tuned policies, which typically run closed-loop at higher frequency and can visually correct within the same "policy call" implicitly.
 
 **Why it happens:**
-Discrete timestep integration accumulates floating-point errors. Contact dynamics are especially sensitive to initial conditions. The demonstration was recorded with a SpaceMouse at 20 Hz; replay at the same frequency still introduces small discrepancies that compound.
+The sub-goal granularity is a deliberate, reasonable design choice (real API latency makes per-tick MLLM calls impractical), but it's easy to under-estimate how much can change in the seconds-to-tens-of-seconds a single sub-goal takes to execute on real hardware, especially for a small/light payload arm where objects are easily nudged.
 
 **How to avoid:**
-Use state-setting for replay, not action replay:
-```python
-sim.set_state(demo["states"][t])
-sim.forward()
-```
-LIBERO stores MuJoCo states precisely for this reason. Never attempt to re-derive a trajectory from the action sequence alone.
+- Keep the local controller's execution of each sub-goal as short and checkpointed as reasonably possible (e.g. a "grasp" sub-goal should verify gripper closure/force feedback locally, not just command a position and assume success) rather than treating each sub-goal as one long uninterruptible motion.
+- Use any available local low-latency signal (gripper current/force, joint effort, or a lightweight local vision check) as a cheap intermediate sanity check *without* calling the MLLM, to abort/hold a sub-goal early if something is clearly wrong (e.g. gripper closed further than an expected object width suggests actual object was gripped).
+- Explicitly capture "sub-goal executed against stale world state" as a named failure mode in the reasoning-trace/failure logging, distinguishing it from a genuine MLLM planning error — this is an architecture-induced failure category, and conflating it with model quality will misattribute blame during analysis.
+- Keep sub-goals short enough that re-planning frequency is high relative to how fast the scene can plausibly change for this specific arm/payload/task set.
 
 **Warning signs:**
-- Success rate drops when replaying demonstrations that succeeded during collection
-- Object positions diverge visually from the original recording
+- "Grasp" sub-goals implemented as a single blind position command to the gripper with no post-grasp verification before moving to "lift."
+- Failure analysis lumps "MLLM picked wrong target" and "object moved during blind execution" into the same bucket.
 
-**Phase to address:** Phase 3 — Dataset collection. Bake in state-based replay from the start.
+**Phase to address:**
+Router/control-loop phase for the local checkpointing mechanism; recorder-extension phase should ensure the checkpoint signal is captured in the episode data so this failure mode is analyzable after the fact, not just during Pen Transfer end-to-end validation.
 
 ---
 
-### Pitfall 7: LIBERO HDF5 Stores States, Not Observations — Must Run Regeneration
+### Pitfall 7: Reasoning-trace and sensor logging desynchronized from actual actuation timing
 
 **What goes wrong:**
-Raw LIBERO HDF5 files contain MuJoCo simulator states, not rendered observations (images, proprioception). Scripts that try to read `demo["obs"]` from raw HDF5 find no image data. OpenVLA fine-tuning requires RLDS format (TensorFlow Datasets), not raw HDF5. Researchers skip the regeneration step and wonder why their training data has no images.
+Full reasoning-trace capture (every MLLM call's rationale, tied per episode) plus synced RGB+depth+joint+action recording is a first-class requirement, but the MLLM call happens on API time (seconds, variable, sometimes retried) while joint/depth/RGB sampling happens on local sensor time (near-continuous). If the recorder timestamps the reasoning trace at "when the response was received" rather than "what world state actually justified the plan" (i.e. the image/depth/joint state *at the moment the request was sent*), post-hoc analysis of a failure ("was this a bad plan given what it saw, or did the world change before it acted?") becomes unreliable — you can no longer tell whether a plan was wrong or just stale, which directly undermines the failure-taxonomy and recovery-rate analysis this milestone depends on.
 
 **Why it happens:**
-HDF5 observation storage is opt-in (large disk footprint). The LIBERO collection pipeline saves states by default. The regeneration step (`regenerate_libero_dataset.py` in openvla) is documented but easy to miss.
+`record_episode.py`'s existing sync logic was built for a continuous teleop/demo recording pattern (steady tick rate, no multi-second async external calls in the loop); extending it to interleave a slow, variable-latency external API call is a materially different timing problem that's easy to bolt on incorrectly (e.g. just appending the reasoning trace as "another column" at the current tick without recording which exact image/depth frame it was actually conditioned on).
 
 **How to avoid:**
-- Run `openvla/experiments/robot/libero/regenerate_libero_dataset.py` to render observations from saved states.
-- Convert HDF5 → RLDS using the provided scripts before fine-tuning.
-- For SOARM, the regeneration step must use the SOARM environment (not Panda) to render correct images.
+- Record, for every reasoning-trace entry, an explicit reference (timestamp or frame index) to the exact RGB/depth/joint snapshot that was sent to the MLLM as input — not just "closest in time," an unambiguous foreign-key link.
+- Timestamp three distinct events per MLLM call, not one: request-sent (with input snapshot reference), response-received, and sub-goal-execution-complete — this lets later analysis separate "model latency," "model reasoning quality," and "world drift during execution" as distinct variables.
+- Treat the reasoning-trace log as append-only and schema-versioned from the start, since the failure-taxonomy/metrics phase will need to parse it programmatically later — a format that only made sense while eyeballing raw logs during Pen Transfer will not survive four tasks and cross-provider comparison.
 
 **Warning signs:**
-- HDF5 keys contain `states` and `actions` but not `observations/images`
-- Training dataset shows zero non-zero image frames
+- Recorder code timestamps the reasoning trace using `time.now()` at write-time rather than propagating the original request timestamp.
+- No way to answer "what did the model actually see" for a specific logged decision without re-deriving it from surrounding sensor logs by guesswork.
 
-**Phase to address:** Phase 3 — Dataset collection, and Phase 4 — Fine-tuning pipeline setup.
-
----
-
-### Pitfall 8: OpenVLA Strict Version Pinning — Colab Auto-Updates Break It
-
-**What goes wrong:**
-OpenVLA requires exact versions: PyTorch 2.2.0, torchvision 0.17.0, transformers 4.40.1, tokenizers 0.19.1, timm 0.9.10, flash-attn 2.5.5. Later versions have breaking changes. Colab's `!pip install openvla` without pinning picks up newer versions. Attempting bitsandbytes 8-bit quantization on PyTorch 2.2.0 causes `AttributeError: module 'torch.compiler' has no attribute 'is_compiling'`.
-
-**Why it happens:**
-Python package resolution always prefers the latest version unless pinned. OpenVLA's dependency on flash-attn (which has CUDA kernel compilation requirements) makes version management especially fragile.
-
-**How to avoid:**
-Pin ALL versions in the Colab install cell:
-```bash
-pip install torch==2.2.0 torchvision==0.17.0 \
-  transformers==4.40.1 tokenizers==0.19.1 \
-  timm==0.9.10 flash-attn==2.5.5 \
-  --index-url https://download.pytorch.org/whl/cu121
-```
-Test the exact install cell in a fresh Colab session before depending on it.
-
-**Warning signs:**
-- `ImportError` or `AttributeError` on `import transformers` or `from prismatic import ...`
-- flash-attn compilation errors during install
-- `torch.compiler` attribute errors during model load
-
-**Phase to address:** Phase 1 — Colab environment setup. Create a pinned requirements file and test it.
-
----
-
-### Pitfall 9: OpenVLA Action Normalization Stats Must Come from YOUR Dataset
-
-**What goes wrong:**
-OpenVLA expects actions in [-1, 1] with normalization statistics (mean, std) computed from the fine-tuning dataset. If you use LIBERO's pre-computed statistics but collect SOARM demonstrations with a different workspace or joint configuration, the normalization is wrong. Disabling normalization or dataset shuffling causes near-complete performance collapse — not a gradual degradation.
-
-**Why it happens:**
-Researchers copy LIBERO fine-tuning configs directly without updating the statistics. The SOARM workspace bounds will differ from the Panda workspace used in LIBERO.
-
-**How to avoid:**
-- Compute normalization stats from your SOARM dataset: `mean = actions.mean(axis=0)`, `std = actions.std(axis=0)`.
-- Apply z-score normalization then clip to [-1, 1].
-- Never copy `dataset_statistics.json` from a different robot's dataset.
-- Always keep dataset shuffling enabled in the training config.
-
-**Warning signs:**
-- Training loss plateaus immediately at a high value
-- Model produces all-zero or all-extreme actions
-- Action distribution in training data has mean far from zero
-
-**Phase to address:** Phase 4 — Fine-tuning pipeline. Add a dataset statistics validation step before training starts.
-
----
-
-### Pitfall 10: LIBERO→SOARM Action Space Rotation Representation Bug
-
-**What goes wrong:**
-LIBERO's action space is 7D: `[dx, dy, dz, dax, day, daz, gripper]` where rotation is axis-angle delta. When adapting to SOARM or converting between delta/absolute representations, subtracting rotation values directly is mathematically wrong (rotations do not compose by subtraction in axis-angle). This produces corrupted rotation commands that silently cause the arm to move to wrong orientations.
-
-**Why it happens:**
-Researchers treat the rotation delta as Euler angles and subtract them as scalars. The issue is documented in openpi's LIBERO dataset issue tracker (issue #416: "cannot simply subtract rotation values").
-
-**How to avoid:**
-Convert to rotation matrices or quaternions before composing rotations:
-```python
-from scipy.spatial.transform import Rotation
-r_delta = Rotation.from_rotvec(action[3:6])
-r_current = Rotation.from_rotvec(current_pose[3:6])
-r_new = r_current * r_delta  # compose, not add
-```
-Always test rotation composition by visualizing the end-effector trajectory.
-
-**Warning signs:**
-- End-effector orientation drifts unexpectedly during demos
-- Gripper reaches correct position but wrong orientation
-- Large rotation residuals in controller during playback
-
-**Phase to address:** Phase 2 (SOARM integration) and Phase 3 (dataset collection).
-
----
-
-### Pitfall 11: OSC Controller Config Required — Missing Config Causes Cryptic Errors
-
-**What goes wrong:**
-LIBERO uses Operational Space Control (OSC) at 500 Hz inner loop with 20 Hz policy rate. Custom robots must provide a controller JSON config matching the robot's joint names and kinematic parameters exactly. Missing or mismatched controller config raises cryptic NumPy shape errors or silent wrong-dimension action application.
-
-**Why it happens:**
-The controller config is loaded by name from `robosuite/controllers/config/`. Researchers add the robot class but forget to add the controller config file, or copy a Panda config with Panda joint names.
-
-**How to avoid:**
-- Copy `robosuite/controllers/config/osc_pose.json` to `soarm_osc_pose.json`
-- Update `joint_names` to match your MJCF exactly
-- Set `kp`, `kd`, `damping_ratio` to reasonable values for SOARM's mass/inertia
-- Verify `action_limit` bounds match SOARM's workspace
-
-**Warning signs:**
-- `ValueError: operands could not be broadcast together with shapes` inside the controller
-- End-effector moves in wrong directions despite correct actions
-- Controller prints warnings about Jacobian dimension mismatch
-
-**Phase to address:** Phase 2 — SOARM MJCF integration.
-
----
-
-## Minor Pitfalls
-
----
-
-### Pitfall 12: VLA Visual Backbone Has No 3D Spatial Awareness by Default
-
-**What goes wrong:**
-Adding a depth camera to the environment does not automatically give the VLA spatial reasoning. VLA visual backbones (ViT variants) are pretrained on 2D image data with no 3D geometric supervision. The model cannot reason about object depth or estimate "left of the box" without explicit training on spatial language and 3D cues. Simply concatenating an RGB-D input without architectural changes yields no benefit.
-
-**Why it happens:**
-Depth inputs are intuitive from a human perspective, but the model has no learned association between depth values and spatial language. This requires either a 3D-aware vision encoder (e.g., spatial VLA variants) or supervised spatial augmentation data.
-
-**How to avoid:**
-For the spatial awareness phases, use multi-camera RGB views (front + overhead + side) rather than relying on depth alone. Depth can be used for task scripting (object position estimation) but not as a raw VLA input without additional training. The VEGA and cVLA papers provide relevant patterns for camera-space grounding.
-
-**Warning signs:**
-- Spatial language tasks ("pick object on the left") have the same success rate as control tasks
-- Model ignores depth channel (visualize attention maps over depth input)
-
-**Phase to address:** Phase 5 — Spatial awareness. Research the appropriate input representation before building the pipeline.
-
----
-
-### Pitfall 13: SOARM Joint Calibration Mode Determines Default Pose
-
-**What goes wrong:**
-The SO101 MJCF has two calibration modes: (a) virtual zero at mid joint range (recommended), and (b) virtual zero at fully horizontal extended pose. Using the wrong calibration causes the arm to start in an unexpected configuration, which collides with objects in LIBERO task scenes (designed around Panda's default configuration).
-
-**Why it happens:**
-The default pose is set in the MJCF `<key>` element and must be adjusted when placing the robot in LIBERO's scene coordinate frame.
-
-**How to avoid:**
-- Use calibration mode (a) — mid-range zero — as the SO101 README recommends.
-- After placing SOARM in the LIBERO arena, verify the default pose clears all scene objects.
-- Run `env.reset()` and visualize before collecting any data.
-
-**Warning signs:**
-- Robot arm intersects the table or objects on `env.reset()`
-- Contact forces spike immediately at `t=0`
-
-**Phase to address:** Phase 2 — SOARM MJCF integration.
-
----
-
-### Pitfall 14: Gripper Sign Convention Mismatch
-
-**What goes wrong:**
-robosuite normalizes gripper control to [-1, 1] where the convention for open/close varies by gripper type. LIBERO demonstrations use one sign convention. If SOARM's gripper is wired with the opposite sign, the gripper is always doing the opposite of what the VLA commands — picking tasks always fail at the grasp step.
-
-**Why it happens:**
-Gripper sign is defined in the MJCF actuator section and in the `GripperModel.format_action()` method. These are robot-specific and must be manually validated.
-
-**How to avoid:**
-- After MJCF integration, manually step with gripper action = +1 and verify the gripper opens (or closes) as expected.
-- Check the robosuite `GripperModel` subclass `format_action` and `_important_actuators` to verify convention.
-
-**Warning signs:**
-- Objects dropped immediately after grasp
-- Gripper always fully open or always fully closed during task execution
-
-**Phase to address:** Phase 2 — SOARM MJCF integration.
-
----
-
-### Pitfall 15: Sim-to-Real Action Frequency and Sensor Delay Mismatch
-
-**What goes wrong:**
-LIBERO runs the policy at 20 Hz and the OSC controller at 500 Hz, with deterministic and delay-free MuJoCo sensors. Real SOARM servos (STS3215/Feetech) communicate over serial at lower effective rates, with latency and quantization. A policy trained at 20 Hz sim may be too fast or too slow for the real robot's feedback loop.
-
-**Why it happens:**
-MuJoCo sensors are deterministic by default. Real servos have encoder quantization, communication jitter, and backlash. Action frequency that is stable in sim becomes unstable on hardware.
-
-**How to avoid:**
-For the simulation phase this is not immediately blocking, but document the mismatch for later. When sim pipeline is validated, add MuJoCo sensor noise and actuator delay before sim-to-real transfer:
-```xml
-<sensor>
-  <jointpos name="joint1_pos" joint="joint1" noise="0.001"/>
-</sensor>
-```
-Match the real servo communication rate in the controller.
-
-**Warning signs:**
-- Policy that works in sim produces oscillating or jerky motion on hardware
-
-**Phase to address:** Phase 6 — Sim-to-real transfer (future milestone, not MVP).
+**Phase to address:**
+Recorder-extension phase — this is exactly the phase whose job is defining the synced schema; get the request/response/execution timestamp triad and input-snapshot linkage right here, since the metrics phase and multi-provider phase both build on trusting this data's integrity.
 
 ---
 
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| Copy Panda controller config for SOARM | Faster robot integration | Wrong PD gains, unstable control, hard to debug | Never |
-| Use LIBERO normalization stats for SOARM demos | Skip stats computation | Performance collapse after fine-tuning | Never |
-| Skip observation regeneration step | Smaller disk footprint | Training data has no images | Never |
-| Use T4 Colab for OpenVLA inference | Free | OOM crash, wasted Colab session time | Only if using 4-bit QLoRA and tested |
-| Set MUJOCO_GL after imports | Feels more organized | Headless rendering silently fails | Never |
-| Replay demos via action replay instead of state-setting | Simpler code | Trajectory drift, unreliable evaluation | Never |
-
----
+|----------|-------------------|-----------------|------------------|
+| Hardcode a single free-tier HF model ID with no provider abstraction "for now" | Faster to get Pen Transfer working | Router/multi-provider phase becomes a rewrite instead of a swap-in | Never — the router's whole purpose is provider-agnosticism; even the first implementation should go through the abstraction |
+| Skip pixel→mm calibration and eyeball a fixed scale factor from a few manual tests | Unblocks early end-to-end testing before depth fix lands | Silent, direction-dependent grasp errors that look like "the model is bad" when it's actually the transform | Only for a throwaway smoke test explicitly marked as non-representative; never for anything whose results get recorded into the benchmark dataset |
+| Let the local controller retry a failed MLLM call indefinitely rather than defining a hard episode-abort condition | Looks more "robust" in a demo | Runs hang indefinitely burning free-tier rate-limit budget, or worse, executes a stale/late response after excessive retries | Never in the control loop; acceptable only in an offline analysis/re-query tool that isn't touching the live arm |
+| Log only the parsed action, not the raw MLLM text, to save storage | Smaller episode files | Parse-failure debugging becomes guesswork; the "full reasoning-trace capture" requirement is silently broken | Never — this directly violates an explicit v2.0 requirement |
+| Reuse the paper's failure taxonomy code/labels verbatim without adapting for plan-then-execute-specific failure modes | Faster metrics-phase implementation | Misattributes architecture-induced failures (API timeout, stale sub-goal) to "model quality," corrupting the eventual comparison | Acceptable as a first draft only if immediately followed by adding the MLLM-specific categories before any numbers are reported externally |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| URDF → MJCF | Trust the auto-converter output | Validate inertia, check collision mesh overlap, test in isolation before robosuite integration |
-| OpenVLA + LIBERO | Use raw HDF5 for fine-tuning | Run `regenerate_libero_dataset.py`, convert to RLDS format |
-| π0/openpi + custom robot | Edit only the model config | Also implement `LiberoInputs`/`LiberoOutputs` transforms for your robot's action/state format |
-| Colab + MuJoCo | Set env vars in any cell | Set `MUJOCO_GL=egl` in the first cell, before any import |
-| SOARM in robosuite | Pass URDF path directly | Create full `ManipulatorModel` subclass with controller config |
-| Action rotation composition | Subtract axis-angle deltas | Use `scipy.spatial.transform.Rotation` composition |
-
----
+|-------------|-----------------|-------------------|
+| HuggingFace free-tier Inference API | Treating it like a normal low-latency API with library-default timeouts and no backoff | Explicit short timeout, exponential backoff with capped retries, treat cold-start (~30-60s) and rate-limit (429) as expected/handled cases, not exceptional crashes |
+| `control/`'s LeRobot USB-serial bridge | Feeding MLLM-derived targets directly into the same call path used for teleop, with the same trust level as a human-driven leader arm | Insert a distinct, testable safety-clamp/bounds-check layer specifically for machine-generated targets, since a human teleoperator has implicit judgment a parsed API response doesn't |
+| Stereo depth camera (AR0144) as MLLM spatial-grounding input | Wiring MLLM prompts against depth data before the specular-glint/exposure reliability fix is validated on real objects | Hard-gate MLLM spatial-grounding work behind the depth-fix phase's own UAT sign-off; don't let task-phase schedule pressure pull this forward |
+| `record_episode.py` extension for reasoning traces | Bolting the MLLM call into the existing tick-rate recording loop without re-examining its timing assumptions | Redesign the sync model explicitly for a slow, async, retryable external call interleaved with fast local sensor sampling (see Pitfall 7) |
+| Provider-agnostic router (future: OpenAI/Anthropic/Gemini-style APIs) | Designing the interface around the free HF model's specific response quirks (its schema drift, its latency profile) | Design the interface around the strictest common contract (structured schema, timeout, error taxonomy) first, verify the free HF model against it, not the reverse |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| Rendering every step in Colab | Notebook becomes unresponsive | Render every N steps or use offscreen rendering to file | Immediately with any VLA inference loop |
-| Loading full OpenVLA-7b for each Colab session | 5-10 min load time per session | Cache weights in Google Drive, load from `/content/drive/` | Every session without Drive mount |
-| Episode-level HDF5 writes in Python loop | Very slow dataset creation | Use robosuite's batch HDF5 writer | >100 episodes |
-| Regenerating LIBERO observations for all tasks at once | Fills Colab disk (15 GB limit) | Regenerate per-task, delete after conversion to RLDS | All 4 LIBERO suites at once |
+|------|----------|-------------|-----------------|
+| Sub-goal granularity too coarse (long open-loop execution per MLLM call) | Grasps succeed in short/simple motions but fail increasingly as sub-goal duration grows (Multi-Object Packing, Precision Pen Placement) | Keep sub-goals short and checkpointed (Pitfall 6); re-plan more frequently for tasks with more opportunities for world-state drift | Becomes visible once tasks beyond Pen Transfer (more objects, more precision) are attempted |
+| Free-tier rate limits shared across an entire benchmark run | Early episodes in a session succeed, later ones increasingly hit 429s/timeouts, making later-episode results look artificially worse | Pace requests deliberately (small delay between episodes), track daily/session request budget against the free tier's cap before running a full 20-episode/task session | Hits as soon as a full task's 20-episode cadence is attempted in one sitting |
+| Full reasoning-trace + raw depth + RGB logged per timestep, per episode, across 4 tasks x 20 episodes | Storage/IO grows fast; loading/analyzing episodes for the metrics phase gets slow | Decide the on-disk schema (compressed depth, thumbnailed vs full-res RGB, trace text vs binary) during the recorder-extension phase, not after the dataset already exists in an unwieldy format | Becomes a real problem once multiple tasks x providers x 20 episodes accumulate before the metrics phase needs to batch-process them |
 
----
+## Security Mistakes
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Committing HF/API tokens or provider keys into prompts, logs, or the reasoning-trace dataset that gets shared/pushed to HF Hub | Credential leak if episode data or logs are ever published/shared (this project already pushes checkpoints/datasets to HF Hub) | Keep provider credentials out of any logged/recorded field; scrub prompt templates before they're persisted; use environment variables, never inline strings that could get captured in a trace |
+| No rate/action limiting on the router itself | A bug (retry loop, malformed loop) could hammer a paid provider's API once the multi-provider phase lands, running up unexpected cost | Build the request-budget/backoff logic once in the router (Pitfall 2) so it protects every provider, paid or free, not just the current free-tier pilot |
+| Treating the physical arm as a "just a peripheral" with no operator-abort path during autonomous MLLM-driven runs | A stuck/looping control loop keeps actuating with no easy way to stop it mid-episode | Keep a reachable manual stop (software kill-switch tied independently of the MLLM/router process, plus physical arm power/e-stop) available during every autonomous run, not just during teleop |
+
+## UX Pitfalls
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-------------------|
+| No visibility into the MLLM's reasoning until after an episode completes (or fails) | Operator can't tell during a run whether the model is "about to do something wrong," undermining trust and slowing debugging | Stream/print the current sub-goal's reasoning summary to the console/log in near-real-time as each MLLM call resolves, not just at episode-end |
+| Silent fallback-to-hold behavior on API timeout with no operator-facing signal | Operator watches the arm "just stop" with no indication whether it's thinking, stuck, or done | Surface a clear status (e.g. "waiting on MLLM response," "rate-limited, backing off," "aborted: parse failure") so a human watching the arm knows what state it's in |
+| Treating a parse-failure or timeout episode as just "a failed episode" indistinguishable from a genuine task failure | Skews the eventual benchmark numbers and hides infrastructure issues from whoever reviews results later | Tag and surface infrastructure-failure episodes distinctly in whatever run summary/console output the operator sees live, not just in post-hoc logs |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **SOARM MJCF integration:** Check that `env.reset()` produces a stable, collision-free initial pose — not just "no crash on load"
-- [ ] **Headless rendering:** Verify rendered frames are non-black (save one PNG and inspect) — not just "no rendering error"
-- [ ] **OpenVLA installation:** Confirm inference runs on a real input (random image + text prompt → action) — not just "model loaded"
-- [ ] **Dataset collection:** Inspect 3 episodes visually (render saved states) and confirm success labels are correct — not just "HDF5 file created"
-- [ ] **Action normalization:** Plot the action distribution and verify near-zero mean, unit variance — not just "normalization code runs"
-- [ ] **Gripper convention:** Manually command gripper open/close and verify correct direction — not just "gripper actuator present in MJCF"
-- [ ] **RLDS conversion:** Load one episode from RLDS and print images + action shapes — not just "script completed without error"
-
----
+- [ ] **Safety clamps:** Often missing an explicit workspace-bounds/joint-limit check on *machine-generated* targets specifically — verify by feeding the local controller a deliberately out-of-range or malformed MLLM output in a test and confirming the arm does not move unsafely.
+- [ ] **Timeout/fallback handling:** Often present for the "happy path" call but untested for cold-start/rate-limit/stale-response cases — verify by simulating a slow or 429 response and observing the arm holds position rather than guessing or executing late.
+- [ ] **Structured-output parsing:** Often works on the handful of prompts used during development but not on a broader sample of real scenes/lighting — verify by running a batch of varied real images through the parser and tracking parse-success rate, not just spot-checking a few.
+- [ ] **Pixel-to-mm calibration:** Often "wired up" but not validated against ground truth on the real arm — verify by placing an object at a known measured position and checking the MLLM-derived-then-converted target matches within an acceptable tolerance, not just that the code runs without error.
+- [ ] **Reasoning-trace sync:** Often logs *a* trace per episode but not the precise request/response/execution timestamp triad and input-snapshot linkage — verify by picking a random logged decision and confirming you can unambiguously reconstruct exactly what image/depth/joint state it was conditioned on.
+- [ ] **Failure taxonomy adaptation:** Often reuses the paper's four categories unchanged — verify that infrastructure-induced failures (timeout, parse failure, rate limit, stale sub-goal) have their own distinct bucket rather than being force-fit into a policy-execution category.
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Wrong Colab GPU tier for OpenVLA | LOW | Upgrade to Colab Pro, remount Drive, restart session |
-| Corrupted SOARM MJCF (bad inertia) | MEDIUM | Restart from MuJoCo Menagerie SO101 base, re-apply customizations |
-| Wrong normalization stats baked into fine-tuned model | HIGH | Re-collect normalization stats, retrain from base checkpoint |
-| Action playback drift in recorded dataset | MEDIUM | Re-record using state-setting replay; existing action-only demos are invalid |
-| OpenVLA dependency conflict | LOW | Create fresh Colab session, run pinned install cell first |
-| Missing controller config | LOW | Copy and adapt from Panda config, update joint names |
-
----
+|---------|-----------------|------------------|
+| Safety clamps added late, after unsafe motions already occurred during testing | LOW-MEDIUM | Add the bounds-check/clamp layer at the router-to-controller boundary; retroactively audit any recorded episodes for out-of-range commands to flag/exclude them from the benchmark dataset |
+| Coordinate/unit mismatch discovered after several episodes already recorded | MEDIUM | If the transform bug is deterministic (e.g. a fixed offset or axis swap), it may be possible to re-derive corrected coordinates from raw pixel+depth data already logged; if not, those episodes must be excluded/re-run once fixed |
+| Discover mid-benchmark that infrastructure failures were miscounted as task failures in the metrics pipeline | MEDIUM | Re-process the raw reasoning-trace/episode logs (if they retain enough raw detail per Pitfall 7's prevention) to reclassify failures; this is exactly why raw traces, not just parsed summaries, must be kept |
+| Free-tier rate limiting corrupts a benchmark run partway through | LOW | Re-run only the affected episodes after backing off; because episodes are logged with clear pass/fail/infrastructure-failure tags (per the UX Pitfalls fix), partial re-runs don't require redoing the whole task |
+| Results already shared/written up before the zero-shot-vs-fine-tuned methodology caveat was made explicit | LOW-MEDIUM | Add the caveat prominently to the existing writeup rather than silently revising numbers; if a comparison table was already published without separation, re-publish a corrected version rather than leaving the misleading one standing |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| OpenVLA VRAM overrun | Phase 1 — Colab setup | Load model and run one inference call; confirm GPU memory usage |
-| π0 unavailability | Phase 1 — VLA selection | Confirm openpi weights download successfully |
-| MUJOCO_GL misconfiguration | Phase 1 — Colab setup | Save a rendered frame to PNG and open it |
-| SOARM not in robosuite | Phase 2 — SOARM integration | `env.reset()` with SOARM robot succeeds |
-| MJCF inertia errors | Phase 2 — SOARM integration | MuJoCo compile step with no warnings; initial contact forces < 10 N |
-| Action playback drift | Phase 3 — Dataset collection | State-based replay exactly reproduces original trajectory |
-| HDF5 stores states not observations | Phase 3 — Dataset collection | Regeneration script run; images present in converted dataset |
-| OpenVLA version pinning | Phase 1 — Colab setup | Full install + inference test in clean session |
-| Action normalization | Phase 4 — Fine-tuning | Plot action distribution before and after normalization |
-| Rotation representation bug | Phase 2 + Phase 3 | Unit test rotation composition; visualize EEF trajectory |
-| OSC controller config | Phase 2 — SOARM integration | Controller runs without dimension errors for 100 steps |
-| VLA lacks spatial awareness | Phase 5 — Spatial features | Multi-camera input ablation; spatial task success rate |
-| Joint calibration mode | Phase 2 — SOARM integration | Visual inspection of default pose in LIBERO scene |
-| Gripper sign convention | Phase 2 — SOARM integration | Manual gripper open/close test |
-| Sim-to-real frequency gap | Phase 6 — Sim-to-real (future) | Document gap; add noise/delay in sim before hardware transfer |
-
----
+|---------|-------------------|----------------|
+| No safety envelope between MLLM output and actuators | Router/control-loop phase | Deliberately feed out-of-range/malformed targets in a bench test; confirm arm never exceeds clamped bounds |
+| Free-tier API rate limits/cold starts breaking the live loop | Router/control-loop phase | Simulate slow/429 responses; confirm local hold-and-recover behavior, no stale-response execution |
+| MLLM output-format brittleness | Router/control-loop phase, hardened during Pen Transfer | Run parser against a varied batch of real scene images; track and report parse-success rate |
+| Pixel-space vs mm-scale coordinate mismatch | Router/control-loop phase interface contract; hard-gated on depth-fix phase completion | Validate converted coordinates against a known measured object position within tolerance |
+| Zero-shot vs fine-tuned-policy methodology mismatch | Metrics phase | Results writeup shows separated tables + explicit caveat + distinct infrastructure-failure category |
+| Blind open-loop execution between MLLM calls | Router/control-loop phase (checkpointing); data captured in recorder-extension phase | Failure logs can distinguish "stale world state" from "bad plan" as separate causes |
+| Reasoning-trace/sensor desync | Recorder-extension phase | Any logged decision can be traced back to the exact input snapshot it was conditioned on |
 
 ## Sources
 
-- robosuite Human Demonstrations documentation: action playback drift warning — https://robosuite.ai/docs/algorithms/demonstrations.html
-- LIBERO GitHub issue #16: state drift during demonstration replay — https://github.com/Lifelong-Robot-Learning/LIBERO/issues/16
-- OpenVLA GitHub issue #311: multi-GPU OOM with `device_map="auto"` — https://github.com/openvla/openvla/issues/311
-- openpi GitHub issue #416: LIBERO Cartesian action space, rotation subtraction bug — https://github.com/Physical-Intelligence/openpi/issues/416
-- OpenVLA README: exact version pins and flash-attn requirements — https://github.com/openvla/openvla/blob/main/README.md
-- MuJoCo modeling docs: inertia matrix validation (A+B≥C) — https://mujoco.readthedocs.io/en/latest/modeling.html
-- MuJoCo headless rendering docs / torchrl guide — https://docs.pytorch.org/rl/main/reference/generated/knowledge_base/MUJOCO_INSTALLATION.html
-- SO-ARM100 Simulation README (SO101 calibration modes) — https://github.com/TheRobotStudio/SO-ARM100/blob/main/Simulation/SO101/README.md
-- TechLabs Aachen SO100 + SmolVLA + robosuite integration report — https://techlabs-aachen.medium.com/organizer-robot-teaching-an-so100-to-restore-order-using-smolvla-and-robosuite-9b5f2d0558ed
-- openvla regenerate_libero_dataset.py — https://github.com/openvla/openvla/blob/main/experiments/robot/libero/regenerate_libero_dataset.py
-- openpi README: custom robot transforms (LiberoInputs/LiberoOutputs) — https://github.com/Physical-Intelligence/openpi/blob/main/README.md
-- VLA action normalization analysis: "Scaling VLA Model Training on a Budget" — https://www.roboticscenter.ai/blog/scaling-vla-training-on-a-budget
-- robosuite sim-to-real documentation — https://robosuite.ai/docs/algorithms/sim2real.html
-- "On the Role of the Action Space in Robot Manipulation Learning and Sim-to-Real Transfer" (2023) — https://arxiv.org/abs/2312.03673
-- cVLA camera-space grounding — https://arxiv.org/html/2507.02190v2
+- [On the Vulnerability of LLM/VLM-Controlled Robotics](https://arxiv.org/pdf/2402.10340) — MEDIUM confidence (cross-checked academic source; hallucination/unsafe-plan risk class)
+- [Using large language models for embodied planning introduces systematic safety risks](https://arxiv.org/pdf/2604.18463) — MEDIUM confidence
+- [Safety Guardrails for LLM-Enabled Robots](https://arxiv.org/pdf/2503.07885) — MEDIUM confidence (runtime constraint/guardrail pattern)
+- [Enhancing Reliability in LLM-Integrated Robotic Systems: A Unified Approach to Security and Safety](https://arxiv.org/pdf/2509.02163) — MEDIUM confidence
+- HuggingFace free-tier Inference API rate limits, cold starts, and lack of SLA — MEDIUM confidence, synthesized from multiple third-party overviews (klymentiev.com, theneuralbase.com, aionx.co); no single canonical HF doc page confirmed exact numeric limits, treat specific figures (e.g. "~1000 req/day," "429 after ~35 concurrent") as approximate/LOW-confidence and verify empirically against the actual account/model before relying on them for capacity planning
+- LLM structured-output/function-calling reliability and JSON-schema-constraint tradeoffs — MEDIUM confidence, cross-checked across multiple sources (agenta.ai, towardsdatascience.com); the finding that hard JSON-constraint enforcement can degrade smaller-model reasoning is worth empirically validating against the specific free HF model chosen
+- VLM spatial/depth reasoning limitations relative to embodiment-trained VLA policies — MEDIUM confidence, cross-checked across recent (2026) arXiv papers (DepthVLA, VEGA, T-Rex, N3D-VLM)
+- [Benchmarking Vision-Language-Action Models on SO-101: Failure and Recovery Analysis (arXiv:2606.08881)](https://arxiv.org/abs/2606.08881) — HIGH confidence (primary source for the methodology this project explicitly benchmarks against); confirms fine-tuned π0.5/SmolVLA/Wall-X/ACT evaluation, four-category failure taxonomy, semantic/execution failure decomposition, and recovery-aware metrics — the basis for Pitfall 5
+- `.planning/PROJECT.md` (this project's own Key Decisions log) — HIGH confidence, primary source; already flags the fine-tuned-vs-zero-shot comparability caveat and the depth-fix-before-MLLM-work sequencing as intentional decisions
 
 ---
-*Pitfalls research for: VLA + LIBERO/MuJoCo robot simulation (SoARM Research)*
-*Researched: 2026-07-07*
+*Pitfalls research for: Real-hardware MLLM-as-controller robot manipulation (SO-ARM101, plan-then-execute loop, HuggingFace-hosted pilot model)*
+*Researched: 2026-09-15*

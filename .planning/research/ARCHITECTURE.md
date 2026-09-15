@@ -1,436 +1,244 @@
 # Architecture Research
 
-**Domain:** VLA + LIBERO/MuJoCo robot simulation pipeline
-**Researched:** 2026-07-07
-**Confidence:** MEDIUM (cross-checked codebase inspection + web research; open questions noted)
-
----
+**Domain:** Real-hardware MLLM-driven robot manipulation control (integration into an existing LeRobot bridge)
+**Researched:** 2026-09-15
+**Confidence:** HIGH (grounded directly in installed LeRobot 0.6.1 source and this repo's existing `control/`/`diagnostics/` code, not external docs) for the LeRobot integration surface; MEDIUM for MLLM-loop/action-schema design (no established reference implementation for this exact "general MLLM as joint-space controller" pattern — nearest published analogs are subgoal/CoT VLA papers, cited below, which validate the plan-then-execute shape but not a concrete API)
 
 ## Standard Architecture
 
 ### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Researcher / Notebook                        │
-│              (Google Colab GPU: language prompt + launch)            │
-└─────────────────────────┬───────────────────────────────────────────┘
-                          │ text prompt
-                          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                       VLA Inference Layer                            │
-│   ┌──────────────────────────────────────────────────────────────┐  │
-│   │  π0 or OpenVLA model (HuggingFace weights, GPU inference)    │  │
-│   │  Input: [language tokens] + [RGB image(s)] → action tokens   │  │
-│   │  Output: 7-D delta EEF pose (dx,dy,dz,droll,dpitch,dyaw,g)  │  │
-│   │  or 50-step action chunk (π0 flow matching)                  │  │
-│   └──────────────────────────────────────────────────────────────┘  │
-└─────────────────────────┬──────────────────────────────────────────┘
-                          │ action vector (7-D float array)
-                          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Controller / Action Bridge                        │
-│   robosuite OSC_POSE controller                                      │
-│   (translates delta EEF pose → joint torques via Jacobian IK)       │
-│   Alternative for SOARM: JOINT_POSITION controller                   │
-│   (if direct 6-DOF joint angle control preferred)                    │
-└─────────────────────────┬──────────────────────────────────────────┘
-                          │ joint torques / positions
-                          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Simulation Environment Layer                      │
-│   ┌──────────────────┐   ┌──────────────────────────────────────┐   │
-│   │ LIBERO BDDLBase  │   │ robosuite SingleArmEnv               │   │
-│   │ Domain           │   │ (wraps MuJoCo physics)               │   │
-│   │ (task + objects  │   │ env.step(action) → obs, reward, done │   │
-│   │  from .bddl file)│   └──────────────────────────────────────┘   │
-│   └──────────────────┘                │                             │
-│                                       ▼                             │
-│   ┌───────────────────────────────────────────────────────────────┐ │
-│   │                   MuJoCo Physics Engine                       │ │
-│   │  mj_step() → integrates physics, updates body poses          │ │
-│   └───────────────────────────────────────────────────────────────┘ │
-└─────────────────────────┬──────────────────────────────────────────┘
-                          │ observations dict
-                          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      Observation / Camera Layer                       │
-│  agentview_image (H×W×3 uint8, flipped [::-1] before VLA use)       │
-│  robot0_eye_in_hand_image (wrist camera)                             │
-│  frontview_image (optional third view)                               │
-│  agentview_depth (float, camera_depths=True)                         │
-│  robot0_eef_pos (3,), robot0_eef_quat (4,)                          │
-│  robot0_joint_pos (N,), robot0_gripper_qpos (2,)                    │
-│  object_state (xpos, xmat per object, from sim.data)                │
-└─────────────────────────┬──────────────────────────────────────────┘
-                          │ back to VLA (closed loop) or to HDF5
-                          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Dataset Collection Layer (offline)                 │
-│  Scripted / teleoperated episodes → HDF5 via robomimic format        │
-│  /data/demo_N/obs/{images, eef_pos, joint_pos, gripper}             │
-│  /data/demo_N/actions (T, 7) delta EEF or joint targets              │
-│  Converts to LeRobot Parquet format for HuggingFace sharing         │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    control/ (Python 3.12 venv — unchanged)               │
+│                                                                            │
+│  ┌────────────────────┐        ┌───────────────────────────────────┐    │
+│  │   control/mllm/     │        │  control/depth_stereo.py           │    │
+│  │  (NEW package)       │        │  (NEW — real-time-at-cadence)      │    │
+│  │  router.py           │        │  loads diagnostics/                │    │
+│  │  loop.py              │◄──────┤  stereo_calibration.npz            │    │
+│  │  schema.py            │  depth  as a DATA artifact (not a code     │    │
+│  │  prompts.py           │  frame  import across venvs)               │    │
+│  └────────┬──────────────┘        └────────────┬────────────────────┘    │
+│           │ calls                               │ rectify+SGBM on-demand │
+│           │ per sub-goal                        │ (per MLLM call, not    │
+│           ▼                                      │  per video frame)      │
+│  ┌────────────────────┐                         │                        │
+│  │ control/motion_     │                         │                        │
+│  │ primitives.py        │  (NEW — extracted from │                        │
+│  │ (P-control executor, │   keyboard_joint_       │                        │
+│  │  reused from          │   control.py)          │                        │
+│  │  keyboard_joint_      │                         │                        │
+│  │  control.py)          │                         │                        │
+│  └────────┬──────────────┘                         │                        │
+│           │ robot.send_action({...})               │                        │
+│           ▼                                          │                        │
+│  ┌────────────────────────────────────────────────┴─────────────────┐    │
+│  │  SO101Follower / SOFollowerRobotConfig  (EXISTING, untouched)      │    │
+│  │  lerobot[feetech]==0.6.1 — USB serial Feetech bus                  │    │
+│  └────────┬─────────────────────────────────────────────────────────┘    │
+│           │ get_observation() -> {joint}.pos dict                        │
+│           ▼                                                              │
+│  ┌────────────────────┐        ┌───────────────────────────────────┐    │
+│  │ control/camera_io.py │        │  control/episode_writer.py         │    │
+│  │ (NEW — extracted     │───────►│  (NEW — extended episode schema)   │    │
+│  │  from record_        │ frames │  writes to control/episodes/       │    │
+│  │  episode.py)          │        │  <task>/<episode_id>/              │    │
+│  └────────────────────┘        └───────────────────────────────────┘    │
+│                                                                            │
+│  control/record_episode.py — UNCHANGED, stays the plain teleop/UAT       │
+│  recorder it is today (fixed-fps loop, no MLLM/depth coupling)           │
+└──────────────────────────────────────────────────────────────────────────┘
+                     ▲ reads calibration artifact only (no import)
+┌────────────────────┴───────────────────────────────────────────────────┐
+│              diagnostics/ (Python .venv — unchanged, no torch)          │
+│  stereo_calibrate.py, stereo_calibration.npz/.json (data contract),     │
+│  measure_object_depth.py (offline/batch tool — stays as-is)             │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | Implementation |
-|-----------|---------------|----------------|
-| SOARM MJCF Model | Defines robot kinematics, joint limits, meshes for MuJoCo | `so101_new_calib.xml` from TheRobotStudio/SO-ARM100 (adapt for robosuite) |
-| SOARM ManipulatorModel | Python class bridging MJCF to robosuite robot system | Subclass `ManipulatorModel`, implement `init_qpos`, `base_xpos_offset`, `arm_type` |
-| ROBOT_CLASS_MAPPING | Registry mapping robot name string to SingleArm class | LIBERO `envs/robots/__init__.py` — add `"SOARM": SingleArm` |
-| BDDL Task File | Declarative task spec: arena, fixtures, objects, goal | `.bddl` file listing SOARM as robot, tabletop scene, target objects |
-| BDDLBaseDomain | LIBERO environment class that parses BDDL and creates MuJoCo scene | Inherits `SingleArmEnv`; handles object placement + goal checking |
-| ControlEnv / OffScreenRenderEnv | Gym-like wrapper: `reset()`, `step(action)`, camera obs | `LIBERO/libero/libero/envs/env_wrapper.py` |
-| OSC_POSE Controller | Translates 6-D delta EEF pose + gripper to joint torques | robosuite built-in; loaded via `suite.load_controller_config("OSC_POSE")` |
-| VLA Model (OpenVLA) | Tokenizes image + language → autoregressive action token decoding → 7-D float vector | `openvla/openvla-7b` HuggingFace checkpoint; outputs rescaled to `[-1, 1]` |
-| VLA Model (π0) | Flow matching over 50-step action chunk from image + language | Physical Intelligence `openpi`; replans every 25 steps |
-| Action Normalization | Rescales VLA output `[-1, 1]` to physical controller limits | Dataset-specific stats; must match training distribution |
-| Observation Camera Stack | Multi-camera RGB + optional depth render | `OffScreenRenderEnv(camera_names=[...], camera_depths=True)` |
-| HDF5 Dataset Writer | Persists episodes to robomimic HDF5 format | `h5py`; structure: `/data/demo_N/{obs, actions, rewards, dones}` |
-| Spatial Awareness Module | Object pose extraction, depth-to-pointcloud, spatial predicate eval | `sim.data.body_xpos[id]`, camera intrinsics from robosuite `camera_utils.py` |
-
----
+| Component | Responsibility | Status |
+|-----------|----------------|--------|
+| `control/mllm/router.py` | Provider-agnostic call surface (`call(images, text, schema) -> ParsedResponse`); wraps a single third-party abstraction (see Pattern 2) | **NEW** |
+| `control/mllm/loop.py` | Plan-then-execute orchestration: observe → prompt → parse → execute sub-goal → check completion → repeat | **NEW** |
+| `control/mllm/schema.py` | Structured action/response schema (pydantic or dataclass) shared by router output and executor input | **NEW** |
+| `control/mllm/prompts.py` | Prompt templates, sub-goal vocabulary, few-shot examples | **NEW** |
+| `control/motion_primitives.py` | Joint-space P-control executor (target pose → converged real motion), extracted from `keyboard_joint_control.py`'s `move_to_positions()` | **NEW (extracted, not new logic)** |
+| `control/depth_stereo.py` | Loads `diagnostics/stereo_calibration.npz`, exposes `compute_depth(raw_stereo_frame) -> np.ndarray` using the same rectify+SGBM pipeline validated in `diagnostics/measure_object_depth.py`, callable at MLLM-decision cadence | **NEW** |
+| `control/camera_io.py` | `open_cameras()`/frame-grab helpers extracted from `record_episode.py` so both the old recorder and the new one share one tested implementation | **NEW (extracted)** |
+| `control/episode_writer.py` | Extended episode schema writer: RGB video (continuous) + depth (sparse, per sub-goal) + joints.csv (continuous) + reasoning_trace.jsonl + episode_meta.json | **NEW** |
+| `SO101Follower` / `SOFollowerRobotConfig` | Physical joint I/O over USB serial (Feetech bus) | **UNCHANGED** — integration point only, never modified |
+| `control/record_episode.py` | Fixed-fps teleop/UAT recorder | **UNCHANGED** |
+| `diagnostics/stereo_calibrate.py`, `stereo_calibration.{npz,json}` | Offline stereo calibration; `.npz`/`.json` are the versioned data contract consumed by `control/depth_stereo.py` | **UNCHANGED** |
+| `diagnostics/measure_object_depth.py` | Offline/interactive depth-quality diagnostic tool | **UNCHANGED** — its rectify+SGBM logic is the reference implementation `control/depth_stereo.py` ports into a callable, not a CLI script |
 
 ## Recommended Project Structure
 
 ```
-LIBERO/libero/libero/
-├── envs/
-│   ├── robots/
-│   │   ├── mounted_panda.py        # existing
-│   │   ├── soarm.py                # NEW: ManipulatorModel subclass for SOARM
-│   │   └── __init__.py             # add SOARM to ROBOT_CLASS_MAPPING
-│   ├── assets/
-│   │   └── robots/
-│   │       └── soarm/
-│   │           ├── robot.xml       # NEW: SOARM MJCF (adapted from SO-ARM100)
-│   │           └── meshes/         # .obj/.stl mesh files
-│   └── ...
-│
-soarm_pipeline/                     # NEW top-level package (in repo root)
-├── models/
-│   │   soarm.py                    # MJCF path, init_qpos, constants
-├── envs/
-│   └── soarm_libero_env.py         # OffScreenRenderEnv factory for SOARM tasks
-├── vla/
-│   ├── openvla_inference.py        # OpenVLA wrapper: load + predict()
-│   ├── pi0_inference.py            # π0 wrapper: load + predict_chunk()
-│   └── action_utils.py             # normalize/denormalize, chunk replay
-├── data/
-│   ├── collect_demos.py            # scripted policy + HDF5 writer
-│   ├── dataset_schema.py           # HDF5 structure constants
-│   └── convert_lerobot.py          # HDF5 → LeRobot Parquet
-├── spatial/
-│   ├── camera_utils.py             # depth backprojection, pointcloud
-│   └── object_pose.py              # sim.data.body_xpos extraction
-└── notebooks/
-    ├── 01_soarm_env_check.ipynb    # verify SOARM renders in LIBERO
-    ├── 02_vla_inference.ipynb      # end-to-end VLA rollout
-    └── 03_data_collection.ipynb    # demo collection pipeline
+control/
+├── .venv/                          # unchanged
+├── record_episode.py               # unchanged — plain teleop/UAT recorder
+├── keyboard_joint_control.py       # unchanged, but move_to_positions() extracted
+├── camera_io.py                    # NEW — shared camera open/read helpers
+├── motion_primitives.py            # NEW — extracted P-control executor
+├── depth_stereo.py                 # NEW — real-time-at-cadence stereo depth
+├── episode_writer.py               # NEW — extended episode schema writer
+├── mllm/                           # NEW package — the only genuinely new
+│   ├── __init__.py                 #   architectural surface in this milestone
+│   ├── router.py                   #   provider-agnostic call surface
+│   ├── loop.py                     #   plan-then-execute orchestration
+│   ├── schema.py                   #   structured action/response types
+│   └── prompts.py                  #   prompt templates + sub-goal vocabulary
+├── tasks/                          # NEW — per-task config (Pen Transfer, etc.)
+│   └── pen_transfer.py
+├── metrics/                        # NEW (Build Order step 6, not step 1)
+│   └── failure_taxonomy.py
+├── episodes/                       # NEW — canonical dataset root (gitignored)
+│   └── pen_transfer/<episode_id>/
+│       ├── camera_wrist.mp4
+│       ├── camera_overhead_stereo.mp4   # raw side-by-side, for provenance
+│       ├── joints.csv                   # continuous, full recorder fps
+│       ├── depth/step_00.npy ...        # sparse — one per MLLM decision point
+│       ├── reasoning_trace.jsonl        # one line per MLLM call
+│       └── episode_meta.json            # task, provider/model, outcome, taxonomy label
+└── outputs/                        # unchanged — ad hoc UAT scratch captures only
 ```
 
 ### Structure Rationale
 
-- **envs/robots/soarm.py inside LIBERO tree:** robosuite looks for MJCF via path relative to its own assets directory; keeping the robot class adjacent to MountedPanda follows the existing LIBERO pattern exactly.
-- **soarm_pipeline/ at repo root:** Research code that orchestrates the full loop lives outside LIBERO to avoid polluting the benchmark fork. Easier to iterate without rebasing against upstream LIBERO changes.
-- **vla/ subdirectory:** OpenVLA and π0 have different APIs (token decoding vs flow matching); isolating them behind a common `predict(image, language) -> action` interface makes the inference loop swappable.
-- **spatial/ subdirectory:** Depth and pose extraction are optional augmentations to the base loop; separating them prevents scope creep in the core rollout code.
-
----
+- **`mllm/` as a subpackage, not flat files:** every other `control/` script is a flat, single-purpose file (matches this repo's established convention). The MLLM layer is the one exception because it has four genuinely distinct, separately-testable concerns (transport, orchestration, schema, prompt content) that will each change independently as providers/tasks are added — bundling them into one file would recreate the same "generic CLI doesn't fit this robot" pain this project already hit once with LeRobot's stock teleoperate path.
+- **`episodes/` separate from `outputs/`:** `outputs/` is already established as ad hoc/UAT scratch space (`step5_still`, `step6_video_v3`, etc.) — mixing the real benchmark dataset into it would make it hard to tell disposable captures from the actual research dataset. This mirrors the project's own existing `explorations/data/` (input) vs `explorations/outputs/` (ephemeral render output) split.
+- **`camera_io.py` / `motion_primitives.py` as extractions, not new logic:** both `record_episode.py` and `keyboard_joint_control.py` already contain hardened, UAT-tested versions of camera-open and P-control-to-target code (including the retry/backoff workaround for the known Feetech `sync_read` dropout, `github.com/huggingface/lerobot/issues/3131`). Reimplementing either for the MLLM loop risks silently dropping that hard-won robustness.
+- **`depth_stereo.py` depends on diagnostics only as a data artifact:** `control/.venv` and `diagnostics/.venv` are deliberately separate (heavy LeRobot/torch deps vs. lightweight opencv/numpy). `stereo_calibration.npz` is plain numpy arrays (camera matrices, rectification maps) — loadable with `numpy.load()` from either environment with zero code coupling. `control/depth_stereo.py` should **port** the rectify+SGBM logic already proven in `diagnostics/measure_object_depth.py` (not import it), keeping the two venvs independent, exactly as the project's own conventions already require (no cross-venv Python imports anywhere in this repo).
 
 ## Architectural Patterns
 
-### Pattern 1: Robot Model Inheritance Chain
+### Pattern 1: Plan-Then-Execute Loop with a Local Fast-Path Executor
 
-**What:** SOARM is wired into robosuite via a three-level class hierarchy: `ManipulatorModel` (MJCF + kinematics) → `SingleArm` (robot controller management) → `ROBOT_CLASS_MAPPING` (string-to-class registry). LIBERO already overrides this registry in its own `robots/__init__.py`.
+**What:** The MLLM is called only at sub-goal boundaries (reach→grasp→lift→place), never per-tick. Each call returns a structured sub-goal + target action; a local, deterministic P-control loop (the existing `move_to_positions()` pattern) then drives the arm to that target at full control frequency without further MLLM involvement, polling a cheap local completion check (position error under threshold, or a timeout) before the next MLLM call.
 
-**When to use:** Required for every new robot added to LIBERO. The pattern is followed by `MountedPanda` and `OnTheGroundPanda`.
+**When to use:** Any real API-latency-bound MLLM controlling a robot with a physical control loop that needs to run at tens of Hz. This is the only viable shape given real API round-trip times (hundreds of ms to seconds) versus the ~15-30 Hz servo loop already used elsewhere in this repo.
 
-**Example:**
+**Trade-offs:** Coarser reactivity than a closed-loop VLA (can't correct within a sub-goal without another MLLM round trip) — acceptable here since the paper being benchmarked (Yu & Qiu 2026) itself evaluates policies at a checkpoint/sub-goal granularity, so this loop shape is actually *more* comparable to their methodology, not a compromise against it.
+
+**Example (loop skeleton, `control/mllm/loop.py`):**
 ```python
-# LIBERO/libero/libero/envs/robots/soarm.py
-from robosuite.models.robots.manipulators.manipulator_model import ManipulatorModel
-from robosuite.utils.mjcf_utils import xml_path_completion
-import numpy as np
-
-class SOARM(ManipulatorModel):
-    def __init__(self, idn=0):
-        # robot.xml lives at LIBERO/libero/libero/envs/assets/robots/soarm/robot.xml
-        super().__init__(xml_path_completion("robots/soarm/robot.xml"), idn=idn)
-
-    @property
-    def default_mount(self):
-        return "RethinkMount"
-
-    @property
-    def default_gripper(self):
-        return "PandaGripper"  # or custom SOARM gripper
-
-    @property
-    def default_controller_config(self):
-        return "default_panda"  # or "default_soarm" with custom YAML
-
-    @property
-    def init_qpos(self):
-        # 6 joints for SO101; tune to home position
-        return np.array([0.0, -0.3, 0.0, -1.5, 0.0, 1.2])
-
-    @property
-    def base_xpos_offset(self):
-        return {
-            "table": lambda table_length: (-0.16 - table_length / 2, 0, 0),
-        }
-
-    @property
-    def arm_type(self):
-        return "single"
-
-# LIBERO/libero/libero/envs/robots/__init__.py (add):
-ROBOT_CLASS_MAPPING.update({"SOARM": SingleArm})
+def run_task(robot, cameras, router, task_config, episode_writer):
+    history = []
+    for step in range(task_config.max_subgoals):
+        obs = observe(robot, cameras)  # RGB (both cams) + depth (via depth_stereo.compute_depth)
+        response = router.call(images=[obs.wrist_rgb, obs.overhead_rgb],
+                                depth=obs.depth, joints=obs.joints,
+                                task=task_config.instruction, history=history)
+        episode_writer.log_reasoning(step, obs, response)  # reasoning trace is first-class, logged
+                                                              # BEFORE execution, not after
+        if response.action.type == "done":
+            break
+        target = resolve_action_to_joint_targets(response.action, obs.joints)  # local, deterministic
+        target = ensure_safe_goal_position(target, obs.joints, task_config.max_relative_target)
+        motion_primitives.move_to_positions(robot, target, kp=task_config.kp,
+                                             control_freq=task_config.control_freq,
+                                             max_seconds=task_config.subgoal_timeout)
+        history.append(response)
+    episode_writer.finalize(outcome=...)
 ```
 
-### Pattern 2: Closed-Loop VLA Inference
+### Pattern 2: Provider-Agnostic Router via a Single Thin Abstraction (not hand-rolled per-provider branching)
 
-**What:** At each control step, the env observation (image array, robot state) is packaged and sent to the VLA, which returns a raw action vector that gets applied to the environment. The loop runs at the controller frequency (20 Hz for LIBERO's OSC_POSE).
+**What:** `control/mllm/router.py` wraps **litellm** (`pip install litellm`) rather than writing a custom `if provider == "openai"` dispatcher. litellm already normalizes OpenAI/Anthropic/Gemini/HuggingFace-hosted-endpoint calls (including multimodal image inputs) to one call signature and one response shape, which is exactly the "supports OpenAI/Anthropic/Gemini-style APIs architecturally" requirement in PROJECT.md. `router.py` itself only adds: (a) the structured-output schema enforcement/parsing layer, (b) provider selection from a project config (`control/mllm/providers.yaml` or env var), (c) the free-HF-model default for v2.0's first pilot.
 
-**When to use:** The core rollout pattern for all VLA evaluation and dataset augmentation.
+**When to use:** Any project stating "provider-agnostic" as an explicit architectural requirement with a named list of target providers (OpenAI/Anthropic/Gemini) plus an unusual first target (a free HF-hosted model) — this is precisely litellm's design center (100+ providers behind one call shape, including `huggingface/<repo>` model strings).
 
-**Example:**
-```python
-env = OffScreenRenderEnv(bddl_file_name=task, robots=["SOARM"],
-                         camera_names=["agentview", "robot0_eye_in_hand"],
-                         camera_heights=256, camera_widths=256)
-obs = env.reset()
+**Trade-offs:** Adds one new third-party dependency to `control/requirements.txt`; in exchange, avoids re-solving per-provider auth/retry/streaming/multimodal-encoding quirks that a hand-rolled router would have to duplicate for each of 3+ providers — the same category of "don't fight the framework" lesson this project already learned once with LeRobot's CLI (where the fix there was to go *below* the CLI to the class API, not to reimplement LeRobot itself; here the equivalent is to use litellm's SDK layer, not its optional proxy-server deployment mode, which is unneeded for a single-machine research loop).
 
-for _ in range(horizon):
-    # MuJoCo images are vertically flipped — correct before VLA
-    image = obs["agentview_image"][::-1]
-    # VLA inference (OpenVLA example)
-    action = vla.predict(image=image, instruction=language_prompt)
-    # action shape: (7,) — [dx, dy, dz, droll, dpitch, dyaw, gripper]
-    obs, reward, done, _ = env.step(action)
-    if done:
-        break
-```
+### Pattern 3: Depth-at-Decision-Cadence, Not Depth-at-Frame-Rate
 
-### Pattern 3: Action Chunking Replay (π0)
+**What:** Stereo rectification + `StereoSGBM` block matching (the pipeline validated in `diagnostics/UAT/function/depth/UAT.md`) is computed **once per MLLM call** (every few seconds, at a sub-goal boundary), not once per recorded video frame (15-30 fps). RGB video continues to be captured continuously at full recorder fps (unchanged behavior); depth is a **sparse** signal recorded only at the same points where a reasoning-trace entry is written.
 
-**What:** π0 generates a 50-step chunk at once via flow matching. The caller executes the first H/2 steps before requesting a new chunk, producing smoother control than per-step inference.
+**When to use:** Whenever a real-time-feeling depth signal is needed by a decision-maker (MLLM) that itself only makes decisions at a coarse cadence — computing depth faster than it's consumed is wasted CPU and, more importantly, avoids overloading the same camera-read loop that must not drop RGB frames (the recorder already has a documented history of frame-drop/choppiness and USB-power flakiness in `diagnostics/UAT/function/basic/UAT.md` Steps 6-7; adding a ~tens-of-ms SGBM call inside that same tight loop risks reintroducing exactly that class of bug).
 
-**When to use:** π0 inference exclusively. Adds latency per chunk but reduces jitter.
-
-**Example:**
-```python
-chunk = pi0_model.predict_chunk(image=image, instruction=language_prompt)
-# chunk.shape: (50, 7)
-for i in range(25):  # execute half the chunk, then replan
-    obs, reward, done, _ = env.step(chunk[i])
-    if done:
-        break
-```
-
-### Pattern 4: HDF5 Demonstration Recording
-
-**What:** Each demo episode is recorded as a group in an HDF5 file, following the robomimic schema. LIBERO's lifelong learning system consumes this format directly via `SequenceDataset`.
-
-**When to use:** Any scripted or teleoperated collection run.
-
-**Example:**
-```python
-import h5py
-with h5py.File("soarm_demos.hdf5", "w") as f:
-    grp = f.create_group(f"data/demo_{ep_idx}")
-    grp.attrs["num_samples"] = len(actions)
-    obs_grp = grp.create_group("obs")
-    obs_grp.create_dataset("agentview_image", data=images)    # (T, 256, 256, 3)
-    obs_grp.create_dataset("robot0_eef_pos", data=eef_pos)   # (T, 3)
-    grp.create_dataset("actions", data=actions)               # (T, 7)
-    grp.create_dataset("rewards", data=rewards)               # (T,)
-    grp.create_dataset("dones", data=dones)                   # (T,)
-    f["data"].attrs["env_args"] = json.dumps(env_meta)
-    f["data"].attrs["problem_info"] = json.dumps(problem_info)
-```
-
----
+**Trade-offs:** The recorded depth stream has much lower temporal resolution than RGB — acceptable because the extended episode schema's depth field exists to give the MLLM (and later, human failure analysis) spatial grounding at decision time, not to reconstruct continuous 3D motion.
 
 ## Data Flow
 
-### Primary Inference Flow (Language → Action → Simulation)
+### Per-Sub-Goal Control Flow
 
 ```
-Researcher types: "Pick up the bowl and place it on the plate"
-       │
-       ▼ tokenize (VLA tokenizer)
-[Language tokens]───────────────────────┐
-                                        │
-[Camera frame from env.reset()]         │
-  obs["agentview_image"] shape (256,256,3)
-  ↓ flip vertically [::-1]              │
-  ↓ resize / normalize per VLA spec     │
-[Image tokens]──────────────────────────┤
-                                        ▼
-                              VLA forward pass (GPU)
-                              OpenVLA: autoregressive decode 7 action tokens
-                              π0: flow matching denoising (50-step chunk)
-                                        │
-                              [raw action: 7 floats in [-1, 1]]
-                                        │
-                              Action unnormalization
-                              (scale by dataset action stats)
-                                        │
-                              [physical action: delta EEF pose + gripper]
-                                        │
-                              OSC_POSE controller (Jacobian IK)
-                                        │
-                              [joint torques]
-                                        │
-                              MuJoCo mj_step()
-                                        │
-                              [new body poses, sim state]
-                                        │
-                              Observation rendering
-                              (offscreen render → RGB + depth arrays)
-                                        │
-                              obs dict → back to VLA (next step)
+[camera_io: grab wrist RGB + overhead stereo frame]
+        ↓
+[depth_stereo.compute_depth(overhead_frame)]  ← only at sub-goal boundaries
+        ↓
+[robot.get_observation()]  → {joint}.pos dict (existing SO101Follower API)
+        ↓
+[mllm/loop.py: assemble observation + task instruction + sub-goal history]
+        ↓
+[mllm/router.py → litellm.completion(...)]  → provider-agnostic call
+        ↓
+[mllm/schema.py: parse structured response]  → {reasoning, subgoal_label, action}
+        ↓
+[episode_writer.log_reasoning(...)]  ← reasoning trace written BEFORE execution
+        ↓
+[resolve_action_to_joint_targets(...) + ensure_safe_goal_position(...)]  ← local, deterministic, no MLLM
+        ↓
+[motion_primitives.move_to_positions(robot, target, ...)]  → robot.send_action({...}) in a tight P-control loop
+        ↓
+[episode_writer: continuous joints.csv row + continuous camera_*.mp4 frame append, at full recorder fps]
+        ↓
+[loop.py: check response.action.type == "done" → next sub-goal or finalize episode]
 ```
 
-### Dataset Collection Flow (Demos → HDF5)
+### Continuous vs. Sub-Goal-Cadence Streams
 
-```
-Scripted policy or human teleop
-       │
-       ▼
-env.reset()  →  obs_t0
-       │
-       ▼ (for each timestep t)
-[obs_t: images, eef_pos, joint_pos, gripper]
-[action_t: 7-D vector from policy/teleop]
-env.step(action_t) → obs_t+1, reward_t, done_t
-       │
-       ▼
-Buffer: episode_obs[], episode_actions[], episode_rewards[]
-       │
-       ▼ (on episode end)
-Write to HDF5 group /data/demo_N/
-       │
-       ▼
-(optional) Convert to LeRobot Parquet via lerobot CLI
-```
+| Stream | Cadence | Written by |
+|--------|---------|------------|
+| `camera_wrist.mp4`, `camera_overhead_stereo.mp4` | Continuous, full recorder fps (15-30) | `episode_writer.py`, via `camera_io.py` — same loop shape as today's `record_episode.py` |
+| `joints.csv` | Continuous, full recorder fps | `episode_writer.py`, via `robot.get_observation()` — unchanged from today's schema |
+| `depth/step_NN.npy` | Sparse — once per MLLM call | `episode_writer.py`, via `depth_stereo.compute_depth()` |
+| `reasoning_trace.jsonl` | Sparse — once per MLLM call | `episode_writer.py`, via `mllm/loop.py` |
+| `episode_meta.json` | Once per episode (finalize) | `episode_writer.py` |
 
-### Spatial Awareness Flow (Depth + Object Pose)
+## Scaling Considerations
 
-```
-OffScreenRenderEnv(camera_depths=True, camera_segmentations="instance")
-       │
-       ▼
-obs["agentview_depth"]    (H, W, 1) float meters
-obs["agentview_segmentation_instance"]  (H, W, 1) int object IDs
-       │
-       ▼
-Backproject depth + segmentation → 3D point cloud per object
-       │                (camera intrinsics from robosuite camera_utils.py)
-       ▼
-Ground truth pose: sim.data.body_xpos[sim.model.body_name2id("bowl_1")]
-Camera intrinsics: robosuite camera_utils.get_camera_intrinsic_matrix()
-Camera extrinsics: sim.data.cam_xpos[cam_id], sim.data.cam_xmat[cam_id]
-       │
-       ▼
-Spatial predicate evaluation:
-"Is bowl to the left of the plate?" → compare world-frame xpos
-"Is bowl near the wall?" → compare distance to scene boundary
-```
+Reframed for this project: "scale" is not user load but **provider count, task count, and episode volume**.
 
----
+| Axis | Now (Pen Transfer, 1 free HF model) | Near-term (4 paper tasks, 2+ providers) | Later (full benchmark run) |
+|------|--------------------------------------|------------------------------------------|------------------------------|
+| Providers | 1 hardcoded default in `router.py` config | Provider selection via CLI flag/env var into the same litellm call — no code branching needed | Cost tracking (litellm has this built in) becomes relevant once paid providers are added |
+| Tasks | 1 task config (`tasks/pen_transfer.py`) | 4 task configs, shared `loop.py`/`schema.py` unchanged | Task configs stay data, not code — new task = new config file, not a new loop |
+| Episode storage | Local disk under `control/episodes/` | Still local disk — depth is sparse (Pattern 3) so volume stays modest even across ~20 episodes/task × 4 tasks | If this grows past a few hundred episodes, revisit whether raw `.npy` depth should become a compressed format (`.npz` with `compression="lzf"` or similar) — not needed yet |
 
-## SOARM-Specific Integration Points
+### Scaling Priorities
 
-### 1. MJCF Source: Use Existing SO101 Model
-
-The SO-ARM100 repository (`TheRobotStudio/SO-ARM100`) already provides validated MuJoCo MJCF files (`Simulation/SO101/so101_new_calib.xml`). These were generated via onshape-to-robot from verified CAD. Use these as the base; do not attempt URDF-from-scratch.
-
-**Adaptation needed for robosuite:**
-- robosuite expects the MJCF root body to have specific site names (`grip_site`, actuator group)
-- The SOARM model needs a `<mujoco>` configuration block with compiler settings matching robosuite's conventions
-- Base collision meshes may need removal (SO-ARM100 README notes they cause simulation issues)
-
-### 2. Controller Choice: OSC_POSE vs JOINT_POSITION
-
-This is the critical architectural decision for SOARM:
-
-| Choice | Pros | Cons |
-|--------|------|------|
-| `OSC_POSE` (default LIBERO) | Works with OpenVLA/π0 outputs directly (7-D EEF delta); no remapping needed | Requires full Jacobian; SOARM's 6-DOF may create singularities |
-| `JOINT_POSITION` | More direct control; matches SOARM's actual servo interface | VLA output needs IK layer; action space is 6-D not 7-D |
-
-**Recommendation:** Start with `OSC_POSE` to stay compatible with pretrained OpenVLA/π0 checkpoints. If control quality is poor (singularities, oscillation), switch to `JOINT_POSITION` with an IK bridge.
-
-### 3. Action Dimension Mismatch
-
-Panda is 7-DOF arm + gripper. SOARM SO101 is 6-DOF arm + linear gripper. OpenVLA outputs 7-D (6D EEF delta + 1D gripper). This is fine with OSC_POSE since the controller solves IK regardless of arm DOF. With JOINT_POSITION, need a 6-D output VLA or append a 7th dummy dim.
-
-### 4. Robot Registration: Only Two Files to Modify
-
-Following the LIBERO pattern (MountedPanda):
-1. Create `LIBERO/libero/libero/envs/robots/soarm.py` with `SOARM(ManipulatorModel)`
-2. Add to `LIBERO/libero/libero/envs/robots/__init__.py`: `ROBOT_CLASS_MAPPING.update({"SOARM": SingleArm})`
-
-The BDDL task files then reference `robots=["SOARM"]`.
-
-### 5. BDDL Task Registration
-
-New tasks for SOARM go in:
-- `LIBERO/libero/libero/bddl_files/libero_soarm/task_name.bddl`
-
-Each file needs `(:domain robosuite)` and a language instruction. The `TASK_MAPPING` registration happens via `@register_problem` decorator on the domain class (following the existing LIBERO pattern).
-
----
+1. **First bottleneck:** MLLM API latency per sub-goal call (real, not simulated latency) — already designed around via Pattern 1 (plan-then-execute), not a future fix.
+2. **Second bottleneck:** if/when moving beyond a free HF-hosted model to paid providers at benchmark scale (20 episodes × 4 tasks × multiple sub-goals), API cost and rate limits become real — litellm's built-in cost tracking (Pattern 2) is the mitigation already in place by design, not something to bolt on later.
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Building SOARM MJCF from Scratch
+### Anti-Pattern 1: Wedging Computed Stereo Depth into LeRobot's Native Camera-Depth Interface
 
-**What people do:** Write MJCF from hardware specs (motor torques, link lengths) without validated reference.
+**What people do:** `SOFollower`'s `_cameras_ft`/`observation_features` already has a `use_depth` flag and a `cam.read_latest_depth()` hook (confirmed by reading `control/.venv/.../lerobot/robots/so_follower/so_follower.py`) — the natural-looking move is to write a custom LeRobot `Camera` subclass that exposes the AR0144's computed depth through that interface so it "just works" with `robot.get_observation()`.
 
-**Why it's wrong:** MuJoCo MJCF tuning (friction, damping, joint limits) requires iterative physical validation. The SO-ARM100 repo provides a community-tested model — bypassing it adds weeks of model tuning with no research payoff.
+**Why it's wrong:** That interface is designed for hardware depth streams (e.g. RealSense) that produce a depth frame at the *same cadence* as RGB. Our depth is a derived, computed signal (SGBM on a rectified pair) that this project has already found to be unreliable on many real-object surfaces (specular glint, low-texture failure — see `diagnostics/UAT/function/depth/UAT.md` Step 4) and, per Pattern 3, is deliberately computed at a *different, sparser* cadence than RGB. Forcing it through a same-cadence camera abstraction either (a) silently computes depth far more often than needed (wasted CPU, risk of frame drops in the exact loop this project has already fought USB/power flakiness in), or (b) requires faking a per-frame depth stream that doesn't reflect the sub-goal-cadence reality, muddying the episode schema.
 
-**Do this instead:** Fork `TheRobotStudio/SO-ARM100/Simulation/SO101/so101_new_calib.xml` and adapt for robosuite's conventions. The adaptation is ~50 lines of XML, not a rebuild.
+**Do this instead:** Keep depth computation as an explicit, separate call (`control/depth_stereo.py`) invoked by `mllm/loop.py` at sub-goal boundaries, written to its own sparse `depth/step_NN.npy` files — decoupled entirely from `SOFollower`'s camera config.
 
-### Anti-Pattern 2: Running VLA Inference Inside the Physics Step
+### Anti-Pattern 2: Re-Fighting LeRobot's Generic CLI for the New Loop
 
-**What people do:** Call the VLA model synchronously on every `mj_step()` tick.
+**What people do:** Reach for `lerobot-record` or another generic LeRobot CLI entry point to drive the new MLLM-controlled episodes, since it already exists and produces a "proper" dataset format.
 
-**Why it's wrong:** VLA inference on GPU takes 50-200ms per step. MuJoCo at 20 Hz expects 50ms step budgets. Blocking the sim on VLA inference creates artificial slow-motion execution that doesn't reflect real robot timing and makes dataset collection impractical.
+**Why it's wrong:** This project already has a documented, first-hand precedent that LeRobot 0.6.1's generic CLI paths don't cover `so101_follower`-specific needs (`keyboard_joint_control.py`'s docstring: `lerobot-teleoperate --teleop.type=keyboard` crashes because `KeyboardTeleop.get_action()` returns raw key names, not joint deltas, and the CLI's default processor pipeline never translates them for this robot class). The MLLM plan-then-execute loop is a *bigger* deviation from LeRobot's assumed teleop/policy-rollout shape (variable-length sub-goals driven by an external reasoning call, not a fixed-fps teleop stream or a policy's `.select_action()`) — there is no reason to expect the generic CLI or `lerobot-record`'s dataset writer to fit better here than it did for keyboard control.
 
-**Do this instead:** Decouple the control frequency. Run VLA at 3-5 Hz (every 4-6 sim steps); hold the last action constant between VLA calls. This is how OpenVLA-OFT achieves 26x throughput improvement. For Colab notebooks, async is impractical — use action chunking (π0) or step-skipping (OpenVLA).
+**Do this instead:** Keep using `SO101Follower`/`SOFollowerRobotConfig` directly (the class-level API, not the CLI) exactly as `record_episode.py` and `keyboard_joint_control.py` already do, and keep the episode writer hand-rolled (`episode_writer.py`), consistent with `record_episode.py`'s own stated rationale ("we built our own recorder rather than fighting `lerobot-record`'s CLI").
 
-### Anti-Pattern 3: Forgetting the Vertical Image Flip
+### Anti-Pattern 3: Starting MLLM Control-Loop Work Before Depth Is Reliable
 
-**What people do:** Pass `obs["agentview_image"]` directly to the VLA.
+**What people do:** Build and validate the router/loop/recorder against RGB-only observations first, planning to "wire in depth later" once the camera issue is fixed, treating depth as an additive field.
 
-**Why it's wrong:** MuJoCo offscreen rendering returns images with origin at bottom-left (OpenGL convention). VLMs expect origin at top-left. The image is upside-down. This is confirmed in the existing `explorations/create_scene.py` code.
+**Why it's wrong:** This is explicitly the locked sequencing decision for this milestone (PROJECT.md: "Fix AR0144 depth-camera object-measurement reliability before starting MLLM task work, not in parallel... building the MLLM control loop against known-unreliable depth risks having to redo recording/validation work once depth is fixed"). Concretely: the episode schema (`depth/step_NN.npy`), the `observe()` function's return shape, and any depth-conditioned prompting logic in `mllm/prompts.py` all depend on knowing what a *reliable* depth reading looks like (units, noise floor, valid-pixel coverage) — building against today's known-degenerate readings (Step 4 of the depth UAT: fake flat-plateau Z values, 0% valid on shiny objects) means re-validating all of that once Step 4 is fixed.
 
-**Do this instead:** Always apply `image = obs["agentview_image"][::-1]` before any VLA or visualization use. Add this as a utility function so it can't be missed.
-
-### Anti-Pattern 4: Single Camera VLA Input
-
-**What people do:** Feed only the agentview image to the VLA.
-
-**Why it's wrong:** Spatial awareness (left/right/behind, depth estimation) requires multiple viewpoints. Wrist camera (robot0_eye_in_hand) is essential for grasp precision. Training data from Open X-Embodiment used wrist + third-person cameras; VLA performance degrades significantly with fewer views.
-
-**Do this instead:** Always instantiate with both `agentview` and `robot0_eye_in_hand` cameras. When training from SOARM demos, record both.
-
-### Anti-Pattern 5: Using robosuite 1.5 with LIBERO
-
-**What people do:** Upgrade robosuite to 1.5 while keeping LIBERO's existing code.
-
-**Why it's wrong:** `SingleArmEnv` was removed in robosuite 1.5. LIBERO's `BDDLBaseDomain` extends `SingleArmEnv`. This breaks all LIBERO environments (confirmed by GitHub issue #49 in LIBERO repo).
-
-**Do this instead:** Stay pinned to robosuite 1.4.x (LIBERO's `requirements.txt` pins `robosuite==1.4.0`). Do not upgrade.
-
----
+**Do this instead:** Follow the Build Order below — depth reliability closes first.
 
 ## Integration Points
 
@@ -438,77 +246,39 @@ Each file needs `(:domain robosuite)` and a language instruction. The `TASK_MAPP
 
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| HuggingFace Hub | `from_pretrained("openvla/openvla-7b")` | Requires internet; cache weights in Colab `/content/` |
-| Google Colab GPU | Runtime environment for VLA inference | T4 works for OpenVLA inference; A100 needed for π0 + fine-tuning |
-| SO-ARM100 GitHub | Source of validated MJCF files | One-time download; pin to a specific commit |
-| openpi (Physical Intelligence) | `pip install openpi`; checkpoint download | Docker eval wrapper provided; strip for Colab use |
-| LeRobot | `pip install lerobot`; `lerobot convert` CLI | For Parquet/HF-compatible dataset export |
+| Free HuggingFace-hosted multimodal model (pilot) | via litellm's `huggingface/<repo>` provider string in `router.py` | Validate multimodal (image) input support for the specific model chosen before committing — not all free HF Inference Endpoints/serverless models accept image inputs; confirm during Build Order step 2 |
+| OpenAI / Anthropic / Gemini (later providers) | Same `router.py` call surface, different provider string/env var — no loop/schema changes needed | This is the payoff of Pattern 2; if this ever requires touching `loop.py`, the router abstraction has leaked and should be revisited |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| SOARM MJCF ↔ robosuite ManipulatorModel | MJCF loaded via `xml_path_completion()` path string | Path must resolve relative to robosuite assets directory |
-| OffScreenRenderEnv ↔ VLA model | NumPy `uint8` array `(H, W, 3)` after `[::-1]` flip | VLA-specific resize/normalize happens inside VLA wrapper |
-| VLA action ↔ OSC_POSE controller | NumPy `float32` array `(7,)` in unnormalized physical units | Normalization stats must match training data distribution |
-| HDF5 dataset ↔ LIBERO SequenceDataset | h5py file with robomimic schema | `env_args` attrs required; must include `problem_info` JSON |
-| Depth camera ↔ spatial module | NumPy `float32` depth array + camera intrinsics dict | Use robosuite `camera_utils.get_camera_intrinsic_matrix()` |
+| `control/mllm/loop.py` ↔ `SO101Follower` | Direct class calls (`get_observation()`, `send_action()`) via `control/motion_primitives.py` | Never through LeRobot's CLI — see Anti-Pattern 2 |
+| `control/depth_stereo.py` ↔ `diagnostics/` | File-based data contract only (`stereo_calibration.npz`) | No Python import across venvs — see Structure Rationale |
+| `control/mllm/router.py` ↔ third-party MLLM APIs | litellm SDK (in-process), not a proxy server | Single-machine research loop; the proxy/gateway deployment mode of litellm is unneeded overhead here |
+| `episode_writer.py` ↔ disk | Plain files (`.mp4`, `.csv`, `.npy`, `.jsonl`, `.json`) under `control/episodes/` | Deliberately not LeRobot's HF-dataset format nor HDF5 — matches this project's own precedent of a hand-rolled, fully-understood recorder over a framework-native one |
 
----
+## Build Order
 
-## Suggested Build Order
+This follows the locked dependency chain from PROJECT.md exactly (depth fix → control loop/router → recorder extension → first task → remaining tasks → failure/recovery metrics → multi-provider):
 
-The following ordering respects hard dependencies — each phase produces an artifact required by the next.
-
-1. **SOARM MJCF + Robot Class** (foundation)
-   - Artifact: `soarm.py` ManipulatorModel + validated `robot.xml` rendering in MuJoCo
-   - Dependency: Nothing (this is the root dependency)
-   - Validation: `env.render()` shows SOARM arm in LIBERO scene
-
-2. **SOARM LIBERO Environment** (environment layer)
-   - Artifact: `OffScreenRenderEnv` with SOARM producing observations dict
-   - Dependency: Phase 1 (robot class must exist)
-   - Validation: `obs["agentview_image"]` has correct shape; zero-action steps don't crash
-
-3. **VLA Inference Loop** (closed-loop control)
-   - Artifact: Colab notebook running VLA rollout on SOARM LIBERO tasks
-   - Dependency: Phase 2 (working env required)
-   - Validation: SOARM moves (even random-looking) in response to VLA output
-
-4. **Dataset Collection** (data infrastructure)
-   - Artifact: HDF5 file with 50+ SOARM demonstrations
-   - Dependency: Phase 2 (env) + scripted policy (can precede VLA)
-   - Validation: `dataset_utils.get_dataset_info()` reports expected structure
-
-5. **Spatial Awareness: Multi-camera + Depth** (perception layer)
-   - Artifact: Per-step object poses + depth pointclouds
-   - Dependency: Phase 2 (env); can be developed in parallel with Phase 3-4
-   - Validation: Extracted bowl pose matches visual position in rendered frame
-
-6. **Fine-Tuning Pipeline** (learning loop)
-   - Artifact: Fine-tuned VLA checkpoint on SOARM demonstrations
-   - Dependency: Phase 4 (need dataset) + Phase 3 (need baseline VLA)
-   - Validation: Fine-tuned model outperforms zero-shot on SOARM tasks
-
-7. **Evaluation Benchmark** (measurement)
-   - Artifact: Task success rates across SOARM task suite
-   - Dependency: All prior phases
-   - Validation: Spatial task success rates improve vs. non-spatial baseline
-
----
+1. **Depth camera reliability fix** (`diagnostics/UAT/function/depth/UAT.md` Step 4, already in progress — lighting fix, then broaden to 2-3 more matte objects). **Gate: do not start step 2 until this UAT step passes.** This determines the real units/noise-floor/coverage that `control/depth_stereo.py` and the episode schema's `depth/step_NN.npy` field will assume.
+2. **Router + plan-then-execute loop skeleton**, RGB-only, no real robot motion yet (dry-run against logged/replayed observations or a single stub sub-goal). Build `control/mllm/{router,schema,prompts}.py` and `control/mllm/loop.py` against the free HF-hosted model first (per PROJECT.md's explicit pilot choice). Extract `control/motion_primitives.py` from `keyboard_joint_control.py` here, since the loop needs it immediately.
+3. **Recorder extension**: build `control/camera_io.py` (extracted) and `control/episode_writer.py`, then wire `control/depth_stereo.py` (now backed by validated calibration from step 1) into the loop's `observe()` call at sub-goal cadence (Pattern 3). This is also where reasoning-trace-before-execution logging (Pattern 1's `episode_writer.log_reasoning(...)` call ordering) gets validated end-to-end for the first time.
+4. **Pen Transfer task, end-to-end**: `tasks/pen_transfer.py` config + a handful of real runs on the physical arm, validating the full chain (camera → depth → MLLM → reasoning trace + action → joint command → recorder) against the paper's simplest task before investing further.
+5. **Remaining 3 paper tasks** (Selective Color Sorting, Multi-Object Packing, Precision Pen Placement) — new `tasks/*.py` configs only; `loop.py`/`router.py`/`episode_writer.py` should need no changes if step 2-4 were built generically. If they do need changes, that's a signal the task-config abstraction is too thin and needs revisiting before adding a 6th/7th task.
+6. **Failure taxonomy + Recovery Rate metric**: `control/metrics/failure_taxonomy.py`, computed as a post-hoc pass over `reasoning_trace.jsonl` + `episode_meta.json` across all collected episodes (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment categories, per PROJECT.md) — deliberately last among the "get one MLLM working" steps, since it needs a real corpus of both successful and failed episodes to be meaningful, not a single task's data.
+7. **Multi-provider swap-in**: add a second (paid) provider string/config to `router.py`'s existing abstraction (Pattern 2) and re-run the same task suite for cross-provider comparison. If this step requires anything beyond a config/env-var change, the router abstraction from step 2 was under-designed and should be fixed before scaling to more providers.
 
 ## Sources
 
-- Codebase inspection: `LIBERO/libero/libero/envs/robots/__init__.py`, `envs/env_wrapper.py`, `envs/bddl_base_domain.py`, `utils/dataset_utils.py` — MEDIUM confidence (verified directly)
-- TheRobotStudio/SO-ARM100 repository (Simulation/SO101/README.md) — MEDIUM confidence (web, cross-checked)
-- OpenVLA action space: 7-DOF delta EEF, confirmed via HuggingFace model card and arxiv 2502.19645 — MEDIUM confidence (web)
-- π0 action chunking: 50-step chunk at 50Hz via flow matching, replan every 25 steps — MEDIUM confidence (pi.website/download/pi0.pdf and HuggingFace blog)
-- robosuite OSC_POSE controller + robot registration pattern — MEDIUM confidence (robosuite.ai docs + codebase)
-- HDF5 robomimic schema — MEDIUM confidence (robomimic.github.io docs + codebase `dataset_utils.py`)
-- MuJoCo depth + object pose extraction — MEDIUM confidence (web, MuJoCo docs)
-- robosuite 1.4→1.5 SingleArmEnv removal: LIBERO GitHub issue #49 — HIGH confidence (direct issue)
+- `control/.venv/lib/python3.12/site-packages/lerobot/robots/so_follower/so_follower.py` (installed LeRobot 0.6.1 source, read directly — confirms `get_observation()`/`send_action()` shapes and the `use_depth`/`read_latest_depth()` native-camera-depth hook referenced in Anti-Pattern 1) — HIGH confidence (primary source, live installed code)
+- `control/record_episode.py`, `control/keyboard_joint_control.py`, `control/joint_jog.py` (this repo) — HIGH confidence (existing, UAT-validated project code)
+- `diagnostics/UAT/function/depth/UAT.md`, `diagnostics/UAT/function/basic/UAT.md`, `diagnostics/measure_object_depth.py`, `diagnostics/stereo_calibrate.py` (this repo) — HIGH confidence
+- [LiteLLM GitHub](https://github.com/BerriAI/litellm) / [LiteLLM Providers docs](https://docs.litellm.ai/docs/providers) — MEDIUM confidence (web search, not yet integrated/verified in this repo); recommended as the concrete implementation of Pattern 2's "single thin abstraction," not a hard requirement
+- Subgoal/chain-of-thought VLA literature validating the plan-then-execute + reasoning-trace shape: [ThinkingVLA (arXiv:2606.17937)](https://arxiv.org/pdf/2606.17937), [Interleaved Vision-Language Reasoning Traces (arXiv:2605.00438)](https://arxiv.org/html/2605.00438v1), [CoT-VLA (CVPR 2025)](https://openaccess.thecvf.com/content/CVPR2025/papers/Zhao_CoT-VLA_Visual_Chain-of-Thought_Reasoning_for_Vision-Language-Action_Models_CVPR_2025_paper.pdf) — MEDIUM confidence (these validate the general pattern shape for VLA policies, not a general-purpose MLLM-as-controller architecture specifically, so treated as directional support, not a template to copy)
+- `.planning/PROJECT.md` (this repo) — locked sequencing decisions and target feature list, treated as ground truth for build order
 
 ---
-
-*Architecture research for: VLA + LIBERO/MuJoCo robot simulation pipeline (SoARM)*
-*Researched: 2026-07-07*
+*Architecture research for: Real-hardware MLLM-driven robot manipulation (v2.0 milestone)*
+*Researched: 2026-09-15*

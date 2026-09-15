@@ -1,179 +1,169 @@
 # Project Research Summary
 
-**Project:** SoARM VLA Research — VLA simulation pipeline with spatial awareness
-**Domain:** Vision-Language-Action (VLA) robot simulation (SOARM / LIBERO / MuJoCo / OpenVLA)
-**Researched:** 2026-07-07
-**Confidence:** MEDIUM
+**Project:** SoARM VLA Research — v2.0 milestone (MLLM-as-robot-controller, real-hardware benchmark replication)
+**Domain:** Real-hardware MLLM-driven robot manipulation control, integrated into an existing LeRobot bridge
+**Researched:** 2026-09-15
+**Confidence:** MEDIUM-HIGH
 
 ## Executive Summary
 
-This project builds a VLA robot simulation pipeline that integrates the SO-ARM100 (SO101) robot into the LIBERO/MuJoCo benchmark framework, runs OpenVLA-OFT or π0 inference, and layers spatial awareness capabilities on top. The core research contribution is threefold: (1) a new robot embodiment for LIBERO (SOARM has never been integrated into this benchmark), (2) a spatial-language evaluation benchmark testing whether VLAs understand relational object positions, and (3) a fine-tuning pipeline adapting a generalist VLA to SOARM kinematics. Standard VLA simulation pipelines follow a strict dependency chain — robot model first, environment second, inference loop third, data collection fourth, fine-tuning fifth — and any deviation creates hard-to-debug failures.
+This milestone bolts a zero/few-shot multimodal-LLM control loop onto an already-working `control/` stack (`lerobot[feetech]==0.6.1` driving a real SO-ARM101 over USB serial). The established pattern across the field (SayCan, VoxPoser, Code as Policies, GPT-4V(ision) for Robotics) is consistent and directly applicable: perceive, then call the MLLM for a structured sub-goal (never raw joint targets or free-form code), translate that sub-goal deterministically into servo motion via a small fixed library of motion primitives, execute, observe, repeat. This is a plan-then-execute loop with MLLM calls only at checkpoint granularity (reach/grasp/lift/place), not per control tick, because real hosted-API latency (seconds) makes tick-level calls infeasible — already a locked PROJECT.md decision, corroborated by every piece of prior art reviewed.
 
-The recommended approach is OpenVLA-OFT as the primary VLA (97.1% LIBERO average success, T4-compatible with 4-bit quantization, standard HuggingFace API), with π0 via LeRobot as a secondary option for smoother motion. The SOARM MJCF must be derived from the validated `so101_new_calib.xml` from TheRobotStudio/SO-ARM100 rather than built from scratch, then adapted for robosuite's `ManipulatorModel` subclass pattern. All simulation runs on Google Colab (T4 for inference, A100 for fine-tuning), which imposes strict dependency pinning and headless rendering requirements.
+The recommended approach layers cleanly on the existing codebase: a new `control/mllm/` subpackage (router, loop, schema, prompts) calling a free HuggingFace-hosted vision model first, a `motion_primitives.py` extracted from the proven `keyboard_joint_control.py` P-control code, an extended `episode_writer.py` recording synced RGB+depth+joints+reasoning-trace+action, and depth computed at decision cadence (not frame rate) via a ported (not imported) version of the already-validated `diagnostics/measure_object_depth.py` SGBM pipeline. Nothing in this design touches the pinned, hardware-validated LeRobot bridge.
 
-The biggest risks are: (1) SOARM MJCF integration quality — bad inertia or collision meshes corrupt the physics silently and invalidate all downstream data; (2) version lock fragility — robosuite 1.4.0 / mujoco 2.3.7 / gym 0.25.2 must be pinned exactly and managed alongside a conflicting transformers version requirement between LIBERO training code and VLA inference code; (3) dataset correctness — demo observations must be regenerated from MuJoCo states, action normalization stats must come from SOARM's own dataset, and replay must be state-based not action-based. Get these three right in Phases 1-3 and everything else follows.
+The dominant risks are safety and reliability, not novelty: no independent safety envelope between MLLM output and actuators; the free HF tier has no SLA, cold-starts 30-60s, and rate-limits aggressively so the loop needs timeout/backoff/stale-response handling from day one; MLLM structured-output drift must be defensively parsed with a distinct failure bucket; MLLM pixel/relational judgments must never be trusted as final mm-scale coordinates (conversion must go through the calibrated depth pipeline); and zero-shot MLLM results must be reported in a clearly separated table from the paper's fine-tuned-policy baselines with an explicit methodology caveat. All map cleanly onto specific phases below.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is tightly version-constrained. The simulation layer is: Python 3.10, MuJoCo 2.3.7, robosuite 1.4.0 (not 1.5 — it removed `SingleArmEnv` which LIBERO depends on), gym 0.25.2, LIBERO (vendored in repo), robomimic 0.2.0. PyTorch 2.1.x is the bridge version: old enough for robomimic, new enough for VLA inference. The VLA inference layer requires transformers >= 4.40, which hard-conflicts with LIBERO's lifelong training code that pins transformers 4.21.1 — the recommended mitigation is two separate Colab kernel groups or two conda environments.
+The stack is a deliberately thin delta on top of the already-pinned `control/` venv. `huggingface_hub`'s `InferenceClient` (already a transitive dependency, OpenAI-wire-compatible, supports `image_url` vision content and `provider="auto"` fallback) covers the free-model pilot at zero marginal dependency cost. A hand-rolled ~50-line `MLLMProvider` interface (plain Python ABC/Protocol, one thin adapter per provider) is recommended over `litellm` for a solo research repo with 2-4 providers, avoiding a large/fast-moving dependency surface and preserving exact request/response visibility for real-hardware debugging (architecture research is milder here, treating litellm as a reasonable alternative implementation of the same pattern — a config-level choice, not an architectural fork). `pydantic` (already transitive) gives typed sub-goal schema validation. Depth is stored as 16-bit PNG (or `.npz` if sub-mm float precision is needed). Reasoning traces are plain append-only JSONL — no MLflow/Langfuse/Opik. Add `openai`/`anthropic`/`google-genai` SDKs additively, only when each provider is actually wired in.
 
 **Core technologies:**
-- Python 3.10: Last safe Colab target; 3.12+ breaks robomimic `distutils` assumptions
-- MuJoCo 2.3.7: LIBERO pins this; do not upgrade (MuJoCo 3.x breaks MJCF loading patterns)
-- robosuite 1.4.0: LIBERO's `BDDLBaseDomain` extends `SingleArmEnv` removed in 1.5
-- OpenVLA-OFT: 7B, 97.1% LIBERO avg, T4-compatible at 16GB (tight), standard HuggingFace API
-- LeRobot pi0: Flow-matching alternative with smoother motion, `lerobot/pi0_libero_base` checkpoint available
-- SOARM MJCF (`so101_new_calib.xml`): Community-validated; start here, adapt for robosuite
-- `MUJOCO_GL=egl`: Must be set before any MuJoCo import; EGL uses the Colab GPU; GLFW crashes headless
+- `huggingface_hub.InferenceClient` (already installed): free HF-hosted VLM pilot, zero new dependency
+- Hand-rolled `MLLMProvider` interface: provider-agnostic router, avoids heavy abstraction framework
+- `pydantic` (transitive): typed sub-goal/action schema, one repair-retry on validation failure
+- JSONL (stdlib): append-only reasoning-trace log, one line per MLLM call
+- `opencv-python`/`numpy` (already pinned): 16-bit PNG depth frames synced to existing timestamp loop
 
 ### Expected Features
 
-**Must have (table stakes — MVP gates):**
-- SOARM MJCF/URDF in robosuite via `ManipulatorModel` subclass — gates everything
-- Single agentview camera → OpenVLA (4-bit quantized for T4) → SOARM actions → env.step() closed loop
-- Scripted demonstration collection stored as HDF5 (robomimic format)
-- Task success detection reused from LIBERO BDDL predicates
-- Rendered video output per episode (imageio/matplotlib, Colab-compatible)
+**Must have (table stakes, v1 — Pen Transfer end-to-end):**
+- Image(s)+instruction → structured sub-goal JSON, strictly validated with retry
+- Fixed motion-primitive library (reach/grasp/lift/transport/place/retreat)
+- Plan-then-execute loop, one MLLM call per checkpoint
+- Full reasoning-trace logging per MLLM call
+- Extended episode recorder (RGB + joints + reasoning trace + action; depth once camera fix lands)
+- Basic execution-failure detection (timeout, joint-limit, no-progress)
+- Provider-agnostic MLLM router, first backend = free HF model
+- Pen Transfer task scaffolding
 
-**Should have (spatial research contribution — differentiators):**
-- Multi-camera setup (wrist + overhead/agentview) — essential for spatial reasoning
-- Depth buffer extraction → 3D object position annotation via MuJoCo depth API
-- Spatial language task variants ("to the left of", "near the", "between")
-- OpenVLA LoRA fine-tuning on SOARM demonstrations (r=32 on A100 Colab Pro)
-- Spatial benchmark: success rate on spatial vs non-spatial prompt variants
+**Should have (differentiators — the research contribution):**
+- Automated failure-taxonomy classification (Grasp Instability / Repetition Loop / State Mismatch / Precision Misalignment)
+- Recovery Rate computation matching the paper's formula, adapted for plan-then-execute granularity
+- Semantic-vs-execution failure aggregation
+- Multi-provider comparison
+- Full 4-task suite
 
-**Defer to v2+:**
-- Ego3D position encoding (SpatialVLA approach) — needs v1 baseline first
-- Physical SOARM hardware transfer — separate milestone after sim validated
-- RLDS dataset export for Open X-Embodiment contribution
-- RL-generated data augmentation, point clouds as VLA input, multi-robot coordination
+**Defer (v2+):**
+- Closed-loop mid-primitive vision verification, trace analysis/browsing tooling, real-time interactive steering, any IK/motion-planning stack
+- Rejected outright: arbitrary code-as-policy execution, per-tick MLLM calls, MLLM fine-tuning, new embedded firmware
 
 ### Architecture Approach
 
-The system is a layered pipeline: researcher input (language prompt) → VLA inference (GPU, 7-D delta EEF action) → OSC_POSE controller (Jacobian IK) → MuJoCo physics (mj_step) → observation rendering (RGB + optional depth) → back to VLA. SOARM integration requires exactly two files changed inside LIBERO: a new `soarm.py` ManipulatorModel subclass and a one-line addition to `robots/__init__.py` ROBOT_CLASS_MAPPING. Research code lives in a new `soarm_pipeline/` package at repo root to avoid polluting the LIBERO fork. VLA backends are hidden behind a common `predict(image, language) -> action` interface to make them swappable.
+A new `control/mllm/` subpackage (router, loop, schema, prompts — the one exception to this repo's flat-script convention) sits above extracted, hardened components: `motion_primitives.py` (pulled from `keyboard_joint_control.py`), `camera_io.py` (pulled from `record_episode.py`), and a new `depth_stereo.py` that ports (never imports across venvs) the SGBM pipeline validated in `diagnostics/measure_object_depth.py`. The loop calls the router once per sub-goal, logs the reasoning trace before execution, resolves the response to joint targets through a local deterministic safety/bounds check, then drives the arm via the unmodified `SO101Follower`. Depth is computed at decision cadence, not frame rate, to avoid reintroducing documented USB/frame-drop flakiness. `record_episode.py` stays untouched; `episode_writer.py` is a separate extended-schema writer.
 
 **Major components:**
-1. SOARM ManipulatorModel + MJCF — robot kinematics and mesh; derived from `so101_new_calib.xml`
-2. LIBERO BDDLBaseDomain + OffScreenRenderEnv — task environment: scene setup, observations, success predicates
-3. VLA Inference Layer (OpenVLA-OFT or pi0) — language + image → 7-D delta EEF action
-4. OSC_POSE Controller — delta EEF → joint torques via Jacobian IK; needs SOARM-specific controller config JSON
-5. HDF5 Dataset Writer — robomimic schema; must regenerate observations from saved states
-6. Spatial Awareness Module — depth backprojection, object pose extraction, spatial predicate evaluation
+1. `control/mllm/{router,loop,schema,prompts}.py` — provider-agnostic call surface + orchestration + schema + prompts
+2. `control/motion_primitives.py` — deterministic joint-space P-control executor
+3. `control/depth_stereo.py` — decision-cadence stereo depth, backed by `diagnostics/`'s calibration artifact
+4. `control/episode_writer.py` + `control/camera_io.py` — extended synced episode schema
+5. `control/tasks/*.py` — per-task config (data, not code)
+6. `control/metrics/failure_taxonomy.py` — post-hoc pass over collected episodes, built last
 
 ### Critical Pitfalls
 
-1. **MUJOCO_GL must be set before any import** — Set `os.environ["MUJOCO_GL"] = "egl"` as the very first line in every notebook. Setting it after any MuJoCo-related import has no effect. Failure: black frames or GL crash.
-
-2. **SOARM requires a full ManipulatorModel subclass, not just an MJCF file** — Need Python class + adapted MJCF + controller config JSON with matching joint names. Failure: `KeyError: 'SOARM'` or cryptic shape errors in controller.
-
-3. **Validate MJCF inertia and collision meshes before writing any Python wrapper code** — Bad URDF→MJCF conversion produces silent physics corruption. Run `mujoco.MjModel.from_xml_path()` and verify contact forces < 10 N at initialization before proceeding.
-
-4. **Demo replay must be state-based, not action-based** — Action replay drifts (LIBERO issue #16). Always use `sim.set_state(demo["states"][t])`. Action-only demos are invalid training data.
-
-5. **OpenVLA version pinning is exact** — torch 2.2.0, transformers 4.40.1, flash-attn 2.5.5 must all be pinned. Auto-upgraded versions cause `torch.compiler` attribute errors. Test in a clean session.
-
-6. **Action normalization stats must come from SOARM's own dataset** — Copying LIBERO's Panda stats causes near-complete performance collapse. Compute mean/std from collected SOARM demonstrations.
+1. **No safety envelope between MLLM output and actuators** — hard joint/velocity clamps, workspace bounds, watchdog timeout must live in the local controller below the MLLM interface, architected in from the start.
+2. **Free HF tier treated as normal low-latency API** — no SLA, 30-60s cold starts, aggressive rate limits; build timeout/backoff/stale-response rejection into the router from day one.
+3. **MLLM structured-output brittleness** — parse defensively, never guess a default on failure, log as a distinct failure mode.
+4. **Pixel-space MLLM output treated as calibrated mm coordinates** — never trust model-emitted world-frame coordinates; convert deterministically through the calibrated depth pipeline; hard-gated on the depth-camera fix landing first.
+5. **Zero-shot vs. fine-tuned-baseline comparison without caveats** — report in a separated table, adapt Recovery Rate definition explicitly, give infrastructure failures their own bucket.
+6. (Secondary) Blind open-loop execution between MLLM calls risks acting on stale world state; reasoning-trace timestamps must capture request-sent/response-received/execution-complete as distinct events.
 
 ## Implications for Roadmap
 
-### Phase 1: Colab Environment and VLA Loading
-**Rationale:** Everything downstream requires working Colab environment with verified MuJoCo headless rendering and confirmed VLA load. Binary blockers (MUJOCO_GL, VRAM, version pinning) all strike here.
-**Delivers:** Pinned requirements cell, verified EGL rendering, OpenVLA-OFT loaded and running inference on test image, baseline LIBERO Panda environment confirmed functional.
-**Addresses:** Table-stakes "VLA model loading and inference"; unblocks all downstream work.
-**Avoids:** MUJOCO_GL misconfiguration, OpenVLA VRAM overrun, version-pinning conflicts.
+### Phase 1: Depth Camera Reliability Fix
+**Rationale:** Every downstream MLLM spatial-grounding decision and the pixel→mm conversion pitfall depend on knowing what a reliable depth reading looks like.
+**Delivers:** Validated AR0144 stereo depth, signed-off UAT.
+**Avoids:** Pitfall 4; Anti-Pattern "starting MLLM work before depth is reliable."
 
-### Phase 2: SOARM MJCF and Robot Integration
-**Rationale:** SOARM MJCF is the root dependency of the entire feature tree. Highest-risk phase with the most silent failure modes. Must be fully validated before writing any pipeline code.
-**Delivers:** Validated `soarm.py` ManipulatorModel, adapted MJCF in LIBERO assets, SOARM in ROBOT_CLASS_MAPPING, stable `env.reset()`, verified gripper convention, controller config JSON.
-**Addresses:** "SOARM MJCF/URDF model" P1 blocker.
-**Avoids:** Building MJCF from scratch, inertia errors, gripper sign mismatch, missing OSC controller config, wrong joint calibration mode.
-**Research flag:** Needs verification of robosuite 1.4 ManipulatorModel subclassing specifics (reference TechLabs Aachen SO100+robosuite as prior art).
+### Phase 2: MLLM Router + Plan-Then-Execute Loop Skeleton
+**Rationale:** Can be dry-run (RGB-only, stubbed sub-goals) immediately after/parallel to Phase 1, establishing the load-bearing sub-goal JSON schema before any provider-specific code exists.
+**Delivers:** `control/mllm/{router,schema,prompts,loop}.py`, `control/motion_primitives.py`, safety clamp layer, timeout/backoff handling.
+**Uses:** `huggingface_hub.InferenceClient`, hand-rolled `MLLMProvider` interface, `pydantic`.
+**Avoids:** Pitfalls 1, 2, 3.
 
-### Phase 3: End-to-End VLA Inference Loop
-**Rationale:** Validate the full closed loop before collecting training data. A broken loop produces worthless demonstrations.
-**Delivers:** Colab notebook with zero-shot OpenVLA-OFT rollout on SOARM tasks, rendered video output, task success detection, confirmed vertical image flip applied.
-**Addresses:** "Single-camera VLA inference loop" (P1), "Rendered video output" (P1), "Task success detection" (P1).
-**Avoids:** Forgetting `[::-1]` vertical image flip; running VLA synchronously on every sim tick (use step-skipping at 3-5 Hz or action chunking).
+### Phase 3: Recorder Extension
+**Rationale:** Needs Phase 2's real MLLM calls to log and Phase 1's validated depth to wire in correctly.
+**Delivers:** `control/camera_io.py`, `control/episode_writer.py`, `control/depth_stereo.py` at sub-goal cadence, request/response/execution-complete timestamp triad.
+**Avoids:** Pitfall 6 (reasoning-trace/sensor desync).
 
-### Phase 4: Scripted Demonstration Collection
-**Rationale:** Fine-tuning requires 50-200 correct demonstrations. Must follow validated inference loop to confirm task mechanics work.
-**Delivers:** 100+ SOARM demonstrations in robomimic HDF5, observation regeneration completed (images present), SOARM-specific normalization stats computed.
-**Addresses:** "Scripted demonstration collection" (P1); enables fine-tuning (P2).
-**Avoids:** Action playback drift (state-based replay), missing HDF5 observations (run regeneration script), wrong normalization stats, rotation composition bug.
+### Phase 4: Pen Transfer End-to-End
+**Rationale:** Validates the entire chain on the paper's simplest task before investing in remaining tasks.
+**Delivers:** Real multi-episode runs on physical arm, hardened parsing against real scenes.
+**Addresses:** All table-stakes features.
 
-### Phase 5: Spatial Awareness Layer
-**Rationale:** The primary research contribution. Additive to validated base pipeline. Spatial task definitions and benchmark complete the publishable research story.
-**Delivers:** Multi-camera OffScreenRenderEnv (wrist + agentview), depth → 3D object position pipeline, spatial language task variants, spatial benchmark evaluation.
-**Addresses:** All P2 differentiator features (multi-camera, 3D localization, spatial language grounding, spatial benchmark).
-**Avoids:** Assuming raw depth input gives VLA spatial reasoning without architectural changes — use multi-camera RGB + auxiliary 3D annotations for task scripting.
-**Research flag:** Spatial VLA input representation (multi-camera RGB vs RGB+depth vs auxiliary annotations) needs deeper research before committing to implementation.
+### Phase 5: Remaining 3 Paper Tasks
+**Rationale:** Should require only new `tasks/*.py` configs if Phases 2-4 were built generically.
+**Delivers:** Selective Color Sorting, Multi-Object Packing, Precision Pen Placement.
 
-### Phase 6: SOARM Fine-Tuning Pipeline
-**Rationale:** Adapts generalist VLA to SOARM kinematics. Requires completed dataset (Phase 4) and validated baseline (Phase 3). Needs A100 Colab Pro.
-**Delivers:** Fine-tuned OpenVLA-OFT LoRA checkpoint, before/after success rate comparison, fine-tuned model on spatial task suite.
-**Addresses:** "SOARM-specific fine-tuning" (P2); completes publishable evaluation.
-**Avoids:** Using Panda normalization stats, skipping dataset validation before training.
+### Phase 6: Failure Taxonomy + Recovery Rate Metrics
+**Rationale:** Deliberately last — needs a real corpus of successes/failures across tasks.
+**Delivers:** `control/metrics/failure_taxonomy.py`, Recovery Rate computation, semantic-vs-execution aggregation, separated results reporting.
+**Avoids:** Pitfall 5.
+
+### Phase 7: Multi-Provider Comparison
+**Rationale:** The payoff of the Phase 2 router abstraction — should be config-only.
+**Delivers:** Second (paid) provider wired in, cross-provider comparison runs.
 
 ### Phase Ordering Rationale
 
-- Phases 1-3 are strictly sequential (hard dependency chain): Colab env → robot model → inference loop
-- Phase 4 (data collection) can begin as soon as Phase 2 (robot env) is stable, in parallel with Phase 3 refinement
-- Phase 5 (spatial) can develop depth/camera utilities in parallel with Phase 4, but spatial task variants require Phase 3 working
-- Phase 6 (fine-tuning) requires both Phase 4 (dataset) and Phase 3 (baseline), so it comes last
-- Anti-features (hardware transfer, RL, point-cloud VLA input) are explicitly deferred and should not appear until Phase 6 completes
+- Depth-fix-first is a hard, explicitly locked dependency across PROJECT.md, architecture, and pitfalls research.
+- Router/loop-skeleton before recorder-extension: nail down the load-bearing schema contract before wiring it into the harder synced-recording problem.
+- Pen Transfer validates the full pipeline before investing in 3 more tasks or a second provider.
+- Failure taxonomy/Recovery Rate last: needs episode volume across tasks to be meaningful.
+- Multi-provider last: don't burn paid-API budget until the harness is proven on the free model.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 2:** SOARM robosuite 1.4 ManipulatorModel integration — novel, no LIBERO-specific prior art; reference TechLabs Aachen SO100+robosuite article
-- **Phase 5:** Spatial awareness input representation — open research question; study SpatialVLA, VEGA, cVLA papers before committing
+Needs deeper research during planning:
+- **Phase 2:** free HF model selection/vision-input support changes weekly — verify the specific pilot model empirically at plan time.
+- **Phase 6:** the target paper's exact per-trial failure-labeling procedure is not public — needs an explicit, documented labeling methodology decision.
 
-Phases with well-documented patterns (can skip deep research):
-- **Phase 1:** EGL setup, HuggingFace model loading, version pinning — fully documented in source repos
-- **Phase 4:** robomimic HDF5 schema, LIBERO regeneration script — reference implementation in openvla repo
-- **Phase 6:** OpenVLA LoRA fine-tuning — documented in openvla-oft repo with LIBERO-specific configs
+Standard patterns (skip research-phase):
+- **Phase 1:** already in progress with a documented UAT plan.
+- **Phase 3:** extending an existing, proven recorder pattern.
+- **Phase 4-5:** primitive/task-config pattern well-established from architecture research; mostly physical setup.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM | Version pins cross-verified; transformers conflict well-documented; exact flash-attn compat is version-sensitive |
-| Features | MEDIUM | Dependency chain clear; MVP scope well-defined; spatial research approach has SpatialVLA precedent |
-| Architecture | MEDIUM | Verified against LIBERO codebase directly; OSC_POSE controller docs are for robosuite 1.5, 1.4 assumed similar |
-| Pitfalls | MEDIUM | Most sourced from GitHub issues and official docs; SOARM-specific pitfalls inferred from general MuJoCo integration experience |
+| Stack | MEDIUM-HIGH | Versions/pricing verified live against installed venv and current HF docs; pilot model name flagged as fast-changing |
+| Features | MEDIUM | Architecture patterns well-established and cross-checked; paper's exact failure-label procedure not public (LOW on that specific point) |
+| Architecture | HIGH (integration surface) / MEDIUM (MLLM-loop design) | Grounded in installed LeRobot source and existing repo code; no proven reference implementation exists for this exact MLLM-loop shape |
+| Pitfalls | MEDIUM | Cross-checked academic sources on LLM-robot safety and API limits; no single authoritative gotchas doc for this exact stack |
 
-**Overall confidence:** MEDIUM
+**Overall confidence:** MEDIUM-HIGH
 
 ### Gaps to Address
 
-- **SOARM MJCF robosuite adapter completeness:** Exact delta between `so101_new_calib.xml` and robosuite 1.4 ManipulatorModel requirements (site names, actuator group) not fully documented. Budget 1-2 days of iterative MJCF editing in Phase 2.
-- **transformers version conflict in Colab:** Two-kernel-group approach is feasible but untested; validate exact cell ordering before committing.
-- **Spatial VLA input representation:** Whether multi-camera RGB only, RGB+depth, or auxiliary 3D annotations is the right approach — needs a small ablation.
-- **OpenVLA-OFT normalization stats format:** Exact JSON schema for `dataset_statistics.json` needs verification against training script before Phase 6.
+- Free HF model choice/availability drift — re-verify at Phase 2 planning time, not locked now.
+- Paper's exact failure-annotation procedure — Phase 6 must define and document its own methodology.
+- litellm vs. hand-rolled router — low-stakes divergence between stack and architecture research; resolve during Phase 2 planning based on provider count.
+- Depth precision format (16-bit PNG vs. `.npz`) — revisit once Phase 1's UAT establishes the achievable noise floor.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- LIBERO GitHub issue #49 — robosuite 1.5 SingleArmEnv removal confirmed
-- LIBERO GitHub issue #16 — action playback drift confirmed
-- openpi GitHub issue #416 — rotation composition bug confirmed
+- `control/.venv` installed package versions (`pip list`)
+- `control/.venv/.../lerobot/robots/so_follower/so_follower.py` (installed LeRobot 0.6.1 source)
+- `control/record_episode.py`, `control/keyboard_joint_control.py`, `control/joint_jog.py`
+- `diagnostics/UAT/function/depth/UAT.md`, `diagnostics/UAT/function/basic/UAT.md`, `diagnostics/measure_object_depth.py`, `diagnostics/stereo_calibrate.py`
+- [Benchmarking Vision-Language-Action Models on SO-101 (arXiv:2606.08881)](https://arxiv.org/abs/2606.08881)
+- [Hugging Face Inference Providers Pricing/Billing](https://huggingface.co/docs/inference-providers/pricing) and [Chat Completion task docs](https://huggingface.co/docs/inference-providers/tasks/chat-completion)
+- `.planning/PROJECT.md`
 
 ### Secondary (MEDIUM confidence)
-- moojink/openvla-oft repo and project page — VRAM requirements, LIBERO benchmark results
-- TheRobotStudio/SO-ARM100 Simulation/SO101/README — MJCF file location, calibration modes
-- HuggingFace LeRobot LIBERO docs and lerobot/pi0_libero_base checkpoint — pi0 inference API
-- LIBERO codebase inspection (robots/__init__.py, env_wrapper.py, bddl_base_domain.py) — robot registration pattern
-- OpenVLA README — version pins and flash-attn requirements
-- robosuite installation docs — EGL/OSMesa/GLFW rendering backends
-- openvla regenerate_libero_dataset.py — observation regeneration workflow
+- [Code as Policies (arXiv 2209.07753)](https://arxiv.org/abs/2209.07753), [SayCan (arXiv 2204.01691)](https://arxiv.org/pdf/2204.01691), [VoxPoser (arXiv 2307.05973)](https://arxiv.org/abs/2307.05973), [GPT-4V(ision) for Robotics (arXiv 2311.12015)](https://arxiv.org/abs/2311.12015), [ReAct (arXiv 2210.03629)](https://arxiv.org/html/2210.03629v3)
+- [On the Vulnerability of LLM/VLM-Controlled Robotics (arXiv 2402.10340)](https://arxiv.org/pdf/2402.10340), [Safety Guardrails for LLM-Enabled Robots (arXiv 2503.07885)](https://arxiv.org/pdf/2503.07885)
+- [LiteLLM GitHub/docs](https://github.com/BerriAI/litellm)
+- HuggingFace free-tier rate-limit/cold-start behavior, synthesized from third-party overviews
 
 ### Tertiary (LOW confidence)
-- TechLabs Aachen SO100 + SmolVLA + robosuite integration (Medium article) — useful prior art but different robosuite version
-- Claru OpenVLA-OFT guide — dataset format details; third-party, needs validation
-- cVLA and VEGA papers — spatial VLA input representations; relevant for Phase 5 decisions
+- Target paper's exact failure-annotation adjudication procedure
+- Specific free HF pilot model name/hosting provider (changes weekly)
 
 ---
-*Research completed: 2026-07-07*
+*Research completed: 2026-09-15*
 *Ready for roadmap: yes*

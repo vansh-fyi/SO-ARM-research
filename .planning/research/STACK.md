@@ -1,10 +1,10 @@
 # Stack Research
 
-**Domain:** VLA (Vision-Language-Action) robot simulation pipeline with custom robot arm
-**Researched:** 2026-07-07
-**Confidence:** MEDIUM (cross-verified across official repos, HuggingFace docs, and community sources)
+**Domain:** Real-hardware MLLM robot control additions (provider-agnostic router, plan-then-execute loop, reasoning-trace logging, depth-extended episode recorder)
+**Researched:** 2026-09-15
+**Confidence:** MEDIUM-HIGH — HF Inference Providers pricing/model availability verified live (this space changes weekly); library version numbers verified via WebSearch/WebFetch, not training memory. Treat the specific pilot model name as a config value to revisit, not a fixed dependency.
 
----
+This is a **delta** stack — additions on top of the already-working `control/` Python 3.12 venv (`lerobot[feetech]==0.6.1`, `opencv-python==5.0.0.93`, `pynput==1.8.2`, `ultralytics==8.4.138`; transitively `huggingface_hub==1.29.0`, `torch==2.11.0`, `numpy==2.2.6`, `pillow==12.3.0` — confirmed by inspecting the live venv, not assumed). Nothing below should require touching the pinned `lerobot`/`opencv`/`ultralytics` versions.
 
 ## Recommended Stack
 
@@ -12,231 +12,109 @@
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| Python | 3.10 | Primary language | 3.10 is the safest Colab target — 3.11 works for openpi but LIBERO/robomimic have `distutils` assumptions that break on 3.12+ |
-| MuJoCo | 2.3.7 | Physics engine | LIBERO pins to 2.3.7; robosuite 1.4.x ships MJCF assets targeting this version; do not upgrade |
-| robosuite | 1.4.0 | Robot simulation environments | LIBERO hard-depends on 1.4.x API (`SingleArmEnv`, `OffScreenRenderEnv`); 1.5 broke the API and LIBERO has not migrated |
-| LIBERO (vendored) | repo HEAD | Task suites, BDDL, OffScreenRenderEnv wrapper | Already in repo as `LIBERO/`; BDDL task DSL and lifelong learning infrastructure; do not replace with LIBERO from pip |
-| PyTorch | 2.1.x + CUDA 11.8 | Tensor ops, model weights | 2.1.x is the last version that cleanly supports both old robomimic code and modern VLA inference; Colab provides this by default |
-| OpenVLA-OFT | latest (moojink/openvla-oft) | VLA inference + fine-tuning | 7B model, 16GB VRAM for LIBERO inference (fits T4 exactly), 97.1% avg success on LIBERO benchmark, continuous action space eliminates jitter, action chunking chunk-8 |
-| HuggingFace LeRobot | latest (`lerobot[pi0]`) | π0 VLA alternative | More portable than raw openpi (works outside Ubuntu 22.04), `lerobot/pi0_libero_base` checkpoint available, `PI0Policy.from_pretrained()` API |
-| robomimic | 0.2.0 | HDF5 dataset handling | Used by LIBERO for `SequenceDataset`, `FileUtils`, `ObsUtils`; version must match LIBERO vendored requirements |
+| `huggingface_hub` (InferenceClient) | `1.29.0` — already installed, zero new dependency | Calls the free/cheap HF-hosted VLM pilot via HF's Inference Providers router | It's already a transitive dependency of `lerobot`, so this costs nothing to add. As of 2026 `InferenceClient.chat.completions.create()` is fully OpenAI-wire-compatible and supports `image_url` content blocks for vision models, plus built-in `provider="auto"` selection/fallback across HF's 17+ routed providers (Cerebras, Groq, Novita, Fireworks, Together, DeepInfra, etc.) — no separate account needed for the pilot. |
+| Hand-rolled thin `MLLMProvider` interface (plain Python ABC/Protocol, no framework) | n/a | Provider-agnostic router across HF-hosted pilot → OpenAI/Anthropic/Gemini later | A ~50-line interface (`plan_subgoal(image, depth, joint_state, task_prompt) -> SubGoalPlan`) with one adapter class per provider is enough for 2-4 providers in a solo research repo. See "What NOT to Use" for why LiteLLM is skipped. |
+| `pydantic` (transitive via `huggingface_hub`/future `openai` SDK, v2.x) | already present transitively | Typed schema for the parsed MLLM sub-goal/action output (`reach`/`grasp`/`lift`/`place`) | Already resolved in the venv — no new install. Gives you `model_validate_json()` for one clean parse-or-retry path instead of hand-rolled dict-key checking. Pin it explicitly in `control/requirements.txt` once you depend on it directly, rather than relying on transitive resolution. |
 
 ### Supporting Libraries
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| huggingface_hub | >= 0.20.0 | Model checkpoint download | Every notebook; `snapshot_download` to pull VLA weights to `/root/.cache/huggingface` |
-| einops | >= 0.7.0 | Tensor rearrangement | Required by both LeRobot (pi0) and OpenVLA-OFT; install before any VLA import |
-| h5py | >= 3.7.0 | HDF5 demo dataset I/O | Reading and writing LIBERO-format demonstration datasets |
-| imageio | >= 2.28.0 | Video recording | Saving rollout episodes as MP4 for visual inspection |
-| opencv-python | 4.6.0.66 | Image preprocessing | Frame resizing to 224x224; already pinned by LIBERO |
-| transformers | 4.40+ (VLA env) / 4.21.1 (LIBERO env) | HuggingFace model loading | **Version conflict — see note below; must be managed per-environment** |
-| accelerate | >= 0.26.0 | Multi-GPU / bfloat16 loading | Required by OpenVLA-OFT for `load_in_4bit` / `bfloat16` model loading |
-| peft | >= 0.7.0 | LoRA fine-tuning | Required for OpenVLA-OFT fine-tuning with LoRA r=32 |
-| bitsandbytes | >= 0.41.0 | 4-bit / 8-bit quantization | Optional on T4 for memory reduction; required if training on Colab free tier |
-| wandb | 0.13.x | Experiment tracking | Logging fine-tuning runs; already used by LIBERO training loop |
-| imageio-ffmpeg | latest | MP4 encoding backend | Install alongside imageio for `.mp4` output |
-
-### VLA Model Details
-
-#### Primary Recommendation: OpenVLA-OFT
-
-OpenVLA-OFT is the right first choice for this project because it was explicitly benchmarked on LIBERO, its code is written in standard PyTorch/HuggingFace, and its 16GB VRAM inference footprint fits a T4 without quantization tricks.
-
-| Property | Value |
-|----------|-------|
-| Model size | 7B parameters |
-| Base architecture | Prismatic VLM (Llama 2 + DINOv2 + SigLIP) |
-| Input image size | 224 x 224 RGB |
-| Action dimensions | 7 (3D position delta, 3D orientation delta, gripper open/close) |
-| Action representation | Continuous (L1 loss); not discrete bins |
-| Action chunking | Chunk size 8 for LIBERO tasks |
-| Inference VRAM (LIBERO) | ~15.9 GB (fits T4 16GB, tight) |
-| Training VRAM (LoRA, bs=1) | ~25.6 GB (requires A100 Pro Colab) |
-| LIBERO benchmark | 97.1% avg (Spatial 97.6%, Object 98.4%, Goal 97.9%, Long 94.5%) |
-| Fine-tuning method | LoRA (r=32) via peft |
-| GitHub | moojink/openvla-oft |
-| HuggingFace | `openvla/openvla-7b` as base |
-
-#### Secondary / Alternative: π0 via LeRobot
-
-Use LeRobot's π0 integration rather than raw openpi when running outside Ubuntu 22.04 (which Colab is) or when you want a simpler inference API.
-
-| Property | Value |
-|----------|-------|
-| Model family | Flow-matching VLA (not autoregressive) |
-| HuggingFace checkpoint | `lerobot/pi0_libero_base` |
-| Inference VRAM | >8 GB (fits T4 with headroom) |
-| LoRA fine-tuning VRAM | >22.5 GB (requires A100) |
-| Full fine-tuning VRAM | >70 GB (H100 / multi-GPU) |
-| Inference API | `PI0Policy.from_pretrained(model_id).to(device)` |
-| Action space | 7-DOF delta EEF + gripper, chunked |
-| Raw openpi hardware note | Officially Ubuntu 22.04 only; Colab is Ubuntu 22.04 as of 2025 so raw openpi is feasible but `uv` tooling conflicts with Colab `pip` workflow |
-
-**Choose OpenVLA-OFT when:** You want battle-tested LIBERO results, standard HuggingFace APIs, and T4 compatibility with no quantization.
-
-**Choose π0/LeRobot when:** You want a flow-based policy (smoother motions, less jitter), or you want to leverage Physical Intelligence's pretraining on diverse manipulation data.
-
-### SOARM Robot Integration Stack
-
-| Component | Source | Purpose | Notes |
-|-----------|--------|---------|-------|
-| MJCF / URDF model | `TheRobotStudio/SO-ARM100`, `Simulation/SO101/` | Base robot description | `so101_new_calib.xml` recommended (joint zeros at midrange); gripper linear joint: 0=closed, 100=open |
-| URDF→MJCF conversion | `mujoco compile urdf_file.urdf out.xml` | Convert if only URDF available | Remove `package://` URIs first; use relative mesh paths |
-| robosuite integration | Subclass `ManipulatorModel` | Register SOARM with robosuite | Provide MJCF path, define `default_controller`, `init_qpos`, `joints`, `eef_name` properties |
-| Gripper model | Custom `GripperModel` subclass | Control SO-ARM100 gripper | Linear joint; map to binary open/close convention used by LIBERO |
+| `openai` (python SDK) | latest 2.x (verify at install time — release cadence is fast; HF router itself is OpenAI-wire-compatible at `https://router.huggingface.co/v1`) | Calls OpenAI directly once you add it as a second provider | Only add when you actually wire in OpenAI (per PROJECT.md's Active item "at least one additional paid MLLM provider"). Don't install it just to reach the HF router — `huggingface_hub` already covers that with less footprint. |
+| `anthropic` | `>=0.116` (verify latest — released Sept 10, 2026 at last check) | Calls Anthropic (Claude) as a provider | Add only when wiring Anthropic; same adapter-per-provider pattern. |
+| `google-genai` | `2.23.0` (current as of Sept 2026) | Calls Gemini as a provider | Add only when wiring Gemini. |
+| `opencv-python` | `5.0.0.93` — already pinned, no change | Save raw depth as lossless 16-bit single-channel PNG per frame (`cv2.imwrite(path, depth_uint16)`) | Depth recording extension to `record_episode.py`. OpenCV 5.x's `imwrite`/`imread` handle `uint16` PNG natively — no depth-specific codec dependency needed, and it matches the still-frame PNG path already used in `record_still()`. |
+| `numpy` | `2.2.6` — already pinned, no change | Depth array manipulation before serialization; `.npz` fallback if sub-mm float precision is needed instead of integer-mm PNG | Use directly; already installed. |
+| stdlib `json` + `pathlib` | n/a | Append-only JSONL reasoning-trace log, one line per MLLM call, per episode | Default logging mechanism — see "What NOT to Use" for why not Langfuse/Opik/MLflow. |
+| stdlib `dataclasses` (or the `pydantic` model above) | n/a | Shared typed structure for a sub-goal plan passed from the MLLM adapter to the local step-executor | Keeps the plan-then-execute boundary explicit and testable without a framework. |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| Google Colab (Pro/Pro+) | GPU access for VLA inference | T4 (16GB) for inference; A100 (40GB) for fine-tuning; session limit 12h Pro |
-| `uv` | Fast Python env for raw openpi | Only needed if using raw openpi; Colab can use pip instead via LeRobot |
-| `wandb` | Training run logging | Already integrated in LIBERO; use same key for VLA fine-tuning runs |
-| MuJoCo viewer (local) | MJCF debugging | Run `python -m mujoco.viewer --mjcf path.xml` to validate robot model before Colab use |
+| None new | — | No test framework, linter, or CI is currently in this repo's conventions (per CLAUDE.md: "no dedicated linter or formatter config detected"). Don't introduce one just for this milestone unless the user asks. |
 
----
+## Integration Points with Existing `control/`
+
+- **MLLM router module**: add as a new `control/mllm/` package (or a single `control/mllm_client.py` if kept small) — mirrors the existing flat-script convention (`record_episode.py`, `joint_jog.py`) rather than introducing a nested app structure.
+- **Plan-then-execute loop**: the loop calls `MLLMProvider.plan_subgoal(...)` once per checkpoint (reach/grasp/lift/place), then drives the *existing* `SO101Follower` object from `lerobot.robots.so_follower` exactly as `record_episode.py` already does (`robot.get_observation()` / `robot.send_action(...)`) — no new robot-control code path, just a new caller of the existing bridge.
+- **Reasoning-trace logging**: one `reasoning_trace.jsonl` per episode directory, written alongside `joints.csv` and `camera_N.mp4` — same output directory (`--out`) convention `record_episode.py` already uses, one JSON object per MLLM call: `{ts, subgoal, provider, model, prompt_summary, raw_response, parsed_plan, latency_ms, token_usage}`.
+- **Depth extension to `record_episode.py`**: add a `depth_N/` subdirectory of per-frame 16-bit PNGs (`frame_%06d.png`) written on the same timestamp loop that already writes `camera_N.mp4` frames and `joints.csv` rows — same `ts` column ties all three together, no new sync mechanism needed.
+- **Structured output parsing**: prompt the MLLM to return JSON matching the `pydantic` sub-goal schema; on `ValidationError`, do exactly one repair retry (re-prompt with the parse error) before failing the checkpoint — log both attempts to the reasoning trace. Do not reach for `instructor`/`outlines`/`guidance` (see below).
 
 ## Installation
 
-### Google Colab Installation Order (Critical)
-
-Order matters because MuJoCo rendering mode must be set before any MuJoCo/robosuite/LIBERO import.
-
-```python
-# Cell 1: Set rendering env vars FIRST, before any imports
-import os
-os.environ["MUJOCO_GL"] = "egl"
-os.environ["PYOPENGL_PLATFORM"] = "egl"
-
-# Cell 2: Install core simulation stack
-# robosuite 1.4.0 specifically — 1.5 breaks LIBERO
-!pip install mujoco==2.3.7
-!pip install robosuite==1.4.0
-!pip install gym==0.25.2
-!pip install bddl==1.0.1
-
-# Cell 3: Clone and install LIBERO (use vendored fork for SOARM customization)
-!pip install -e LIBERO/
-
-# Cell 4a: Install OpenVLA-OFT (recommended VLA)
-# In a separate step because it needs transformers >= 4.40
-!pip install transformers>=4.40 accelerate peft bitsandbytes einops
-!pip install git+https://github.com/moojink/openvla-oft.git
-
-# Cell 4b: OR install LeRobot with pi0 support (alternative VLA)
-!pip install lerobot[pi0]
-
-# Cell 5: Supporting utilities
-!pip install h5py imageio imageio-ffmpeg wandb huggingface_hub
-```
-
-**Critical**: `MUJOCO_GL=egl` must be set before Cell 2. Once any MuJoCo code is imported with a different GL backend, changing the env var has no effect within that session.
-
-### Local Development (macOS)
-
 ```bash
-# macOS uses GLFW for windowed rendering
-export MUJOCO_GL=glfw
+# Already present in control/.venv (no action needed) — confirmed via pip list:
+#   huggingface_hub==1.29.0, torch==2.11.0, numpy==2.2.6, pillow==12.3.0, opencv-python==5.0.0.93
 
-pip install mujoco==2.3.7 robosuite==1.4.0
-pip install -e LIBERO/
-pip install lerobot[pi0]  # or openvla-oft
-pip install h5py imageio wandb huggingface_hub einops
+# Core addition (only actual new install for the HF-hosted pilot phase):
+pip install pydantic   # explicit pin once router code depends on it directly
+
+# Add only when wiring each additional provider (not upfront):
+pip install openai              # OpenAI provider
+pip install anthropic           # Anthropic provider
+pip install google-genai        # Gemini provider
+
+# Do NOT install for this milestone:
+#   litellm, mlflow, langfuse, opik, instructor, outlines, guidance
 ```
-
----
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| robosuite 1.4.0 | robosuite 1.5.x | Never for LIBERO; 1.5 removed `SingleArmEnv` which LIBERO depends on |
-| EGL rendering (Colab) | OSMesa (software) | Only when GPU is unavailable; OSMesa is 3-5x slower, CPU-only |
-| OpenVLA-OFT | Octo, RT-2, RoboFlamingo | Octo is good but not LIBERO-specific; RT-2 is proprietary; OpenVLA-OFT has published LIBERO numbers |
-| LeRobot pi0 integration | Raw openpi (Physical-Intelligence/openpi) | Raw openpi if you need the full training ecosystem (openpi uses JAX under the hood); LeRobot port is PyTorch |
-| PyTorch 2.1.x | PyTorch 2.3+ | PyTorch 2.3+ changes `torch.load` weights_only default which breaks older robomimic checkpoints |
-| LoRA fine-tuning (A100) | Full fine-tuning | Only use full fine-tuning if you have >70GB VRAM and need maximum expressiveness |
-| HDF5 demo format (robomimic) | RLDS (TF Datasets) | RLDS only needed if consuming Open X-Embodiment directly; LIBERO uses HDF5 natively |
-
----
+|-------------|-------------|--------------------------|
+| Hand-rolled thin `MLLMProvider` interface | `litellm` | If the project later needs 10+ providers, load-balancing/automatic-fallback, or team-wide centralized cost tracking. For 2-4 providers in a solo research repo, LiteLLM's dependency footprint (its own pinned `pydantic`/`httpx` versions, dozens of transitive provider SDKs) risks conflicting with the tightly-pinned `control/` venv, and its abstraction layer makes it harder to see the exact HTTP request/response when debugging a real-hardware failure. |
+| `huggingface_hub.InferenceClient` for the HF pilot | `openai` SDK pointed at `base_url="https://router.huggingface.co/v1"` | Valid and documented by HF itself — use it if you want one SDK class for every OpenAI-wire-compatible provider (HF router + OpenAI). But `huggingface_hub` is already installed with zero marginal dependency cost, and its native `provider="auto"`/`:cheapest`/`:fastest` policy selection isn't in the raw OpenAI SDK. |
+| JSONL for reasoning-trace logging | Langfuse (self-hosted) | If the team grows beyond one researcher and needs a shared web UI, dataset-based evals, or multi-user trace review. Langfuse's own docs note the full-stack self-hosted deployment (the only officially supported path as of mid-2026) starts at ~8GB and multiple containers — unjustified for a single researcher running benchmark episodes next to the robot. |
+| JSONL for reasoning-trace logging | Opik (self-hosted) | Similar reasoning to Langfuse; Opik's self-hosted footprint starts around 16GB and its open-source tier ships without user management — more platform than a solo benchmark needs. |
+| 16-bit PNG per depth frame (`cv2.imwrite`) | HDF5 (`h5py`) per episode | If episode counts grow into the hundreds and you want one file per episode with random access across all modalities — this is the same pattern Phase 4's sim dataset already uses (HDF5, schema-verified via replay round-trip), so it's a reasonable *later* upgrade. Not justified for early Pen Transfer validation runs where per-episode file count is small and PNG needs zero new dependency. |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `robosuite>=1.5.0` | Removed `SingleArmEnv`; LIBERO breaks at import | `robosuite==1.4.0` exactly |
-| `transformers==4.21.1` for VLA inference | Too old for OpenVLA/LeRobot model loading (flash attention, rope, etc.) | Keep LIBERO env separate; use `transformers>=4.40` in VLA env |
-| OSMesa on Colab GPU nodes | Ignores GPU, runs software rasterizer at ~3 FPS | EGL with `MUJOCO_GL=egl` |
-| Raw `openpi` with `uv` in Colab | `uv` manages its own venv that conflicts with Colab's package state; GIT LFS requirements add friction | `lerobot[pi0]` which ships the PyTorch port of pi0 via standard pip |
-| MuJoCo >= 3.0 | API breaking changes in MJCF loading, asset paths, and `mjModel` access patterns; robosuite 1.4 not tested with it | `mujoco==2.3.7` |
-| `gym>=0.26.0` | Changed step() return signature from 4-tuple to 5-tuple (adds `truncated`); robosuite/LIBERO expect the old signature | `gym==0.25.2` |
-| GLFW in headless Colab | Requires display server; Colab has no X11/Wayland | EGL backend only |
-
----
-
-## Version Compatibility Matrix
-
-| Package | Compatible With | Notes |
-|---------|-----------------|-------|
-| `robosuite==1.4.0` | `mujoco==2.3.7`, `gym==0.25.2` | Do not mix with robosuite 1.5 |
-| `LIBERO` (vendored) | `robosuite==1.4.0`, `robomimic==0.2.0` | `LIBERO/requirements.txt` must be satisfied before any `libero.*` import |
-| `transformers==4.21.1` | LIBERO lifelong training code only | **Conflicts** with OpenVLA-OFT and LeRobot; run in separate kernel/process |
-| `transformers>=4.40` | OpenVLA-OFT, LeRobot pi0 | Install in VLA inference environment only |
-| `torch==2.1.x` | All components | Bridge version: old enough for robomimic, new enough for VLA inference |
-| `lerobot[pi0]` | `transformers>=4.38`, `torch>=2.0` | LeRobot manages its own pin, generally compatible with Colab defaults |
-| `mujoco==2.3.7` | EGL on CUDA 11.8/12.x GPUs | EGL context creation requires GPU driver >=470 (all Colab nodes satisfy this) |
-
-### The transformers Version Conflict — Mitigation Strategy
-
-LIBERO's lifelong training (`LIBERO/libero/lifelong/`) uses `transformers==4.21.1` for task embedding. OpenVLA-OFT requires `transformers>=4.40`. Both cannot coexist in one Python environment.
-
-**Recommended mitigation for Colab**: Run LIBERO task suites (env creation, dataset collection) in the standard LIBERO kernel. For VLA inference, use a second Colab cell-group that reinstalls transformers only when calling the VLA. The `OffScreenRenderEnv` for rendering does not import transformers, so this separation is surgical.
-
-**Recommended mitigation for local development**: Two conda environments — `libero-env` (4.21.1) and `vla-env` (4.40+). Use subprocess calls or a REST server between them.
-
----
+|-------|-----|--------------|
+| `litellm` | Adds a large, fast-moving dependency surface (own pinned `httpx`/`pydantic`, 100+ provider SDKs pulled in even if unused) into a `control/` venv that's already carefully pinned (`lerobot[feetech]==0.6.1`); its abstraction also obscures the exact provider request during real-hardware debugging, where "what exactly did we send/receive" matters most. | Hand-rolled `MLLMProvider` interface + one thin adapter class per provider. |
+| `mlflow` / `langfuse` / `opik` for reasoning-trace logging | All three assume a running server (Docker Compose, 8-16GB) designed for team-scale experiment tracking or agent observability — pure overhead for a single-researcher local benchmark. | Plain JSONL file per episode (`reasoning_trace.jsonl`), one line per MLLM call — greppable, diffable, loadable into `pandas` for analysis, and matches the existing `joints.csv` plain-file convention already in `record_episode.py`. |
+| Per-tick MLLM calls (calling the MLLM on every control-loop tick) | Real hosted-API latency (seconds, sometimes 5-15s for a vision-heavy prompt) makes tick-level control impractical and burns through the free-tier credit fast. | Sub-goal-level calls only (reach→grasp→lift→place), per PROJECT.md's already-committed plan-then-execute decision — a fast *local* controller (no MLLM call) executes each checkpoint's low-level joint motion via the existing LeRobot bridge. |
+| `instructor` / `outlines` / `guidance` for structured MLLM output | These add real complexity (constrained decoding or extra wrapper layers) that only pays off at high call volume or when providers lack any native JSON mode. This pilot involves dozens of calls per benchmark run. | Prompt for JSON directly, `json.loads()` + `pydantic` validation, with exactly one repair-retry on failure — log both attempts to the reasoning trace so failures are visible, not hidden inside a framework's retry logic. |
+| New microcontroller/embedded firmware (ESP32, etc.) | Already ruled out in PROJECT.md — the existing LeRobot USB-serial bridge to the Feetech servos already provides full joint-level control (UAT signed off). | Keep using `SO101Follower`/`SOFollowerRobotConfig` exactly as `record_episode.py` and `joint_jog.py` already do. |
+| Relying on the HF **free** tier ($0.10/month credit) for the actual multi-episode benchmark | As of the Aug 2026 HF billing change, free-tier credit is genuinely tiny — enough for smoke-testing the router, not for running the 4-task benchmark suite end-to-end. | Budget for HF **PRO** (`$9/mo`, `$2/mo` compute credit) as the practical "still basically free, definitely not a frontier-API bill" tier once past initial smoke tests — this preserves the "free/cheap HF-hosted pilot before paid frontier providers" intent without stalling on credit exhaustion mid-benchmark. |
 
 ## Stack Patterns by Variant
 
-**Phase 1 — Inference only (validate end-to-end loop):**
-- Use OpenVLA-OFT with pre-trained LIBERO checkpoint (no fine-tuning)
-- T4 Colab (free) is sufficient
-- Swap Panda for SOARM in robosuite environment; resize action space from 7 to SOARM DOF
+**If the HF free/PRO credit runs out mid-benchmark:**
+- Fall back to HF PRO ($9/mo) before reaching for a paid frontier provider (OpenAI/Anthropic/Gemini) — keeps the "free-to-use HF pilot first" constraint intact.
+- Because: the router/adapter interface makes this a config change (model id + provider), not a code change, if built as recommended above.
 
-**Phase 2 — Dataset collection (SOARM demonstrations):**
-- Run LIBERO `OffScreenRenderEnv` with SOARM model
-- Use scripted policies first (teleoperation adds latency complexity)
-- Store demos in HDF5 via robomimic's `DataCollectionWrapper`
-- 100-500 demos per task is the typical LIBERO fine-tuning baseline
+**If the specific pilot model gets deprecated or re-routed (this space changes weekly):**
+- Keep the model id as one named config constant, e.g. `MLLM_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct:novita"` (confirmed live via HF's model page + Inference Providers widget as of Sept 2026), not hardcoded through router logic.
+- Because: HF's routed-provider list and per-model hosting changes independently of your code; isolating it to one constant makes swapping trivial.
 
-**Phase 3 — Fine-tuning (SOARM-specific policy):**
-- OpenVLA-OFT LoRA (r=32) on A100 Colab Pro
-- ~25.6GB VRAM minimum; use gradient checkpointing to fit bs=1 on 40GB A100
-- Training images: 224x224, two cameras (agentview + wrist)
-- FAST tokenizer optional (15x inference speedup for discrete-token variant)
+**If depth precision needs sub-millimeter float values instead of integer millimeters:**
+- Use `.npz` (compressed `numpy` float32 arrays) instead of 16-bit PNG for the depth stream.
+- Because: 16-bit PNG tops out at integer values 0-65535 (fine for mm-resolution depth up to ~65m); float precision needs a numeric array format instead.
 
-**Phase 4 — Spatial awareness:**
-- Add third camera (frontview) to observation dict
-- Feed all three views to VLA (OpenVLA-OFT supports multi-image with code modifications)
-- For 3D localization: use depth from MuJoCo's depth buffer + camera intrinsics matrix
+## Version Compatibility
 
----
+| Package A | Compatible With | Notes |
+|-----------|------------------|-------|
+| `huggingface_hub==1.29.0` | `lerobot[feetech]==0.6.1`, Python 3.12.12 | Already resolved and installed in the live `control/.venv` — confirmed via `pip list`, not assumed. `InferenceClient.chat.completions.create()` with `image_url` content blocks works out of the box, no upgrade needed. |
+| `opencv-python==5.0.0.93` | `cv2.imwrite`/`cv2.imread` for `uint16` single-channel PNG | OpenCV 5.x retains native 16-bit PNG support; no separate codec/plugin dependency required for lossless depth storage. |
+| `pydantic` v2.x (transitive) | Python 3.12, `huggingface_hub`, future `openai`/`anthropic`/`google-genai` SDKs | All target SDKs use pydantic v2 as of 2026; no cross-version pin conflicts expected, but pin explicitly once the router code imports it directly rather than relying on transitive resolution. |
+| `anthropic>=0.116` / `google-genai==2.23.0` / `openai` (2.x/3.x, verify at install) | Python 3.12 | All three current SDK lines support 3.12; each is independent (no shared pinned transitive deps with `lerobot`/`opencv`/`ultralytics`) — install additively, one per provider, only when wiring that provider. |
 
 ## Sources
 
-- [Physical-Intelligence/openpi README](https://github.com/Physical-Intelligence/openpi/blob/main/README.md) — hardware requirements, installation, inference API (MEDIUM confidence, cross-verified)
-- [moojink/openvla-oft](https://github.com/moojink/openvla-oft) — LIBERO VRAM requirements, LoRA config, benchmark results (MEDIUM confidence, cross-verified)
-- [openvla-oft project page](https://openvla-oft.github.io/) — LIBERO success rates, action chunking details (MEDIUM confidence)
-- [HuggingFace LeRobot LIBERO docs](https://huggingface.co/docs/lerobot/libero) — LeRobot pi0 integration, action space format (MEDIUM confidence)
-- [lerobot/pi0_libero_base checkpoint](https://huggingface.co/lerobot/pi0_libero_base) — pi0 LIBERO checkpoint (MEDIUM confidence)
-- [TheRobotStudio/SO-ARM100 Simulation/SO101/README](https://github.com/TheRobotStudio/SO-ARM100/blob/main/Simulation/SO101/README.md) — SOARM MJCF file location and calibration variants (MEDIUM confidence)
-- [robosuite 1.5 Robot Model docs](https://robosuite.ai/docs/modeling/robot_model.html) — ManipulatorModel subclassing pattern (LOW confidence, 1.5 API, 1.4 pattern is similar)
-- [robosuite installation docs](https://robosuite.ai/docs/installation.html) — EGL/OSMesa/GLFW rendering backends (MEDIUM confidence)
-- [Claru OpenVLA-OFT guide](https://claru.ai/models/openvla) — dataset format, training data structure (LOW confidence, third-party)
-- [OpenVLA arXiv paper v1](https://arxiv.org/html/2406.09246v1) — action format, image size, discretization scheme (MEDIUM confidence)
+- [Hugging Face — Inference Providers Pricing and Billing](https://huggingface.co/docs/inference-providers/pricing) — HIGH confidence, official docs, fetched live: confirms $0.10/mo free credit, $2.00/mo PRO credit, HF-routed vs custom-provider-key billing model (Aug 2026 credits system).
+- [Hugging Face — Chat Completion task docs](https://huggingface.co/docs/inference-providers/tasks/chat-completion) — HIGH confidence, official docs: vision/VLM support via `image_url` content blocks, `provider="auto"`/`:cheapest`/`:fastest` policies.
+- [Hugging Face — Run Inference on servers (huggingface_hub guide)](https://huggingface.co/docs/huggingface_hub/en/guides/inference) — HIGH confidence, official docs: `InferenceClient` OpenAI-wire-compatibility, provider list (Cerebras, Groq, Novita, Fireworks, Together, DeepInfra, etc. as of Sept 11, 2026).
+- [Qwen/Qwen3-VL-30B-A3B-Instruct model page](https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Instruct) — MEDIUM confidence (live model-card fetch, Sept 2026): confirms Novita hosts this model via Inference Providers; MoE 30B/3B-active architecture, vision-capable, 256K context.
+- [LiteLLM — Hugging Face provider docs](https://docs.litellm.ai/docs/providers/huggingface) — MEDIUM confidence, official docs: confirms `huggingface/<provider>/<org>/<model>` format and `image_url` support, used to inform the "alternative considered" entry.
+- [LiteLLM PyPI / release notes](https://docs.litellm.ai/release_notes/) — MEDIUM confidence: version churn cadence (`1.100.0` as of late Aug 2026) informing the dependency-risk argument.
+- [Opik vs Langfuse: Self-Hosted LLM Observability in 2026](https://blog.elest.io/opik-vs-langfuse-self-hosted-llm-observability-in-2026/) — MEDIUM confidence, third-party blog: resource footprint (Langfuse ~8GB, Opik ~16GB) used to justify JSONL-over-platform recommendation.
+- Live `pip list` in `control/.venv` (this repo) — HIGH confidence, ground truth: confirmed `huggingface_hub==1.29.0`, `torch==2.11.0`, `numpy==2.2.6`, `pillow==12.3.0`, `opencv-python==5.0.0.93` already installed transitively via `lerobot[feetech]==0.6.1`.
 
 ---
-
-*Stack research for: SoARM VLA Research — VLA simulation pipeline*
-*Researched: 2026-07-07*
+*Stack research for: SoARM VLA Research v2.0 milestone — MLLM router, plan-then-execute loop, reasoning-trace logging, depth-extended recorder*
+*Researched: 2026-09-15*
