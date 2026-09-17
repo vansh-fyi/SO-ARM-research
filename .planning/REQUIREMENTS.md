@@ -83,7 +83,7 @@ Requirements for milestone v1.1 (Perception Fidelity & Checkpoint Benchmark). Ad
 
 ## v2 Requirements
 
-Deferred to after physical SOARM deployment milestone.
+Deferred to after physical SOARM deployment milestone (v1-era deferrals; superseded in practice once physical hardware bring-up began — see v2.0 below, which is the actual physical-deployment milestone).
 
 ### Physical Robot Transfer
 
@@ -102,6 +102,40 @@ Deferred to after physical SOARM deployment milestone.
 - **INT-01**: Real-time REPL: send prompts and watch live simulation respond
 - **INT-02**: Web-based visualization dashboard for experiment comparison
 
+## v2.0 Requirements
+
+Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.1 (Phases 7-9, sim/VLA) is PAUSED, not cancelled — see PROJECT.md. Narrowed 2026-09-17 to two concrete workstreams after a general-MLLM-prompting experiment (`experiment-design/`) failed; the full raw-autonomy MLLM-benchmark-suite design is captured under Future Requirements below, pending these results.
+
+### Digital-Twin Fidelity
+
+- [ ] **TWIN-01**: The URDF's gripper is attached at the end of the kinematic chain (child of the wrist link), not floating off `robot_base`
+- [ ] **TWIN-02**: The URDF includes a `wrist_roll` joint with range matching the real robot's calibrated servo limits
+- [ ] **TWIN-03**: The URDF includes `gripper_left`/`gripper_right` prismatic joints whose open/close direction matches the real gripper (fixes the mirrored-gears bug)
+- [ ] **TWIN-04**: All mesh file references in the URDF use in-repo relative paths, not absolute `~/Downloads/` paths
+- [ ] **TWIN-05**: URDF joint limits for all 6 joints match the real servo calibration ranges (converted from LeRobot calibration ticks to radians)
+- [ ] **TWIN-06**: The MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) is brought into agreement with the corrected URDF's kinematic structure
+- [ ] **TWIN-07**: Driving the simulated gripper with a given joint command opens/closes it in the same direction as the real gripper under the same command
+
+### VLA Hardware Connection
+
+- [ ] **VLAHW-01**: An open-source HuggingFace-hosted VLA (e.g. SmolVLA, matching the benchmark paper's own tested architecture) can be loaded and called with real wrist-camera + joint-state observations from the SO-ARM101
+- [ ] **VLAHW-02**: The VLA's output actions are sent to the real robot through the existing `control/` LeRobot motor-bus interface (`SO101Follower`), not hand-written raw serial code
+- [ ] **VLAHW-03**: The VLA's complete reasoning/thinking output is captured per inference call and saved to a durable trace log, not just the final action
+- [ ] **VLAHW-04**: At least one full episode (VLA driving the robot from a task prompt to termination) is recorded end-to-end — video plus reasoning trace
+- [ ] **VLAHW-05**: Findings from the observed run(s) are written up to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design)
+
+### Future Requirements (deferred pending v2.0's early results)
+
+<!-- Carried forward from the original v2.0 scope draft (2026-09-15). Not dropped — sequenced behind Digital-Twin Fidelity and VLA Hardware Connection above. -->
+
+- Comparable experiment run against a genuine deep-reasoning multimodal model (e.g. Claude, paid tier) using the same reasoning-trace-capture harness as the VLA experiment
+- "Raw autonomy" design: model composes its own control functions from floor-level I/O only (no task-level primitives), with servo-onboard torque-limit/overload protection + sandboxed execution of AI-generated code as the safety net (no ESP32 — 12V/5A supply exceeds its safe input rating without extra regulation)
+- Provider-agnostic MLLM router (OpenAI/Anthropic/Gemini/HF-hosted), piloted on a free/cheap-tier HF model before paid providers
+- Extended synced episode recorder (wrist RGB + raw depth + joint state + reasoning trace + action) as the benchmark dataset format
+- Task suite mirroring Yu & Qiu 2026 (arXiv:2606.08881): Pen Transfer, Selective Color Sorting, Multi-Object Packing, Precision Pen Placement
+- Failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) + semantic/execution aggregation + Recovery Rate metric; episode termination modeled on the paper (goal-met / timeout / irreversible-failure / unrecoverable-stagnation), human-judged initially (no automated vision-based detection yet)
+- Cross-episode memory ablation (paper-faithful baseline uses independent episodes; memory-as-variable is a later, separate experiment)
+
 ## Out of Scope
 
 | Feature | Reason |
@@ -111,6 +145,9 @@ Deferred to after physical SOARM deployment milestone.
 | Real-time interactive REPL (v1) | Deferred; rendered video output sufficient for pipeline validation |
 | robosuite 1.5+ | Hard incompatibility with LIBERO (SingleArmEnv removed) |
 | Free Colab T4 for OpenVLA-7B inference | T4 = 15GB; OpenVLA-7B needs ~16GB+; requires Colab Pro A100 |
+| New microcontroller/embedded hardware (ESP32) for the v2.0 control path | Existing USB-serial LeRobot bridge already covers arm control; ESP32 remains a possible future physical kill-switch, not a control-path component |
+| Fine-tuning any policy on v2.0-collected data | This milestone evaluates VLA/MLLM behavior via inference/prompting, not training |
+| Arbitrary code-as-policy execution without a sandboxing/safety design | Relevant once "raw autonomy" work resumes (Future Requirements), not before |
 
 ## Traceability
 
@@ -152,17 +189,30 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BENCH-04 | Phase 8 | Pending |
 | OBJ-01 | Phase 8 | Pending |
 | OBJ-02 | Phase 8 | Pending |
-| DATA-05 | Phase 9 | Pending |
-| TUNE-05 | Phase 9 | Pending |
-| TUNE-06 | Phase 9 | Pending |
+| DATA-05 | Phase 9 (paused) | Pending |
+| TUNE-05 | Phase 9 (paused) | Pending |
+| TUNE-06 | Phase 9 (paused) | Pending |
+| TWIN-01 | TBD (roadmapper) | Pending |
+| TWIN-02 | TBD (roadmapper) | Pending |
+| TWIN-03 | TBD (roadmapper) | Pending |
+| TWIN-04 | TBD (roadmapper) | Pending |
+| TWIN-05 | TBD (roadmapper) | Pending |
+| TWIN-06 | TBD (roadmapper) | Pending |
+| TWIN-07 | TBD (roadmapper) | Pending |
+| VLAHW-01 | TBD (roadmapper) | Pending |
+| VLAHW-02 | TBD (roadmapper) | Pending |
+| VLAHW-03 | TBD (roadmapper) | Pending |
+| VLAHW-04 | TBD (roadmapper) | Pending |
+| VLAHW-05 | TBD (roadmapper) | Pending |
 
 **Coverage:**
 
 - v1 requirements: 24 total
-- v1.1 requirements: 13 total
-- Mapped to phases: 24 (v1) + 13 (v1.1) = 37
-- Unmapped: 0 (v1) ✓ / 0 (v1.1) ✓
+- v1.1 requirements: 13 total (paused, unmapped to active phases pending resume)
+- v2.0 requirements: 12 total (TWIN ×7, VLAHW ×5)
+- Mapped to phases: 24 (v1) + 13 (v1.1) + 0 (v2.0, pending roadmapper) = 37
+- Unmapped: 0 (v1) ✓ / 0 (v1.1) ✓ / 12 (v2.0) ⚠️ pending roadmap creation
 
 ---
 *Requirements defined: 2026-07-07*
-*Last updated: 2026-08-30 after roadmap creation for milestone v1.1 (Phases 7-9); corrected v1.1 requirement count from a prior miscount of 17 to the actual 13 enumerated IDs (CAM-01, DEPTH-01/02/03, BENCH-01/02/03/04, OBJ-01/02, DATA-05, TUNE-05/06).*
+*Last updated: 2026-09-17 — defined milestone v2.0 requirements (TWIN-01..07, VLAHW-01..05), narrowed to a digital-twin fidelity fix and a VLA+real-hardware connection experiment after a failed general-MLLM-prompting experiment; full raw-autonomy MLLM-benchmark-suite design moved to v2.0 Future Requirements pending those results.*

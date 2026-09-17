@@ -39,35 +39,41 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 
 ## Current Milestone: v2.0 Real-Hardware MLLM Manipulation Benchmark
 
-**Goal:** Replace VLA policies with a provider-agnostic multimodal LLM (MLLM) as the arm controller on the REAL physical SO-ARM101 (no simulation), piloted first on a free HuggingFace-hosted model, with full reasoning-trace logging and synced RGB+depth+joint episode recording — benchmarked against Yu & Qiu 2026's SO-101 methodology (arXiv:2606.08881: 4 execution-centric tasks, 4-category failure taxonomy, recovery-rate metric) so results are comparable to their reported VLA/ACT numbers.
+**Goal:** Get a real open-source VLA talking to the physical SO-ARM101 over the existing LeRobot bridge, with its full reasoning/thinking trace captured end-to-end, on a corrected digital-twin (URDF/MJCF exactly matching the real robot's kinematics) — before committing to the shape of later phases (full 4-task benchmark suite, general deep-reasoning MLLM comparison, multi-provider router). This milestone intentionally proceeds two concrete workstreams at a time rather than pre-planning the whole arc; scope for phases beyond these two will be revisited once results are in.
 
-**Target features:**
-- Depth camera reliability fix: resolve the AR0144 stereo module's specular-glint/exposure object-measurement failure (diagnostics/UAT/function/depth/UAT.md, currently IN PROGRESS) before trusting depth as MLLM input
-- Provider-agnostic MLLM router/interface (supports OpenAI/Anthropic/Gemini-style APIs architecturally) — first working end-to-end run targets a free HuggingFace-hosted multimodal model to avoid burning paid API budget during development
-- Plan-then-execute control loop: MLLM is called per sub-goal (reach→grasp→lift→place-style checkpoints) with a fast local controller executing each step via the existing `control/` LeRobot USB-serial bridge — no new microcontroller/ESP32 needed
-- Full reasoning-trace capture: every MLLM call's rationale/thought process logged and traceable per episode, not just the final action — first-class requirement, not incidental logging
-- Extended synced episode recorder (building on `control/record_episode.py`): wrist RGB + overhead stereo depth (raw depth values, not just RGB) + joint state + reasoning trace + action, per timestep, per task run — forming the new benchmark dataset
-- Task suite mirrors the paper: start with Pen Transfer (paper's simplest/highest-success task) to validate the full loop end-to-end, then expand to Selective Color Sorting, Multi-Object Packing, and Precision Pen Placement
-- Failure taxonomy scoring (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) + semantic/execution failure aggregation + Recovery Rate metric, applied to MLLM task runs for direct comparison against the paper's π0.5/SmolVLA/Wall-X/ACT results
-- Multi-provider swap-in once the pipeline is validated on the free HF model
+**Why narrowed (2026-09-17):** An initial experiment (`experiment-design/`, `docs/multimodal-context-ablation-experiment.md`) prompting general coding-agent LLMs (Claude Code, Codex) directly — with progressively richer context (image → +depth → +joint state → +URDF/calibration) — to output robot actions **failed badly**. Consensus with research partner: prove out an actual trained VLA on real hardware first, then run a comparable experiment with a genuine deep-reasoning multimodal model (e.g. Claude, paid tier), before deciding whether/how the "raw autonomy" MLLM-as-controller design (see Future Requirements below) is viable at all.
+
+**Target features (current, committed):**
+- **Digital-twin fidelity fix**: rebuild the URDF (and MuJoCo XML in `LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) as a correct, complete, 1:1 kinematic match to the real arm — proper parent/child chain ending at the gripper (not floating off `robot_base`, the bug found in the current CoppeliaSim export at `So-101/So-101.urdf`), `wrist_roll` + `gripper_left`/`gripper_right` joints restored with correct axes/direction (fixes the mirrored-gripper-gears bug), in-repo mesh paths (not absolute `~/Downloads/` references). Mesh geometry (STL/DAE) from the new CoppeliaSim export is trusted as visually correct; joint/kinematic structure is not and must be rebuilt.
+- **VLA + real-hardware connection experiment**: connect an open-source HuggingFace-hosted VLA (not a general MLLM — general MLLM prompting already failed) to the real SO-ARM101 over the existing `control/` LeRobot USB-serial bridge, build a harness to prompt it and capture its **full reasoning/thinking trace**, run it against the robot, and observe/record the result.
 
 ### Active
 
-- [ ] Depth camera object-measurement reliability fixed and validated on real objects
-- [ ] Provider-agnostic MLLM router + control API wrapping `control/`'s LeRobot bridge
-- [ ] Plan-then-execute control loop with full reasoning-trace logging per episode
-- [ ] Extended episode recorder: synced wrist RGB + raw depth + joint state + reasoning trace + action
-- [ ] Pen Transfer task working end-to-end on the free HuggingFace MLLM pilot
-- [ ] Remaining 3 paper tasks (Selective Color Sorting, Multi-Object Packing, Precision Pen Placement) implemented
-- [ ] Failure taxonomy + semantic/execution aggregation + Recovery Rate metric computed for MLLM task runs
-- [ ] At least one additional (paid) MLLM provider wired in via the router, for cross-provider comparison
+- [ ] URDF rebuilt with correct kinematic chain (gripper attached to wrist end, not robot_base), `wrist_roll` + gripper jaw joints restored, in-repo relative mesh paths, trusted STL/DAE shapes from the CoppeliaSim export
+- [ ] MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) brought into agreement with the corrected URDF's kinematics
+- [ ] Open-source HuggingFace VLA connected to the real robot over the `control/` LeRobot serial bridge
+- [ ] Harness built to prompt the VLA and capture its complete reasoning/thinking trace per run
+- [ ] At least one full observed run of the VLA acting on the real robot, trace + video recorded
+
+### Future Requirements (deferred pending this milestone's early results)
+
+<!-- Carried forward from the original v2.0 scope draft (2026-09-15) — not dropped, just sequenced behind the two workstreams above. Revisit after the VLA experiment and the planned deep-reasoning-MLLM comparison experiment. -->
+
+- Comparable experiment run against a genuine deep-reasoning multimodal model (e.g. Claude, paid tier) using the same reasoning-trace-capture harness as the VLA experiment, for direct comparison
+- "Raw autonomy" design (model composes its own control functions from floor-level I/O only, no task-level primitives) with hardware-adjacent safety net: servo-onboard torque-limit/overload protection (`diagnostics/servo_set_torque_limit.py`, `diagnostics/servo_set_protection.py`) + sandboxed execution of any AI-generated code — no ESP32 (12V/5A supply exceeds its safe input rating without extra regulation)
+- Provider-agnostic MLLM router (OpenAI/Anthropic/Gemini/HF-hosted), piloted on a free/cheap-tier HF model before paid providers
+- Full reasoning-trace capture + extended synced episode recorder (wrist RGB + raw depth + joint state + reasoning trace + action) as the benchmark dataset format
+- Task suite mirroring Yu & Qiu 2026 (arXiv:2606.08881): Pen Transfer first, then Selective Color Sorting, Multi-Object Packing, Precision Pen Placement
+- Failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) + semantic/execution aggregation + Recovery Rate metric, with episode termination modeled on the paper (goal-met / timeout / irreversible-failure / unrecoverable-stagnation), human-judged for the first version (no automated vision-based success/failure detection yet)
+- Cross-episode memory explicitly OUT for the paper-faithful baseline (independent episodes, matching the paper's 20-independent-trials-per-task design) — could be added later as a separate ablation, not before
 
 ### Out of Scope
 
 - Real-3DQA point cloud data as training input — inspiration only, not in this pipeline
 - Real-time interactive REPL (deferred; start with rendered output)
-- New microcontroller/embedded hardware (ESP32 etc.) — existing USB-serial LeRobot control bridge already covers arm control
-- Fine-tuning any policy on collected v2.0 data — this milestone evaluates MLLMs zero/few-shot via prompting, not training; comparability to the paper's fine-tuned baselines is a caveat to note in results, not a gap to close by fine-tuning
+- New microcontroller/embedded hardware (ESP32 etc.) for the main control path — existing USB-serial LeRobot control bridge already covers arm control; an ESP32 remains a possible future physical kill-switch, not a control-path component
+- Fine-tuning any policy on collected v2.0 data — this milestone evaluates VLA/MLLM behavior via prompting/inference, not training
+- Arbitrary code-as-policy execution against the robot without a sandboxing/safety design in place first (relevant once "raw autonomy" work resumes, not before)
 
 ## Context
 
@@ -129,4 +135,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-09-15 — Paused milestone v1.1 (Perception Fidelity & Checkpoint Benchmark) after Phase 7 completion; Phases 8-9 remain defined but not executed. Started milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark): pivots from sim/VLA to a real SO-ARM101 pipeline where a provider-agnostic MLLM controls the arm via the existing `control/` LeRobot bridge, benchmarked against Yu & Qiu 2026's SO-101 paper methodology. Note for future phases: SO-ARM101 is a small ~500g-payload arm — tasks must keep objects (<=84mm) and targets within ~0.45m reach. Real hardware assets already working: leader+follower teleop, calibrated AR0144 stereo camera (object-measurement reliability still open), IMX335 wrist camera, `control/record_episode.py` synced recorder.*
+*Last updated: 2026-09-17 — Narrowed v2.0 scope after a failed general-MLLM-prompting experiment (`experiment-design/`): the milestone now proceeds two concrete workstreams first — digital-twin (URDF/MJCF) fidelity fix and a VLA+real-hardware connection experiment with full reasoning-trace capture — with the earlier full "raw autonomy" MLLM-benchmark-suite design moved to Future Requirements pending those results. Paused milestone v1.1 (Perception Fidelity & Checkpoint Benchmark) after Phase 7 completion; Phases 8-9 remain defined but not executed. Note for future phases: SO-ARM101 is a small ~500g-payload arm — tasks must keep objects (<=84mm) and targets within ~0.45m reach. Real hardware assets already working: leader+follower teleop, calibrated AR0144 stereo camera (object-measurement reliability still open), IMX335 wrist camera, `control/record_episode.py` synced recorder.*
