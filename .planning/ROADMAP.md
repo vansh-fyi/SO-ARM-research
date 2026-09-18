@@ -4,7 +4,9 @@
 
 This roadmap builds a Vision-Language-Action simulation pipeline in six phases. Phases 1-3 form a hard dependency chain: a working Colab environment with VLA loading gates the SOARM robot integration, which gates the end-to-end inference loop. Once that loop is validated, Phase 4 (dataset collection) and Phase 5 (spatial awareness) run in parallel. Phase 6 (fine-tuning and evaluation) closes the loop by training OpenVLA-OFT on SOARM demonstrations and benchmarking spatial vs. non-spatial task performance.
 
-Milestone v1.1 (Phases 7-9) fixes a UAT-surfaced benchmark flaw from Phase 6 (3 of 4 eval tasks pass trivially at object spawn) and closes the sim-to-real perception gap. Phase 7 recalibrates the sim camera and plumbs a depth observation stream end-to-end (sim → HDF5 → RLDS). Phase 8 authors a SOARM-compatible object pool and a new checkpoint-scored benchmark task suite, retiring the 3 spawn-trivial spatial tasks from success metrics. Phase 9 collects demonstrations for that suite using the corrected perception pipeline, then re-fine-tunes and re-evaluates OpenVLA-OFT with before/after results in WandB. These three phases form a strict dependency chain (7 → 8 → 9): perception infrastructure must land before task authoring is finalized against it, and both must land before new data is collected and trained on.
+Milestone v1.1 (Phases 7-9) fixes a UAT-surfaced benchmark flaw from Phase 6 (3 of 4 eval tasks pass trivially at object spawn) and closes the sim-to-real perception gap. Phase 7 recalibrates the sim camera and plumbs a depth observation stream end-to-end (sim → HDF5 → RLDS). Phase 8 authors a SOARM-compatible object pool and a new checkpoint-scored benchmark task suite, retiring the 3 spawn-trivial spatial tasks from success metrics. Phase 9 collects demonstrations for that suite using the corrected perception pipeline, then re-fine-tunes and re-evaluates OpenVLA-OFT with before/after results in WandB. These three phases form a strict dependency chain (7 → 8 → 9): perception infrastructure must land before task authoring is finalized against it, and both must land before new data is collected and trained on. **Phases 8-9 are PAUSED as of 2026-09-15** (see PROJECT.md) — superseded in active focus by milestone v2.0.
+
+Milestone v2.0 (Phases 10-11) shifts focus from sim/VLA fine-tuning to real-hardware MLLM manipulation, narrowed 2026-09-17 to two concrete workstreams after a general-MLLM-prompting experiment failed. Phase 10 rebuilds the digital twin (URDF + MuJoCo XML) as a correct 1:1 kinematic match to the real SO-ARM101 — this is sim-side-only work, fixing the CoppeliaSim-exported URDF's floating-gripper bug and the mirrored-gripper-gears bug so any future sim-side verification is trustworthy. Phase 11 connects an open-source HuggingFace-hosted VLA to the *real* physical robot over the already-working `control/` LeRobot USB-serial bridge, builds a harness to capture its full reasoning trace, and records at least one full observed run to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design). **Phases 10 and 11 are independent and parallel-capable, not a sequential chain**: Phase 11's VLA experiment runs entirely on real hardware via `control/`'s existing LeRobot bridge and does not consume Phase 10's sim-twin outputs — the digital-twin fix only matters for future sim-side verification/re-training, not for driving the real robot. They are numbered sequentially here (10 then 11) purely by roadmap convention, not by dependency; either can be planned/executed first, or both in parallel, per user preference.
 
 ## Phases
 
@@ -15,7 +17,8 @@ Milestone v1.1 (Phases 7-9) fixes a UAT-surfaced benchmark flaw from Phase 6 (3 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-**Execution Order:** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
+**Execution Order (v1 / v1.1):** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
+**Execution Order (v2.0):** (10 ∥ 11) — independent, parallel-capable (see Overview)
 
 - [x] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (4 plans) (closed 2026-07-10 — UAT 4/4 PASS after ENV-03 dependency fixes baked into notebook)
 - [x] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks (completed 2026-07-18)
@@ -26,8 +29,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Camera & Depth Perception** - Recalibrate the sim camera to match real SOARM placement/FOV and plumb a depth observation stream through the HDF5 writer and RLDS converter (completed 2026-09-12)
 - [ ] **Phase 8: Checkpoint Benchmark Suite** ⏸ PAUSED (2026-09-15, v1.1 paused for v2.0 — see PROJECT.md) - Survey/author a SOARM-compatible object pool and a new ~8-15 task checkpoint-scored benchmark suite, retiring the 3 spawn-trivial spatial tasks from success metrics
 - [ ] **Phase 9: Benchmark Data Collection & Re-Fine-Tuning** ⏸ PAUSED (2026-09-15, v1.1 paused for v2.0 — see PROJECT.md) - Collect demonstrations for the new benchmark suite and re-fine-tune/re-evaluate OpenVLA-OFT with before/after results in WandB
-
-**v2.0 phases (Real-Hardware MLLM Manipulation Benchmark) continue numbering from Phase 10 below — see PROJECT.md for the v2.0 milestone goal.**
+- [ ] **Phase 10: Digital-Twin Fidelity** - Rebuild the URDF and MuJoCo XML as a correct, complete, 1:1 kinematic match to the real SO-ARM101 (gripper properly chained, wrist_roll + gripper joints restored, correct directions/limits, in-repo mesh paths)
+- [ ] **Phase 11: VLA Hardware Connection** - Connect an SO-101-native joint-action VLA (SmolVLA) to the real SO-ARM101 over the existing LeRobot bridge with a safety validator and complete per-step I/O logging, and record at least one full observed run
 
 ## Phase Details
 
@@ -239,6 +242,7 @@ Plans:
 **Mode:** mvp
 **Depends on**: Phase 7
 **Requirements**: BENCH-01, BENCH-02, BENCH-03, BENCH-04, OBJ-01, OBJ-02
+**Status**: ⏸ PAUSED 2026-09-15 (v1.1 paused for v2.0 — see PROJECT.md)
 **Success Criteria** (what must be TRUE):
 
   1. A survey identifies which existing LIBERO objects meet SOARM constraints (≤84mm graspable width, placeable within ~0.45m reach), and at least 1-3 new custom objects are authored via `custom_object_example.ipynb` and registered as usable LIBERO objects
@@ -255,6 +259,7 @@ Plans:
 **Mode:** mvp
 **Depends on**: Phase 8
 **Requirements**: DATA-05, TUNE-05, TUNE-06
+**Status**: ⏸ PAUSED 2026-09-15 (v1.1 paused for v2.0 — see PROJECT.md)
 **Success Criteria** (what must be TRUE):
 
   1. Scripted and/or teleoperated demonstrations are collected for every task in the new checkpoint benchmark suite (8-15 tasks), stored in robomimic HDF5 format with both the recalibrated-camera RGB and the new depth observation stream present
@@ -264,9 +269,53 @@ Plans:
 
 **Plans**: TBD
 
+### Phase 10: Digital-Twin Fidelity
+
+**Goal**: The URDF and the MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) form a correct, complete, 1:1 kinematic match to the real SO-ARM101 — a proper parent/child chain ending at the gripper, `wrist_roll` and gripper jaw joints restored with correct axes/direction, correct joint limits, and in-repo mesh paths. This is sim-side-only work; it does not touch the real robot or the `control/` bridge.
+**Mode:** mvp
+**Depends on**: Nothing new (independent of Phase 9's paused work; parallel-capable with Phase 11 — see Overview for reasoning)
+**Requirements**: TWIN-01, TWIN-02, TWIN-03, TWIN-04, TWIN-05, TWIN-06, TWIN-07
+**Context/Notes**:
+- Targets two artifacts: the CoppeliaSim-derived URDF (currently broken per `coppelia/export_model_library.py`'s own comments — the gripper is a separate root-level object positioned near the wrist but never parented under the arm) and the MuJoCo XML used by the paused v1.1 sim/VLA track.
+- Mesh geometry (STL/DAE) from the new CoppeliaSim export is trusted as visually correct; only the joint/kinematic structure needs rebuilding.
+- Joint limits must be derived by converting the real robot's LeRobot calibration ticks to radians, not guessed.
+**Success Criteria** (what must be TRUE):
+
+  1. The URDF's kinematic tree shows the gripper as a descendant of the wrist link, not a sibling of `robot_base` — verified by loading the URDF and walking/printing its parent-child joint chain
+  2. The URDF includes a `wrist_roll` joint and `gripper_left`/`gripper_right` prismatic joints, each with limits matching the real robot's calibrated servo ranges (converted from LeRobot calibration ticks to radians)
+  3. Every mesh reference in the URDF resolves as an in-repo relative path — loading the URDF from a clean checkout (no `~/Downloads/` or other user-specific absolute paths) succeeds
+  4. Driving the simulated gripper (URDF or MuJoCo) with a given joint command opens/closes it in the same direction as the real gripper under the identical command
+  5. The MuJoCo XML's joint set, parent/child chain, and joint limits agree with the corrected URDF, and an existing LIBERO SOARM environment's `env.reset()` still completes without errors after the update
+
+**Plans**: TBD
+
+### Phase 11: VLA Hardware Connection
+
+**Goal**: An SO-101-native joint-action VLA (SmolVLA — matching the benchmark paper's own tested architecture and avoiding the Cartesian/IK detour the sim OpenVLA-OFT path would require) drives the real SO-ARM101 over the existing `control/` LeRobot bridge, through an explicit safety validator, with complete per-inference-step I/O captured, and at least one full observed run recorded end-to-end to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design).
+**Mode:** mvp
+**Depends on**: Nothing new (runs entirely on real hardware via the already-working `control/` LeRobot bridge; does not require Phase 10's sim-twin fix — parallel-capable with Phase 10, see Overview for reasoning)
+**Requirements**: VLAHW-01, VLAHW-02, VLAHW-03, VLAHW-04, VLAHW-05
+**Context/Notes**:
+- Known upstream risk to verify early, not assume away: [huggingface/lerobot#2210](https://github.com/huggingface/lerobot/issues/2210) reports SmolVLA inference failures on SO-101. If SmolVLA proves unworkable, the requirement is "an SO-101-native joint-action VLA" generically — a fallback candidate should be identified during planning, not discovered mid-execution.
+- Real, pre-existing action-space mismatch to design around: the sim OpenVLA-OFT path outputs 7D Cartesian deltas (`OSC_POSE`); the physical SO-101 takes 6D joint positions. These are not interchangeable — do not reuse the sim VLA pipeline directly. Prefer a joint-action-native VLA (Path A) over Cartesian output + IK (Path B, more moving parts: forward/inverse kinematics, reference frames, singularities) for this first physical experiment.
+- Real, pre-existing unit-ambiguity bug to resolve before any policy drives the robot: LeRobot's SO-101 follower config defaults to `use_degrees=True`, but `control/keyboard_joint_control.py`'s own comments describe values as normalized -100..100 — the same value could mean degrees in one path and percent in another. Document and fix the actual contract (units, joint order, gripper scale, absolute vs. relative) before wiring in VLA output.
+- Actions must reach the robot through the existing `control/` `SO101Follower` motor-bus interface — no new hand-written serial/register code — and must pass a safety validator first: joint limits, max per-step displacement, max velocity, gripper bounds, stale observation/response rejection, malformed/NaN/infinite action rejection, e-stop, servo comms-failure handling.
+- "Complete I/O trace" replaces "reasoning trace" as the framing for VLAHW-03/04: SmolVLA (like other VLAs) maps observations directly to actions and has no natural-language reasoning/thinking output the way an LLM does — the useful analog is logging every inference step's raw camera frames (with per-camera timestamps, not sequential reads that can drift), joint state, instruction, raw model output, validated action, executed action, latency, and model version.
+- This is a real-hardware experiment; it deliberately does not wait on Phase 10's sim-only digital-twin fix.
+**Success Criteria** (what must be TRUE):
+
+  1. A harness loads an SO-101-native joint-action VLA and calls it with real wrist-camera + overhead-camera frames and joint-state readings pulled live from the SO-ARM101 (not synthetic or simulated inputs), against an explicitly documented action contract (units, joint order, gripper scale, absolute vs. relative)
+  2. The VLA's output actions pass a safety validator (joint limits, max per-step displacement, max velocity, gripper bounds, stale/malformed/NaN input and output rejection, e-stop, servo comms-failure handling) before being sent to the robot via the existing `control/` `SO101Follower` motor-bus interface, with no new hand-written raw serial/register code added to reach the servos
+  3. Every inference step's complete I/O (raw camera frames with per-camera timestamps, joint state, instruction, raw model output, validated action, executed action, latency, model version) is written to a durable, timestamped log — not just the final executed action
+  4. At least one full episode — from a task prompt to episode termination — runs end-to-end on the physical robot, producing a saved synchronized video and a matching per-step I/O log, plus recorded termination reason and success/failure outcome
+  5. A short findings write-up synthesizes what was observed (including any upstream issues hit, e.g. lerobot#2210) into an explicit go/no-go recommendation for the next milestone phases
+
+**Plans**: TBD
+
 ## Progress
 
-**Execution Order:** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
+**Execution Order (v1 / v1.1):** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
+**Execution Order (v2.0):** (10 ∥ 11) — independent, parallel-capable
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -277,5 +326,7 @@ Plans:
 | 5. Spatial Awareness | 4/4 | Complete    | 2026-08-10 |
 | 6. Fine-Tuning & Evaluation | 4/4 | Complete   | 2026-08-29 |
 | 7. Camera & Depth Perception | 3/3 | Complete   | 2026-09-12 |
-| 8. Checkpoint Benchmark Suite | 0/TBD | Not started | - |
-| 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Not started | - |
+| 8. Checkpoint Benchmark Suite | 0/TBD | Paused (2026-09-15) | - |
+| 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
+| 10. Digital-Twin Fidelity | 0/TBD | Not started | - |
+| 11. VLA Hardware Connection | 0/TBD | Not started | - |

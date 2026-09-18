@@ -118,11 +118,11 @@ Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.
 
 ### VLA Hardware Connection
 
-- [ ] **VLAHW-01**: An open-source HuggingFace-hosted VLA (e.g. SmolVLA, matching the benchmark paper's own tested architecture) can be loaded and called with real wrist-camera + joint-state observations from the SO-ARM101
-- [ ] **VLAHW-02**: The VLA's output actions are sent to the real robot through the existing `control/` LeRobot motor-bus interface (`SO101Follower`), not hand-written raw serial code
-- [ ] **VLAHW-03**: The VLA's complete reasoning/thinking output is captured per inference call and saved to a durable trace log, not just the final action
-- [ ] **VLAHW-04**: At least one full episode (VLA driving the robot from a task prompt to termination) is recorded end-to-end — video plus reasoning trace
-- [ ] **VLAHW-05**: Findings from the observed run(s) are written up to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design)
+- [ ] **VLAHW-01**: An SO-101-native joint-action VLA (SmolVLA — matches the benchmark paper's tested architecture and avoids the Cartesian/IK detour the sim OpenVLA-OFT path would require) is loaded and produces valid 6D joint-position actions when called with real wrist-camera + overhead-camera + joint-state observations; the action contract (joint order, units — degrees vs. normalized, gripper scale, absolute vs. relative) is explicitly documented before first use
+- [ ] **VLAHW-02**: VLA output actions pass a safety validator (joint limits, max per-step displacement, max velocity, gripper bounds, stale observation/response rejection, malformed/NaN/infinite action rejection, e-stop, servo comms-failure handling) before being sent to the real robot via the existing `control/` LeRobot `SO101Follower` interface (not hand-written raw serial code); the pre-existing `use_degrees` vs. normalized-value ambiguity in the LeRobot config path is resolved and documented first
+- [ ] **VLAHW-03**: Every inference step's complete I/O is captured to a durable log — raw camera frames (with per-camera timestamps, not sequential reads that can drift out of sync), joint state, task instruction, raw model output, validated action, executed action, latency, model version/checkpoint — not just the final executed action (VLAs like SmolVLA map observations directly to actions; there is no natural-language reasoning trace to capture the way there would be for an LLM)
+- [ ] **VLAHW-04**: At least one full episode (VLA driving the robot from a task prompt to termination) is recorded end-to-end — synchronized video plus the full per-step I/O log from VLAHW-03, plus termination reason and success/failure outcome
+- [ ] **VLAHW-05**: Findings from the observed run(s) — including whether the known upstream SmolVLA/SO-101 issue ([lerobot#2210](https://github.com/huggingface/lerobot/issues/2210)) reproduces — are written up to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design)
 
 ### Future Requirements (deferred pending v2.0's early results)
 
@@ -192,27 +192,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DATA-05 | Phase 9 (paused) | Pending |
 | TUNE-05 | Phase 9 (paused) | Pending |
 | TUNE-06 | Phase 9 (paused) | Pending |
-| TWIN-01 | TBD (roadmapper) | Pending |
-| TWIN-02 | TBD (roadmapper) | Pending |
-| TWIN-03 | TBD (roadmapper) | Pending |
-| TWIN-04 | TBD (roadmapper) | Pending |
-| TWIN-05 | TBD (roadmapper) | Pending |
-| TWIN-06 | TBD (roadmapper) | Pending |
-| TWIN-07 | TBD (roadmapper) | Pending |
-| VLAHW-01 | TBD (roadmapper) | Pending |
-| VLAHW-02 | TBD (roadmapper) | Pending |
-| VLAHW-03 | TBD (roadmapper) | Pending |
-| VLAHW-04 | TBD (roadmapper) | Pending |
-| VLAHW-05 | TBD (roadmapper) | Pending |
+| TWIN-01 | Phase 10 | Pending |
+| TWIN-02 | Phase 10 | Pending |
+| TWIN-03 | Phase 10 | Pending |
+| TWIN-04 | Phase 10 | Pending |
+| TWIN-05 | Phase 10 | Pending |
+| TWIN-06 | Phase 10 | Pending |
+| TWIN-07 | Phase 10 | Pending |
+| VLAHW-01 | Phase 11 | Pending |
+| VLAHW-02 | Phase 11 | Pending |
+| VLAHW-03 | Phase 11 | Pending |
+| VLAHW-04 | Phase 11 | Pending |
+| VLAHW-05 | Phase 11 | Pending |
 
 **Coverage:**
 
 - v1 requirements: 24 total
 - v1.1 requirements: 13 total (paused, unmapped to active phases pending resume)
 - v2.0 requirements: 12 total (TWIN ×7, VLAHW ×5)
-- Mapped to phases: 24 (v1) + 13 (v1.1) + 0 (v2.0, pending roadmapper) = 37
-- Unmapped: 0 (v1) ✓ / 0 (v1.1) ✓ / 12 (v2.0) ⚠️ pending roadmap creation
+- Mapped to phases: 24 (v1) + 13 (v1.1) + 12 (v2.0) = 49
+- Unmapped: 0 (v1) ✓ / 0 (v1.1) ✓ / 0 (v2.0) ✓
 
 ---
 *Requirements defined: 2026-07-07*
-*Last updated: 2026-09-17 — defined milestone v2.0 requirements (TWIN-01..07, VLAHW-01..05), narrowed to a digital-twin fidelity fix and a VLA+real-hardware connection experiment after a failed general-MLLM-prompting experiment; full raw-autonomy MLLM-benchmark-suite design moved to v2.0 Future Requirements pending those results.*
+*Last updated: 2026-09-18 — mapped v2.0 requirements (TWIN-01..07 → Phase 10 Digital-Twin Fidelity, VLAHW-01..05 → Phase 11 VLA Hardware Connection) via roadmap creation; Phases 10-11 are independent/parallel-capable, not a sequential chain — see ROADMAP.md Overview.*

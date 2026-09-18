@@ -45,15 +45,16 @@ A researcher types a task prompt and watches SOARM execute it in a LIBERO simula
 
 **Target features (current, committed):**
 - **Digital-twin fidelity fix**: rebuild the URDF (and MuJoCo XML in `LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) as a correct, complete, 1:1 kinematic match to the real arm — proper parent/child chain ending at the gripper (not floating off `robot_base`, the bug found in the current CoppeliaSim export at `So-101/So-101.urdf`), `wrist_roll` + `gripper_left`/`gripper_right` joints restored with correct axes/direction (fixes the mirrored-gripper-gears bug), in-repo mesh paths (not absolute `~/Downloads/` references). Mesh geometry (STL/DAE) from the new CoppeliaSim export is trusted as visually correct; joint/kinematic structure is not and must be rebuilt.
-- **VLA + real-hardware connection experiment**: connect an open-source HuggingFace-hosted VLA (not a general MLLM — general MLLM prompting already failed) to the real SO-ARM101 over the existing `control/` LeRobot USB-serial bridge, build a harness to prompt it and capture its **full reasoning/thinking trace**, run it against the robot, and observe/record the result.
+- **VLA + real-hardware connection experiment**: connect an SO-101-native joint-action VLA (SmolVLA — not a general MLLM; general MLLM prompting already failed, and Cartesian-output VLAs would need an extra IK layer the physical robot doesn't need) to the real SO-ARM101 over the existing `control/` LeRobot USB-serial bridge, behind a safety validator, with the action-unit ambiguity in the existing LeRobot config resolved first. Capture every inference step's **complete I/O** (not a reasoning trace — VLAs map observations directly to actions and don't produce natural-language reasoning the way an LLM does), run it against the robot, and observe/record the result.
 
 ### Active
 
 - [ ] URDF rebuilt with correct kinematic chain (gripper attached to wrist end, not robot_base), `wrist_roll` + gripper jaw joints restored, in-repo relative mesh paths, trusted STL/DAE shapes from the CoppeliaSim export
 - [ ] MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) brought into agreement with the corrected URDF's kinematics
-- [ ] Open-source HuggingFace VLA connected to the real robot over the `control/` LeRobot serial bridge
-- [ ] Harness built to prompt the VLA and capture its complete reasoning/thinking trace per run
-- [ ] At least one full observed run of the VLA acting on the real robot, trace + video recorded
+- [ ] An SO-101-native joint-action VLA (SmolVLA) connected to the real robot over the `control/` LeRobot serial bridge, with the action contract (units, joint order, gripper scale) and the pre-existing degrees-vs-normalized ambiguity resolved first
+- [ ] Safety validator in place before any VLA action reaches the servos (joint limits, max displacement/velocity, gripper bounds, stale/malformed/NaN rejection, e-stop, comms-failure handling)
+- [ ] Harness built to capture every inference step's complete I/O (frames, joint state, instruction, raw/validated/executed action, latency, model version) — not a natural-language reasoning trace, since VLAs don't produce one
+- [ ] At least one full observed run of the VLA acting on the real robot, synced video + I/O log + termination reason recorded
 
 ### Future Requirements (deferred pending this milestone's early results)
 
