@@ -131,3 +131,7 @@ None - no external service configuration required.
 ---
 *Phase: 10-digital-twin-fidelity*
 *Completed: 2026-09-18*
+
+## Self-Check: PASSED
+
+All created files verified present on disk (`scripts/calibration_utils.py`, `scripts/test_calibration_utils.py`, this SUMMARY.md). All 3 commits (`70f943c`, `afb3376`, `6a07da6`) verified present in `git log`.
