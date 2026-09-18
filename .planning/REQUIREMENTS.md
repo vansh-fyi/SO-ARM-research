@@ -112,8 +112,8 @@ Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.
 - [ ] **TWIN-02**: The URDF includes a `wrist_roll` joint with range matching the real robot's calibrated servo limits
 - [ ] **TWIN-03**: The URDF includes `gripper_left`/`gripper_right` prismatic joints whose open/close direction matches the real gripper (fixes the mirrored-gears bug)
 - [ ] **TWIN-04**: All mesh file references in the URDF use in-repo relative paths, not absolute `~/Downloads/` paths
-- [ ] **TWIN-05**: URDF joint limits for the 4 arm joints derivable from calibration (shoulder_pan, shoulder_lift, elbow_flex, wrist_flex) match the real servo calibration ranges (converted from LeRobot calibration ticks to radians); wrist_roll and gripper limits are explicitly excepted per D-06 (wrist_roll has no real calibrated range; gripper limits come from the existing physics model, not calibration ticks)
-- [ ] **TWIN-06**: The MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) is brought into agreement with the corrected URDF's kinematic structure
+- [x] **TWIN-05**: URDF joint limits for the 4 arm joints derivable from calibration (shoulder_pan, shoulder_lift, elbow_flex, wrist_flex) match the real servo calibration ranges (converted from LeRobot calibration ticks to radians); wrist_roll and gripper limits are explicitly excepted per D-06 (wrist_roll has no real calibrated range; gripper limits come from the existing physics model, not calibration ticks)
+- [x] **TWIN-06**: The MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) is brought into agreement with the corrected URDF's kinematic structure
 - [ ] **TWIN-07**: Driving the simulated gripper with a given joint command opens/closes it in the same direction as the real gripper under the same command
 
 ### VLA Hardware Connection
@@ -196,8 +196,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TWIN-02 | Phase 10 | Pending |
 | TWIN-03 | Phase 10 | Pending |
 | TWIN-04 | Phase 10 | Pending |
-| TWIN-05 | Phase 10 | Pending |
-| TWIN-06 | Phase 10 | Pending |
+| TWIN-05 | Phase 10 | Complete |
+| TWIN-06 | Phase 10 | Complete |
 | TWIN-07 | Phase 10 | Pending |
 | VLAHW-01 | Phase 11 | Pending |
 | VLAHW-02 | Phase 11 | Pending |
