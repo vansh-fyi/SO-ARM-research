@@ -480,7 +480,7 @@ working approach.
 
 **If this table is empty:** N/A — see entries above.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does the generated URDF replace `So-101/So-101.urdf` in place, or land at a new path?**
    - What we know: D-02 says "generate the URDF from the MuJoCo model... rather than patching the
@@ -494,6 +494,8 @@ working approach.
      confirm `coppelia/export_model_library.py` doesn't read `So-101/So-101.urdf` back in anywhere
      (a repo grep this session found no such reference — it only reads `soarm_parallel_gripper.urdf`
      from `coppelia/`, a separate file, unaffected).
+   - **RESOLVED:** Yes, Plan 10-03 overwrites `So-101/So-101.urdf` in place (no other script reads
+     it back in).
 
 2. **Is `soarm_follower_02`'s calibration file the one that should drive TWIN-05, or should
    calibration be re-run fresh during Phase 10 execution?**
@@ -509,6 +511,8 @@ working approach.
      real robot" — this **is** that file), but the plan should not assume the numbers are beyond
      doubt; if the derived limits look physically implausible (e.g. wider than the servo's mechanical
      travel), that's worth a sanity flag rather than blind trust.
+   - **RESOLVED:** Yes, Plans 10-01/10-04 use `soarm_follower_02`'s live calibration file as the
+     source of truth per CONTEXT.md D-05.
 
 ## Environment Availability
 
