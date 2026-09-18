@@ -287,7 +287,24 @@ Plans:
   4. Driving the simulated gripper (URDF or MuJoCo) with a given joint command opens/closes it in the same direction as the real gripper under the identical command
   5. The MuJoCo XML's joint set, parent/child chain, and joint limits agree with the corrected URDF, and an existing LIBERO SOARM environment's `env.reset()` still completes without errors after the update
 
-**Plans**: TBD
+**Plans**: 0/5 plans complete
+Plans:
+**Wave 1** (independent — zero files_modified overlap, run fully in parallel)
+
+- [ ] 10-01-PLAN.md — Calibration-derived joint limits: scripts/calibration_utils.py + robot.xml correction (TWIN-05, TWIN-06)
+- [ ] 10-02-PLAN.md — Gripper clamp visual mesh fix: soarm_gripper.xml D-04 correction + human sign-off (TWIN-03, TWIN-07)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 10-03-PLAN.md — MJCF→URDF generation: scripts/mjcf_to_urdf.py + regenerated So-101/So-101.urdf (TWIN-01, TWIN-02, TWIN-03, TWIN-04, TWIN-06)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 10-04-PLAN.md — URDF verification: yourdfpy legitimacy checkpoint + scripts/verify_urdf.py + scripts/test_verify_urdf.py (TWIN-01..06)
+
+**Wave 4** *(blocked on Wave 3 — final phase gate)*
+
+- [ ] 10-05-PLAN.md — TWIN-07 human-in-the-loop real-vs-sim gripper-direction checkpoint
 
 ### Phase 11: VLA Hardware Connection
 
