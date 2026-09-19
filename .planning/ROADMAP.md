@@ -349,5 +349,5 @@ Plans:
 | 7. Camera & Depth Perception | 3/3 | Complete   | 2026-09-12 |
 | 8. Checkpoint Benchmark Suite | 0/TBD | Paused (2026-09-15) | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
-| 10. Digital-Twin Fidelity | 5/5 | Complete   | 2026-09-19 |
+| 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
 | 11. VLA Hardware Connection | 0/TBD | Not started | - |
