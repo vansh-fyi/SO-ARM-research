@@ -24,13 +24,15 @@ class SoarmGripper(GripperModel):
     robosuite's ``PandaGripper``. 84 mm full opening stroke (+/-42 mm per jaw) so
     it can actually grasp LIBERO objects (stock jaw was too small).
 
-    Class name and this docstring's external ``-1 => open, +1 => closed``
-    convention are preserved so the Phase-4 collector / robot contract is
+    Class name is preserved so the Phase-4 collector / robot contract is
     unchanged; however TWIN-07 gap-closure (plan 260919-h8v) flipped the
     underlying MJCF joint axis/range polarity in ``soarm_gripper.xml`` so the
     sim's OPEN/CLOSE direction now agrees with the real SO-ARM101 hardware's
-    positive-command-opens convention. ``format_action``'s arithmetic below is
-    unchanged; only the MJCF geometry mapping changed.
+    positive-command-opens convention. The external action's sign meaning
+    therefore flipped too: ``+1 => open, -1 => closed`` (was ``-1 => open,
+    +1 => closed`` before the fix; see ``collector.py``'s ``OPEN_CMD``/
+    ``CLOSE_CMD`` constants, which were updated to match). ``format_action``'s
+    arithmetic below is unchanged; only the MJCF geometry mapping changed.
 
     Args:
         idn (int or str): Number or some other unique identification string
@@ -43,15 +45,17 @@ class SoarmGripper(GripperModel):
     def format_action(self, action):
         """Maps the 1-D gripper action into the two jaw position targets.
 
-        -1 => open, +1 => closed (current_action sign, unchanged by the
-        TWIN-07 fix). Both jaw actuators now share ctrlrange [-0.042, 0]
-        (flipped from the pre-fix [0, 0.042] -- see soarm_gripper.xml) with
-        current_action=-1 => -0.042 (open) and +1 => 0 (closed), so a CLOSE
-        command (+1) drives both current elements toward -1 and an OPEN command
-        (-1) drives them toward +1. Mirrors PandaGripper's two-element integrated
-        action (here both elements move together — the jaws are symmetric).
-        The arithmetic below is unchanged by the fix; only the MJCF's
-        joint-to-physical-position mapping changed.
+        External ``action``: +1 => open, -1 => closed (post-TWIN-07-fix
+        convention; see class docstring). current_action's sign maps to
+        physical position as: -1 => -0.042 (open), +1 => 0 (closed) — both
+        jaw actuators share ctrlrange [-0.042, 0] (flipped from the pre-fix
+        [0, 0.042] -- see soarm_gripper.xml). An OPEN command (external
+        action=+1) drives both current_action elements toward -1; a CLOSE
+        command (external action=-1) drives them toward +1. Mirrors
+        PandaGripper's two-element integrated action (here both elements
+        move together — the jaws are symmetric). The arithmetic below is
+        unchanged by the fix; only the MJCF's joint-to-physical-position
+        mapping changed.
 
         Args:
             action (np.array): gripper-specific action
