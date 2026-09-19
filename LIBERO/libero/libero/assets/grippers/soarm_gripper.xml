@@ -84,7 +84,11 @@
             <body name="gripper_left_jaw" pos="0 0 0" quat="1 0 0 0">
                 <joint name="gripper_left" type="slide" axis="0 -1 0" limited="true" range="0 0.042" damping="50" armature="1.0" frictionloss="0.5"/>
                 <inertial pos="-0.052 -0.0092 0" mass="0.05" diaginertia="4e-05 4e-05 1e-05"/>
-                <geom type="mesh" mesh="soarm_clamp_left" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="0.15241 -0.02808 0.15206" quat="0 0.707107 0.707107 0" name="left_jaw_visual"/>
+                <!-- D-04 fix: clamp visual recentered via iterative offscreen-render dialing
+                     (diagnostics/render_gripper_clamp.py), see Phase 10 CONTEXT.md D-04.
+                     Previous pos left the gear-tooth mesh detail poking outside
+                     main_frame_visual's housing. -->
+                <geom type="mesh" mesh="soarm_clamp_left" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="0.13701 -0.02348 0.14546" quat="0 0.707107 0.707107 0" name="left_jaw_visual"/>
                 <!-- box collision jaw (fingers point down, local -X): inner (+y) face at grip line y=-0.0002 -->
                 <geom type="box" size="0.022 0.009 0.020" pos="-0.052 -0.0092 0" group="0" contype="1" conaffinity="1" condim="4" solref="0.01 1" friction="2 0.05 0.0001" name="left_jaw_collision"/>
             </body>
@@ -92,7 +96,11 @@
             <body name="gripper_right_jaw" pos="0 0 0" quat="1 0 0 0">
                 <joint name="gripper_right" type="slide" axis="0 1 0" limited="true" range="0 0.042" damping="50" armature="1.0" frictionloss="0.5"/>
                 <inertial pos="-0.052 0.0088 0" mass="0.05" diaginertia="4e-05 4e-05 1e-05"/>
-                <geom type="mesh" mesh="soarm_clamp_right" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="0.15242 0.01270 0.15171" quat="0 0.707107 0.707107 0" name="right_jaw_visual"/>
+                <!-- D-04 fix: clamp visual recentered via iterative offscreen-render dialing
+                     (diagnostics/render_gripper_clamp.py), see Phase 10 CONTEXT.md D-04.
+                     Previous pos left the gear-tooth mesh detail poking outside
+                     main_frame_visual's housing. -->
+                <geom type="mesh" mesh="soarm_clamp_right" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="0.13707 0.00806 0.15835" quat="0 0.707107 0.707107 0" name="right_jaw_visual"/>
                 <geom type="box" size="0.022 0.009 0.020" pos="-0.052 0.0088 0" group="0" contype="1" conaffinity="1" condim="4" solref="0.01 1" friction="2 0.05 0.0001" name="right_jaw_collision"/>
             </body>
         </body>
