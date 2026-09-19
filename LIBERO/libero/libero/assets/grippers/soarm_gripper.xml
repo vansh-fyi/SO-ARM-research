@@ -47,6 +47,23 @@
         <material name="soarm_frame_material" rgba="0.55 0.57 0.6 1"/>
         <material name="soarm_jaw_material" rgba="0.75 0.78 0.8 1"/>
     </asset>
+    <equality>
+        <!-- Real hardware has ONE motor driving a central gear that slaves both
+             jaw racks together (roboninecom parallel gripper mechanism); there
+             is no way to command the two jaws independently. Prior to this
+             constraint, gripper_left/gripper_right were two fully independent
+             actuators kept in sync ONLY by SoarmGripper.format_action always
+             sending them identical ctrl values in software; nothing in the
+             physics model itself enforced that. This equality constraint makes
+             the coupling mechanically real: gripper_right_qpos is forced equal
+             to gripper_left_qpos (both share the same axis-vs-range convention,
+             so no negation/offset needed) regardless of what drives the ctrl
+             inputs. Both actuators are kept (not reduced to one) to avoid
+             changing SoarmGripper's 2-element current_action / robosuite
+             actuator-count contract; the constraint bounds the second
+             actuator's authority to whatever gripper_left is doing. -->
+        <joint joint1="gripper_right" joint2="gripper_left" polycoef="0 1 0 0 0"/>
+    </equality>
     <actuator>
         <!-- One position actuator per jaw. Post-TWIN-07-fix polarity: ctrl=0
              (qpos=0) stays CLOSED; ctrl=-0.042 (qpos=-0.042) is now OPEN,
