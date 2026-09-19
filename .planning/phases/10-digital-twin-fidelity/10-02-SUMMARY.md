@@ -115,3 +115,12 @@ None - no external service configuration required.
 ---
 *Phase: 10-digital-twin-fidelity*
 *Completed: 2026-09-19*
+
+## Self-Check: PASSED
+
+- FOUND: diagnostics/render_gripper_clamp.py
+- FOUND: diagnostics/outputs/gripper_clamp_open.png
+- FOUND: diagnostics/outputs/gripper_clamp_closed.png
+- FOUND: LIBERO/libero/libero/assets/grippers/soarm_gripper.xml
+- FOUND commit: ef1cb0e (Task 1)
+- FOUND commit: 2a31e21 (plan metadata / this SUMMARY)
