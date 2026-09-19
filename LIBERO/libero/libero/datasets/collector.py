@@ -78,8 +78,8 @@ import numpy as np
 os.environ.setdefault("MUJOCO_GL", "glfw")
 
 # --- FSM tuning constants (empirically tuned starting values) ---------------
-OPEN_CMD = -1.0          # gripper action element: open jaw
-CLOSE_CMD = 1.0          # gripper action element: close jaw
+OPEN_CMD = 1.0           # gripper action element: open jaw (post-Phase-10-TWIN-07-fix polarity: +1=open, -1=closed)
+CLOSE_CMD = -1.0         # gripper action element: close jaw
 HOVER_HEIGHT = 0.12      # m above object/place-target for approach/lift/transport/retreat
 GRASP_Z_OFFSET = 0.015   # m above the pick object's body origin the jaw descends to
 PLACE_Z_OFFSET = 0.06    # m above the place target the pick object is released from

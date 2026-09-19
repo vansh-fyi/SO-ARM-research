@@ -77,8 +77,8 @@ def test_waypoint_approach_far_points_toward_bowl_and_stays_open():
     assert action[1] < 0
     # eef is above the hover height -> descend -> dz negative
     assert action[2] < 0
-    # gripper open (<= 0) before grasp
-    assert action[6] <= 0
+    # gripper open before grasp (matches OPEN_CMD's sign, not a hardcoded literal)
+    assert np.sign(action[6]) == np.sign(OPEN_CMD)
     # not close enough yet -> phase unchanged
     assert next_phase == "approach"
 
@@ -96,15 +96,15 @@ def test_waypoint_descend_at_bowl_transitions_to_grasp_and_closes():
     eef = BOWL.copy() + np.array([0.0, 0.0, GRASP_Z_OFFSET])
     action, next_phase, _ = _unpack("descend", eef, False)
     assert next_phase == "grasp"
-    # gripper element goes positive (close command) on the descend->grasp step
-    assert action[6] > 0
+    # gripper element issues the close command on the descend->grasp step
+    assert np.sign(action[6]) == np.sign(CLOSE_CMD)
 
 
 def test_waypoint_grasp_transitions_to_lift_after_close_committed():
     # First grasp step with gripper still open -> stays in grasp, commits close.
     action0, next0, gc0 = _unpack("grasp", BOWL.copy(), False)
     assert next0 == "grasp"
-    assert action0[6] > 0
+    assert np.sign(action0[6]) == np.sign(CLOSE_CMD)
     assert gc0 is True
     # Once the close has been committed (gripper_closed=True) -> transition to lift.
     _, next1, _ = _unpack("grasp", BOWL.copy(), True)
@@ -114,17 +114,17 @@ def test_waypoint_grasp_transitions_to_lift_after_close_committed():
 def test_waypoint_gripper_positive_from_grasp_through_place_descend():
     for phase in ("grasp", "lift", "transport", "place_descend"):
         action, _, _ = _unpack(phase, BOWL.copy(), True)
-        assert action[6] > 0, f"gripper should be closed (positive) in {phase}"
+        assert np.sign(action[6]) == np.sign(CLOSE_CMD), f"gripper should be closed in {phase}"
 
 
 def test_waypoint_gripper_negative_from_release_onward():
     # release still holding (gripper_closed=True) issues the OPEN command
     action, _, gc = _unpack("release", PLATE.copy(), True)
-    assert action[6] < 0
+    assert np.sign(action[6]) == np.sign(OPEN_CMD)
     assert gc is False
     # retreat is open
     action2, _, _ = _unpack("retreat", PLATE + [0, 0, HOVER_HEIGHT], False)
-    assert action2[6] < 0
+    assert np.sign(action2[6]) == np.sign(OPEN_CMD)
 
 
 def test_waypoint_retreat_above_plate_transitions_to_done():

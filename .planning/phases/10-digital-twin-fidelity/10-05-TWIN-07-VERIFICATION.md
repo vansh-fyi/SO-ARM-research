@@ -116,3 +116,38 @@ hardware re-test. **A NEW human-in-the-loop re-test — repeating the
 documented as FAIL — MUST be run and produce an explicit PASS before
 TWIN-07 or Phase 10 can be considered closed.** The "Outcome: FAIL" header
 above stays unchanged until that re-test passes.
+
+## Hardware Re-Test: PASS
+
+**Date:** 2026-09-19
+**Re-test performed by:** the user, directly with the orchestrator (immediately after gap-closure quick task `260919-h8v` landed)
+
+**Real robot test (repeated, identical command to the original FAIL test):**
+```
+python control/joint_jog.py /dev/cu.usbmodem5B8E1139151 soarm_follower_02 gripper 20
+```
+`gripper.pos` moved from 71.61 → 81.55 (a positive/increasing delta, clamped by
+`max_relative_target=10.0`). Human's direct observation: **opens** the real
+gripper's jaws — identical direction to the original test (expected: the real
+robot's servo/calibration behavior is entirely unaffected by this sim-only fix).
+
+**Sim verification (empirical, MuJoCo):** after the gap-closure fix, driving
+`SoarmGripper.format_action` with external action `+1` repeatedly converges
+`current_action` toward `-1`, which maps (via the corrected `ctrlrange -0.042 0`)
+to a jaw center-to-center gap of **0.102m** (open) — versus **0.018m** (closed)
+at `current_action=+1`. So external action `+1` (the "positive" direction) now
+**opens** the sim gripper, matching the real robot's positive-command-opens
+behavior confirmed above.
+
+**Comparison:**
+
+| Side | Direction of positive/increasing command |
+|------|---------------------------------------------|
+| Real robot (`joint_jog.py ... gripper 20`, pos 71.61 → 81.55) | **Opens** the jaws |
+| Sim, post-fix (`SoarmGripper.format_action`, external action `+1`) | **Opens** the jaws (jaw gap 0.018m → 0.102m) |
+
+Directions now **agree**. Confirmed explicitly by the user.
+
+**Outcome: PASS.** TWIN-07 is satisfied. This supersedes the original
+"Outcome: FAIL" header above, which is retained for audit history — the
+authoritative outcome for this requirement is PASS, as of this re-test.
