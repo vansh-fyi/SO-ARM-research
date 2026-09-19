@@ -112,3 +112,10 @@ the gap-closure plan and a subsequent PASS re-verification.
 ---
 *Phase: 10-digital-twin-fidelity*
 *Completed: 2026-09-19*
+
+## Self-Check: PASSED
+
+- FOUND: `.planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-VERIFICATION.md`
+- FOUND: `.planning/phases/10-digital-twin-fidelity/10-05-SUMMARY.md`
+- FOUND: commit `9294b1a` (Task 2 - TWIN-07 verification doc)
+- FOUND: commit `7cbf53d` (this SUMMARY.md, staged prior to self-check append)
