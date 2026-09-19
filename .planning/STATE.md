@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 Phase: 10 (Digital-Twin Fidelity) — EXECUTING
 Plan: 1 of 5
 Status: Executing Phase 10
-Last activity: 2026-09-18 — Phase 10 execution started
+Last activity: 2026-09-19 - Completed quick task 260919-h8v: Fix Phase 10 TWIN-07 gap (gripper axis polarity flip)
 
 ## Performance Metrics
 
@@ -104,6 +104,7 @@ None yet.
 | 260902-kcf | Update PROJECT.md: physical hardware integration is now an active parallel track (not out of scope) | 2026-09-02 | 1b4201c | [260902-kcf-update-project-md-physical-hardware-inte](./quick/260902-kcf-update-project-md-physical-hardware-inte/) |
 | fast-260909 | Update progress on physical hardware build in docs (leader arm + servo swap complete) | 2026-09-09 | 9df5ecb | — |
 | 260911-h5h | Create a 3D-printable STL mount bracket for the Waveshare AR0144 Stereo USB Camera module | 2026-09-11 | 47c8691 | [260911-h5h-create-a-3d-printable-stl-mount-bracket-](./quick/260911-h5h-create-a-3d-printable-stl-mount-bracket-/) |
+| 260919-h8v | Fix Phase 10 TWIN-07 gap: flip gripper_left/gripper_right axis polarity in soarm_gripper.xml, regenerate URDF, update test expectations (hardware re-test still required) | 2026-09-19 | 5fa8e62 | [260919-h8v-fix-phase-10-twin-07-gap-flip-gripper-le](./quick/260919-h8v-fix-phase-10-twin-07-gap-flip-gripper-le/) |
 
 ## Deferred Items
 
