@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Camera & Depth Perception** - Recalibrate the sim camera to match real SOARM placement/FOV and plumb a depth observation stream through the HDF5 writer and RLDS converter (completed 2026-09-12)
 - [ ] **Phase 8: Checkpoint Benchmark Suite** ⏸ PAUSED (2026-09-15, v1.1 paused for v2.0 — see PROJECT.md) - Survey/author a SOARM-compatible object pool and a new ~8-15 task checkpoint-scored benchmark suite, retiring the 3 spawn-trivial spatial tasks from success metrics
 - [ ] **Phase 9: Benchmark Data Collection & Re-Fine-Tuning** ⏸ PAUSED (2026-09-15, v1.1 paused for v2.0 — see PROJECT.md) - Collect demonstrations for the new benchmark suite and re-fine-tune/re-evaluate OpenVLA-OFT with before/after results in WandB
-- [ ] **Phase 10: Digital-Twin Fidelity** - Rebuild the URDF and MuJoCo XML as a correct, complete, 1:1 kinematic match to the real SO-ARM101 (gripper properly chained, wrist_roll + gripper joints restored, correct directions/limits, in-repo mesh paths)
+- [x] **Phase 10: Digital-Twin Fidelity** - Rebuild the URDF and MuJoCo XML as a correct, complete, 1:1 kinematic match to the real SO-ARM101 (gripper properly chained, wrist_roll + gripper joints restored, correct directions/limits, in-repo mesh paths) (completed 2026-09-19)
 - [ ] **Phase 11: VLA Hardware Connection** - Connect an SO-101-native joint-action VLA (SmolVLA) to the real SO-ARM101 over the existing LeRobot bridge with a safety validator and complete per-step I/O logging, and record at least one full observed run
 
 ## Phase Details
@@ -289,7 +289,7 @@ Plans:
   4. Driving the simulated gripper (URDF or MuJoCo) with a given joint command opens/closes it in the same direction as the real gripper under the identical command
   5. The MuJoCo XML's joint set, parent/child chain, and joint limits agree with the corrected URDF, and an existing LIBERO SOARM environment's `env.reset()` still completes without errors after the update
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans complete
 Plans:
 **Wave 1** (independent — zero files_modified overlap, run fully in parallel)
 
@@ -306,7 +306,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 — final phase gate)*
 
-- [ ] 10-05-PLAN.md — TWIN-07 human-in-the-loop real-vs-sim gripper-direction checkpoint
+- [x] 10-05-PLAN.md — TWIN-07 human-in-the-loop real-vs-sim gripper-direction checkpoint
 
 ### Phase 11: VLA Hardware Connection
 
@@ -349,5 +349,5 @@ Plans:
 | 7. Camera & Depth Perception | 3/3 | Complete   | 2026-09-12 |
 | 8. Checkpoint Benchmark Suite | 0/TBD | Paused (2026-09-15) | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
-| 10. Digital-Twin Fidelity | 4/5 | In Progress|  |
+| 10. Digital-Twin Fidelity | 5/5 | Complete   | 2026-09-19 |
 | 11. VLA Hardware Connection | 0/TBD | Not started | - |
