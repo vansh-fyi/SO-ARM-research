@@ -289,7 +289,7 @@ Plans:
   4. Driving the simulated gripper (URDF or MuJoCo) with a given joint command opens/closes it in the same direction as the real gripper under the identical command
   5. The MuJoCo XML's joint set, parent/child chain, and joint limits agree with the corrected URDF, and an existing LIBERO SOARM environment's `env.reset()` still completes without errors after the update
 
-**Plans**: 3/5 plans executed
+**Plans**: 4/5 plans executed
 Plans:
 **Wave 1** (independent — zero files_modified overlap, run fully in parallel)
 
@@ -302,7 +302,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 10-04-PLAN.md — URDF verification: yourdfpy legitimacy checkpoint + scripts/verify_urdf.py + scripts/test_verify_urdf.py (TWIN-01..06)
+- [x] 10-04-PLAN.md — URDF verification: yourdfpy legitimacy checkpoint + scripts/verify_urdf.py + scripts/test_verify_urdf.py (TWIN-01..06)
 
 **Wave 4** *(blocked on Wave 3 — final phase gate)*
 
@@ -349,5 +349,5 @@ Plans:
 | 7. Camera & Depth Perception | 3/3 | Complete   | 2026-09-12 |
 | 8. Checkpoint Benchmark Suite | 0/TBD | Paused (2026-09-15) | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
-| 10. Digital-Twin Fidelity | 3/5 | In Progress|  |
+| 10. Digital-Twin Fidelity | 4/5 | In Progress|  |
 | 11. VLA Hardware Connection | 0/TBD | Not started | - |
