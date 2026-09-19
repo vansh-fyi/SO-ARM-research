@@ -157,3 +157,11 @@ None - no external service configuration required.
 ---
 *Phase: 10-digital-twin-fidelity*
 *Completed: 2026-09-19*
+
+## Self-Check: PASSED
+
+- FOUND: scripts/verify_urdf.py
+- FOUND: scripts/test_verify_urdf.py
+- FOUND: .planning/phases/10-digital-twin-fidelity/10-04-SUMMARY.md
+- FOUND commit: 363a7ca (Task 2: feat(10-04))
+- FOUND commit: 9524b40 (docs(10-04): complete plan)
