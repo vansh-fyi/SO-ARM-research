@@ -108,10 +108,10 @@ Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.
 
 ### Digital-Twin Fidelity
 
-- [ ] **TWIN-01**: The URDF's gripper is attached at the end of the kinematic chain (child of the wrist link), not floating off `robot_base`
-- [ ] **TWIN-02**: The URDF includes a `wrist_roll` joint with range matching the real robot's calibrated servo limits
-- [ ] **TWIN-03**: The URDF includes `gripper_left`/`gripper_right` prismatic joints whose open/close direction matches the real gripper (fixes the mirrored-gears bug)
-- [ ] **TWIN-04**: All mesh file references in the URDF use in-repo relative paths, not absolute `~/Downloads/` paths
+- [x] **TWIN-01**: The URDF's gripper is attached at the end of the kinematic chain (child of the wrist link), not floating off `robot_base`
+- [x] **TWIN-02**: The URDF includes a `wrist_roll` joint with range matching the real robot's calibrated servo limits
+- [x] **TWIN-03**: The URDF includes `gripper_left`/`gripper_right` prismatic joints whose open/close direction matches the real gripper (fixes the mirrored-gears bug)
+- [x] **TWIN-04**: All mesh file references in the URDF use in-repo relative paths, not absolute `~/Downloads/` paths
 - [x] **TWIN-05**: URDF joint limits for the 4 arm joints derivable from calibration (shoulder_pan, shoulder_lift, elbow_flex, wrist_flex) match the real servo calibration ranges (converted from LeRobot calibration ticks to radians); wrist_roll and gripper limits are explicitly excepted per D-06 (wrist_roll has no real calibrated range; gripper limits come from the existing physics model, not calibration ticks)
 - [x] **TWIN-06**: The MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) is brought into agreement with the corrected URDF's kinematic structure
 - [ ] **TWIN-07**: Driving the simulated gripper with a given joint command opens/closes it in the same direction as the real gripper under the same command
@@ -192,10 +192,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DATA-05 | Phase 9 (paused) | Pending |
 | TUNE-05 | Phase 9 (paused) | Pending |
 | TUNE-06 | Phase 9 (paused) | Pending |
-| TWIN-01 | Phase 10 | Pending |
-| TWIN-02 | Phase 10 | Pending |
-| TWIN-03 | Phase 10 | Pending |
-| TWIN-04 | Phase 10 | Pending |
+| TWIN-01 | Phase 10 | Complete |
+| TWIN-02 | Phase 10 | Complete |
+| TWIN-03 | Phase 10 | Complete |
+| TWIN-04 | Phase 10 | Complete |
 | TWIN-05 | Phase 10 | Complete |
 | TWIN-06 | Phase 10 | Complete |
 | TWIN-07 | Phase 10 | Pending |
