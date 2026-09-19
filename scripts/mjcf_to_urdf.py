@@ -29,12 +29,16 @@ body's/joint's attributes directly out of the parsed MJCF trees -- is
 simpler and easier to verify by hand than a generic recursive MJCF
 interpreter.
 
-Visual mesh sourcing (per D-02): the arm's DAE meshes come from the
-CoppeliaSim export (`So-101/*.dae`, already in-repo, referenced here by bare
-filename only -- this script does not read that broken URDF at runtime, the
-filenames below were confirmed by a direct read of it during planning). The
-gripper's STL meshes come from `coppelia/meshes/*.stl` (relative path
-`../coppelia/meshes/...` from this URDF's own directory). Only the arm/
+Visual mesh sourcing: the arm's DAE meshes come from the CoppeliaSim export
+(`So-101/*.dae`, already in-repo, referenced here by bare filename only --
+this script does not read that broken URDF at runtime, the filenames below
+were confirmed by a direct read of it during planning). The gripper's STL
+meshes are copied into `So-101/` directly (`So-101_gripper_main_frame_visual.stl`,
+`So-101_gripper_clamp_left_visual.stl`, `So-101_gripper_clamp_right_visual.stl`,
+sourced from `LIBERO/libero/libero/assets/grippers/soarm_parallel/`, the
+sim's own vendored copy) so `So-101/` is self-contained and does not depend
+on the `coppelia/` working directory, which is not committed to the repo.
+Only the arm/
 gripper MJCF files are read at runtime; visual mesh *placement* offsets for
 the gripper meshes are read live from `soarm_gripper.xml` (so Plan 10-02's
 clamp-visual fix is picked up automatically); the arm's per-link mesh
@@ -577,7 +581,7 @@ def main() -> None:
         make_link(
             "right_gripper",
             inertial_from_diaginertia(right_gripper_body),
-            visual_meshes=["../coppelia/meshes/main_frame_visual.stl"],
+            visual_meshes=["So-101_gripper_main_frame_visual.stl"],
             visual_origin=(xyz, rpy),
             mesh_scale="0.001 0.001 0.001",
         )
@@ -607,7 +611,7 @@ def main() -> None:
     left_jaw_link = make_link(
         "gripper_left_jaw",
         inertial_from_diaginertia(gripper_bodies["gripper_left_jaw"]),
-        visual_meshes=["../coppelia/meshes/clamp_1_visual.stl"],
+        visual_meshes=["So-101_gripper_clamp_left_visual.stl"],
         visual_origin=(left_xyz, left_rpy),
         mesh_scale="0.001 0.001 0.001",
     )
@@ -649,7 +653,7 @@ def main() -> None:
     right_jaw_link = make_link(
         "gripper_right_jaw",
         inertial_from_diaginertia(gripper_bodies["gripper_right_jaw"]),
-        visual_meshes=["../coppelia/meshes/clamp_2_visual.stl"],
+        visual_meshes=["So-101_gripper_clamp_right_visual.stl"],
         visual_origin=(right_xyz, right_rpy),
         mesh_scale="0.001 0.001 0.001",
     )

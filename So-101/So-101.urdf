@@ -262,7 +262,7 @@
     <visual>
       <origin xyz="-0.015 -0.064 -0.02975" rpy="1.570796327 0 1.570796327" />
       <geometry>
-        <mesh filename="../coppelia/meshes/main_frame_visual.stl" scale="0.001 0.001 0.001" />
+        <mesh filename="So-101_gripper_main_frame_visual.stl" scale="0.001 0.001 0.001" />
       </geometry>
     </visual>
     <inertial>
@@ -283,7 +283,7 @@
     <visual>
       <origin xyz="0.13701 -0.02348 0.14546" rpy="3.141592654 0 1.570796946" />
       <geometry>
-        <mesh filename="../coppelia/meshes/clamp_1_visual.stl" scale="0.001 0.001 0.001" />
+        <mesh filename="So-101_gripper_clamp_left_visual.stl" scale="0.001 0.001 0.001" />
       </geometry>
     </visual>
     <inertial>
@@ -310,7 +310,7 @@
     <visual>
       <origin xyz="0.13707 0.00806 0.15835" rpy="3.141592654 0 1.570796946" />
       <geometry>
-        <mesh filename="../coppelia/meshes/clamp_2_visual.stl" scale="0.001 0.001 0.001" />
+        <mesh filename="So-101_gripper_clamp_right_visual.stl" scale="0.001 0.001 0.001" />
       </geometry>
     </visual>
     <inertial>
