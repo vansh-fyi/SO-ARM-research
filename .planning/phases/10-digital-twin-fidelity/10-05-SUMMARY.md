@@ -23,7 +23,7 @@ tech-stack:
 
 key-files:
   created:
-    - .planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-VERIFICATION.md
+    - .planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-CHECK.md
   modified: []
 
 key-decisions:
@@ -40,7 +40,7 @@ coverage:
     requirement: "TWIN-07"
     verification:
       - kind: manual_procedural
-        ref: "control/joint_jog.py /dev/cu.usbmodem5B8E1139151 soarm_follower_02 gripper 20 (real robot) vs. SoarmGripper.format_action external convention (sim) — see 10-05-TWIN-07-VERIFICATION.md"
+        ref: "control/joint_jog.py /dev/cu.usbmodem5B8E1139151 soarm_follower_02 gripper 20 (real robot) vs. SoarmGripper.format_action external convention (sim) — see 10-05-TWIN-07-CHECK.md"
         status: fail
     human_judgment: true
     rationale: "Requires hardware-in-the-loop comparison against the physical SO-ARM101 follower arm; cannot be verified from sim state alone (D-07). Human directly observed and confirmed the mismatch."
@@ -63,7 +63,7 @@ status: complete
 - **Files modified:** 1 created
 
 ## Accomplishments
-- Documented the TWIN-07 human-in-the-loop real-vs-sim gripper-direction comparison outcome in `10-05-TWIN-07-VERIFICATION.md`, including the exact real-robot command, the exact `gripper.pos` telemetry values (61.72 → 71.64), the sim's external action-sign convention cited from `SoarmGripper.format_action`, and an explicit FAIL determination
+- Documented the TWIN-07 human-in-the-loop real-vs-sim gripper-direction comparison outcome in `10-05-TWIN-07-CHECK.md`, including the exact real-robot command, the exact `gripper.pos` telemetry values (61.72 → 71.64), the sim's external action-sign convention cited from `SoarmGripper.format_action`, and an explicit FAIL determination
 - Confirmed the mismatch is a genuine axis/sign disagreement (not observer error): human re-confirmed the interpretation across two rounds in-session
 - Flagged the required gap-closure path (`/gsd-plan-phase 10 --gaps`) and the likely fix (flip `gripper_left`/`gripper_right` axis sign in `soarm_gripper.xml`, regenerate URDF, re-run `test_gripper_joint_axes`) so Phase 10 can be unblocked in a follow-up plan
 
@@ -71,13 +71,13 @@ status: complete
 
 Each task was committed atomically:
 
-1. **Task 1: Real vs. sim gripper-direction comparison (TWIN-07, D-07/D-08)** — resolved by the orchestrator directly with the human prior to this agent's spawn (no subagent commit; hardware access required). Outcome: FAIL, per the exact command/telemetry values in `10-05-TWIN-07-VERIFICATION.md`.
+1. **Task 1: Real vs. sim gripper-direction comparison (TWIN-07, D-07/D-08)** — resolved by the orchestrator directly with the human prior to this agent's spawn (no subagent commit; hardware access required). Outcome: FAIL, per the exact command/telemetry values in `10-05-TWIN-07-CHECK.md`.
 2. **Task 2: Record the TWIN-07 verification outcome** - `9294b1a` (docs)
 
 **Plan metadata:** (this SUMMARY.md commit, made immediately after this file)
 
 ## Files Created/Modified
-- `.planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-VERIFICATION.md` - Records the exact real-robot command (`control/joint_jog.py /dev/cu.usbmodem5B8E1139151 soarm_follower_02 gripper 20`), the exact `gripper.pos` telemetry (61.72 → 71.64), the sim's `-1`(open)/`+1`(closed) external convention cited from `SoarmGripper.format_action`, and the FAIL outcome with date
+- `.planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-CHECK.md` - Records the exact real-robot command (`control/joint_jog.py /dev/cu.usbmodem5B8E1139151 soarm_follower_02 gripper 20`), the exact `gripper.pos` telemetry (61.72 → 71.64), the sim's `-1`(open)/`+1`(closed) external convention cited from `SoarmGripper.format_action`, and the FAIL outcome with date
 
 ## Decisions Made
 - TWIN-07's outcome is FAIL, not PASS: the real robot's positive/increasing gripper command opens the jaws, while the sim's positive (`+1`) action convention closes them. This is a genuine direction mismatch, not a units/scale mismatch.
@@ -115,7 +115,7 @@ the gap-closure plan and a subsequent PASS re-verification.
 
 ## Self-Check: PASSED
 
-- FOUND: `.planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-VERIFICATION.md`
+- FOUND: `.planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-CHECK.md`
 - FOUND: `.planning/phases/10-digital-twin-fidelity/10-05-SUMMARY.md`
 - FOUND: commit `9294b1a` (Task 2 - TWIN-07 verification doc)
 - FOUND: commit `7cbf53d` (this SUMMARY.md, staged prior to self-check append)

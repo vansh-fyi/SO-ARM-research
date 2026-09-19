@@ -114,7 +114,7 @@ Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.
 - [x] **TWIN-04**: All mesh file references in the URDF use in-repo relative paths, not absolute `~/Downloads/` paths
 - [x] **TWIN-05**: URDF joint limits for the 4 arm joints derivable from calibration (shoulder_pan, shoulder_lift, elbow_flex, wrist_flex) match the real servo calibration ranges (converted from LeRobot calibration ticks to radians); wrist_roll and gripper limits are explicitly excepted per D-06 (wrist_roll has no real calibrated range; gripper limits come from the existing physics model, not calibration ticks)
 - [x] **TWIN-06**: The MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) is brought into agreement with the corrected URDF's kinematic structure
-- [ ] **TWIN-07**: Driving the simulated gripper with a given joint command opens/closes it in the same direction as the real gripper under the same command
+- [x] **TWIN-07**: Driving the simulated gripper with a given joint command opens/closes it in the same direction as the real gripper under the same command
 
 ### VLA Hardware Connection
 
@@ -198,7 +198,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TWIN-04 | Phase 10 | Complete |
 | TWIN-05 | Phase 10 | Complete |
 | TWIN-06 | Phase 10 | Complete |
-| TWIN-07 | Phase 10 | Pending |
+| TWIN-07 | Phase 10 | Complete |
 | VLAHW-01 | Phase 11 | Pending |
 | VLAHW-02 | Phase 11 | Pending |
 | VLAHW-03 | Phase 11 | Pending |

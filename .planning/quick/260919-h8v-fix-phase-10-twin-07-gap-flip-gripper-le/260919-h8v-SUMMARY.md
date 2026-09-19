@@ -27,7 +27,7 @@ key-files:
     - scripts/mjcf_to_urdf.py
     - scripts/test_verify_urdf.py
     - scripts/verify_urdf.py
-    - .planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-VERIFICATION.md
+    - .planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-CHECK.md
     - .planning/phases/10-digital-twin-fidelity/10-VERIFICATION.md
     - .planning/STATE.md
 
@@ -88,7 +88,7 @@ status: complete
 - Reversed the sim gripper's command polarity (real robot: positive command opens; sim previously: `+1` = closed) by negating+reordering `gripper_left`/`gripper_right`'s MJCF `axis`, `range`, and actuator `ctrlrange`, preserving the exact same 84mm physical stroke and mirrored, non-crossing jaw motion (empirically verified via MuJoCo: closed gap 0.018m, open gap 0.102m)
 - Regenerated `So-101/So-101.urdf` from the corrected MJCF via `scripts/mjcf_to_urdf.py` (not hand-edited); diff is a minimal, expected 8-line axis/limit change
 - Updated `scripts/test_verify_urdf.py` and `scripts/verify_urdf.py`'s hardcoded expected axis literals to match; full TWIN-01..05 + env-reset suite (7 tests) passes with zero regressions
-- Documented the code-side fix as an addendum in both `10-05-TWIN-07-VERIFICATION.md` and `10-VERIFICATION.md` without flipping FAIL/gaps_found status — both docs now explicitly require a new human-in-the-loop hardware re-test before TWIN-07/Phase 10 can close
+- Documented the code-side fix as an addendum in both `10-05-TWIN-07-CHECK.md` and `10-VERIFICATION.md` without flipping FAIL/gaps_found status — both docs now explicitly require a new human-in-the-loop hardware re-test before TWIN-07/Phase 10 can close
 - Logged the newly-discovered `collector.py` `OPEN_CMD`/`CLOSE_CMD` polarity regression risk as a new STATE.md Blocker/Concern (Phase 8/9 demo-recollection FSM, currently paused, will need its constants swapped before reuse)
 
 ## Task Commits
@@ -105,13 +105,13 @@ status: complete
 - `scripts/mjcf_to_urdf.py` - Added `from __future__ import annotations` (Rule 3 blocking fix: script used Python 3.10+ `X | None` type-hint syntax, incompatible with the libero conda env's Python 3.9)
 - `scripts/test_verify_urdf.py` - Updated `test_gripper_joint_axes`'s expected axis literals to `[0, 1, 0]` / `[0, -1, 0]`
 - `scripts/verify_urdf.py` - Updated the standalone CLI's `axes_ok` check to the same new literals
-- `.planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-VERIFICATION.md` - Appended "Gap-Closure Fix Applied" section documenting the fix; original FAIL outcome untouched
+- `.planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-CHECK.md` - Appended "Gap-Closure Fix Applied" section documenting the fix; original FAIL outcome untouched
 - `.planning/phases/10-digital-twin-fidelity/10-VERIFICATION.md` - Added an update note referencing this gap-closure plan; `gaps_found` status and TWIN-07 row untouched
 - `.planning/STATE.md` - Added new Blockers/Concerns entry for `collector.py`'s OPEN_CMD/CLOSE_CMD polarity regression risk
 
 ## Decisions Made
 - **Paired axis+range negation, not axis-sign negation alone:** A bare axis flip with the range left at `0 0.042` would have driven the jaws past each other into an invalid crossing state. Negating the axis AND swapping+negating the range to `-0.042 0` preserves qpos=0 as the same physical touching-closed position while making qpos=-0.042 the same physical 84mm-apart open position — same geometry, reversed command mapping. Confirmed empirically, not just by derivation.
-- **TWIN-07 intentionally left unresolved:** Both verification docs (`10-05-TWIN-07-VERIFICATION.md`, `10-VERIFICATION.md`) keep their FAIL/gaps_found status. This plan's fix is sim-only; only a fresh human-in-the-loop hardware re-test can actually close TWIN-07.
+- **TWIN-07 intentionally left unresolved:** Both verification docs (`10-05-TWIN-07-CHECK.md`, `10-VERIFICATION.md`) keep their FAIL/gaps_found status. This plan's fix is sim-only; only a fresh human-in-the-loop hardware re-test can actually close TWIN-07.
 - **`collector.py` left untouched, risk documented instead of fixed:** Its `OPEN_CMD`/`CLOSE_CMD` constants now drive the physical opposite of their names post-fix, but the FSM that uses them (Phase 8/9 demo re-collection) is currently paused and out of this plan's scope — logged in STATE.md so it isn't silently rediscovered later.
 
 ## Deviations from Plan
@@ -147,7 +147,7 @@ None - no external service configuration required.
 
 ## Next Phase Readiness
 - The sim-side TWIN-07 fix is complete and regression-tested; Phase 10 still cannot be marked complete.
-- **Required next step (out of this plan's scope):** run a fresh human-in-the-loop hardware re-test (repeating the `joint_jog.py ... gripper` real-vs-sim comparison from `10-05-TWIN-07-VERIFICATION.md`) and obtain an explicit PASS before TWIN-07/Phase 10 can close.
+- **Required next step (out of this plan's scope):** run a fresh human-in-the-loop hardware re-test (repeating the `joint_jog.py ... gripper` real-vs-sim comparison from `10-05-TWIN-07-CHECK.md`) and obtain an explicit PASS before TWIN-07/Phase 10 can close.
 - New blocker logged for future Phase 8/9 demo re-collection work: `collector.py`'s `OPEN_CMD`/`CLOSE_CMD` constants need to be swapped before that FSM is used again.
 
 ---
@@ -156,4 +156,4 @@ None - no external service configuration required.
 
 ## Self-Check: PASSED
 
-All 9 claimed modified files confirmed present on disk (`LIBERO/libero/libero/assets/grippers/soarm_gripper.xml`, `LIBERO/libero/libero/envs/grippers/soarm_gripper.py`, `So-101/So-101.urdf`, `scripts/mjcf_to_urdf.py`, `scripts/test_verify_urdf.py`, `scripts/verify_urdf.py`, `.planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-VERIFICATION.md`, `.planning/phases/10-digital-twin-fidelity/10-VERIFICATION.md`, `.planning/STATE.md`). All 4 task commit hashes (`5fa8e62`, `fbbf5fb`, `7bf580a`, `aefbb8d`) confirmed present in `git log`.
+All 9 claimed modified files confirmed present on disk (`LIBERO/libero/libero/assets/grippers/soarm_gripper.xml`, `LIBERO/libero/libero/envs/grippers/soarm_gripper.py`, `So-101/So-101.urdf`, `scripts/mjcf_to_urdf.py`, `scripts/test_verify_urdf.py`, `scripts/verify_urdf.py`, `.planning/phases/10-digital-twin-fidelity/10-05-TWIN-07-CHECK.md`, `.planning/phases/10-digital-twin-fidelity/10-VERIFICATION.md`, `.planning/STATE.md`). All 4 task commit hashes (`5fa8e62`, `fbbf5fb`, `7bf580a`, `aefbb8d`) confirmed present in `git log`.
