@@ -289,7 +289,7 @@ Plans:
   4. Driving the simulated gripper (URDF or MuJoCo) with a given joint command opens/closes it in the same direction as the real gripper under the identical command
   5. The MuJoCo XML's joint set, parent/child chain, and joint limits agree with the corrected URDF, and an existing LIBERO SOARM environment's `env.reset()` still completes without errors after the update
 
-**Plans**: 2/5 plans executed
+**Plans**: 3/5 plans executed
 Plans:
 **Wave 1** (independent — zero files_modified overlap, run fully in parallel)
 
@@ -298,7 +298,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 10-03-PLAN.md — MJCF→URDF generation: scripts/mjcf_to_urdf.py + regenerated So-101/So-101.urdf (TWIN-01, TWIN-02, TWIN-03, TWIN-04, TWIN-06)
+- [x] 10-03-PLAN.md — MJCF→URDF generation: scripts/mjcf_to_urdf.py + regenerated So-101/So-101.urdf (TWIN-01, TWIN-02, TWIN-03, TWIN-04, TWIN-06)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -349,5 +349,5 @@ Plans:
 | 7. Camera & Depth Perception | 3/3 | Complete   | 2026-09-12 |
 | 8. Checkpoint Benchmark Suite | 0/TBD | Paused (2026-09-15) | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
-| 10. Digital-Twin Fidelity | 2/5 | In Progress|  |
+| 10. Digital-Twin Fidelity | 3/5 | In Progress|  |
 | 11. VLA Hardware Connection | 0/TBD | Not started | - |
