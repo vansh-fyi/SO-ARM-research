@@ -49,7 +49,7 @@
     </asset>
     <actuator>
         <!-- One position actuator per jaw. Post-TWIN-07-fix polarity: ctrl=0
-             (qpos=0) stays CLOSED; ctrl=-0.042 (qpos=-0.042) is now OPEN --
+             (qpos=0) stays CLOSED; ctrl=-0.042 (qpos=-0.042) is now OPEN,
              the reverse of the pre-fix convention. See
              SoarmGripper.format_action and Phase 10 gap-closure plan
              260919-h8v for the derivation.
@@ -83,7 +83,7 @@
                  Real roboninecom clamp meshes attached as VISUALS via a 180deg
                  rotation about (1,1,0) (quat 0 0.7071 0.7071 0): mesh finger-length
                  (mesh +y) -> local +X, mesh opening (mesh x) -> local Y. -->
-            <!-- LEFT jaw: opens toward -y (axis 0 1 0, range -0.042..0 -- TWIN-07
+            <!-- LEFT jaw: opens toward -y (axis 0 1 0, range -0.042..0, TWIN-07
                  gap-closure fix). qpos=0 stays at the touching-closed geometry;
                  qpos=-0.042 reaches the same 84mm-apart open position as
                  before, just re-labeled per plan 260919-h8v's derivation. -->
@@ -98,7 +98,7 @@
                 <!-- box collision jaw (fingers point down, local -X): inner (+y) face at grip line y=-0.0002 -->
                 <geom type="box" size="0.022 0.009 0.020" pos="-0.052 -0.0092 0" group="0" contype="1" conaffinity="1" condim="4" solref="0.01 1" friction="2 0.05 0.0001" name="left_jaw_collision"/>
             </body>
-            <!-- RIGHT jaw: opens toward +y (axis 0 -1 0, range -0.042..0 -- TWIN-07
+            <!-- RIGHT jaw: opens toward +y (axis 0 -1 0, range -0.042..0, TWIN-07
                  gap-closure fix). qpos=0 stays at the touching-closed geometry;
                  qpos=-0.042 reaches the same 84mm-apart open position as
                  before, just re-labeled per plan 260919-h8v's derivation. -->
