@@ -67,11 +67,11 @@ def test_gripper_joint_axes(robot):
     opposing jaw-travel axes."""
     left = robot.joint_map["gripper_left"]
     assert left.type == "prismatic"
-    assert list(left.axis) == [0, -1, 0]
+    assert list(left.axis) == [0, 1, 0]
 
     right = robot.joint_map["gripper_right"]
     assert right.type == "prismatic"
-    assert list(right.axis) == [0, 1, 0]
+    assert list(right.axis) == [0, -1, 0]
 
 
 def test_no_absolute_mesh_paths(robot):
