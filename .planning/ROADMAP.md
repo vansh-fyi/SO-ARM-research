@@ -276,9 +276,11 @@ Plans:
 **Depends on**: Nothing new (independent of Phase 9's paused work; parallel-capable with Phase 11 — see Overview for reasoning)
 **Requirements**: TWIN-01, TWIN-02, TWIN-03, TWIN-04, TWIN-05, TWIN-06, TWIN-07
 **Context/Notes**:
+
 - Targets two artifacts: the CoppeliaSim-derived URDF (currently broken per `coppelia/export_model_library.py`'s own comments — the gripper is a separate root-level object positioned near the wrist but never parented under the arm) and the MuJoCo XML used by the paused v1.1 sim/VLA track.
 - Mesh geometry (STL/DAE) from the new CoppeliaSim export is trusted as visually correct; only the joint/kinematic structure needs rebuilding.
 - Joint limits must be derived by converting the real robot's LeRobot calibration ticks to radians, not guessed.
+
 **Success Criteria** (what must be TRUE):
 
   1. The URDF's kinematic tree shows the gripper as a descendant of the wrist link, not a sibling of `robot_base` — verified by loading the URDF and walking/printing its parent-child joint chain
@@ -287,12 +289,12 @@ Plans:
   4. Driving the simulated gripper (URDF or MuJoCo) with a given joint command opens/closes it in the same direction as the real gripper under the identical command
   5. The MuJoCo XML's joint set, parent/child chain, and joint limits agree with the corrected URDF, and an existing LIBERO SOARM environment's `env.reset()` still completes without errors after the update
 
-**Plans**: 0/5 plans complete
+**Plans**: 2/5 plans executed
 Plans:
 **Wave 1** (independent — zero files_modified overlap, run fully in parallel)
 
-- [ ] 10-01-PLAN.md — Calibration-derived joint limits: scripts/calibration_utils.py + robot.xml correction (TWIN-05, TWIN-06)
-- [ ] 10-02-PLAN.md — Gripper clamp visual mesh fix: soarm_gripper.xml D-04 correction + human sign-off (TWIN-03, TWIN-07)
+- [x] 10-01-PLAN.md — Calibration-derived joint limits: scripts/calibration_utils.py + robot.xml correction (TWIN-05, TWIN-06)
+- [x] 10-02-PLAN.md — Gripper clamp visual mesh fix: soarm_gripper.xml D-04 correction + human sign-off (TWIN-03, TWIN-07)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -313,12 +315,14 @@ Plans:
 **Depends on**: Nothing new (runs entirely on real hardware via the already-working `control/` LeRobot bridge; does not require Phase 10's sim-twin fix — parallel-capable with Phase 10, see Overview for reasoning)
 **Requirements**: VLAHW-01, VLAHW-02, VLAHW-03, VLAHW-04, VLAHW-05
 **Context/Notes**:
+
 - Known upstream risk to verify early, not assume away: [huggingface/lerobot#2210](https://github.com/huggingface/lerobot/issues/2210) reports SmolVLA inference failures on SO-101. If SmolVLA proves unworkable, the requirement is "an SO-101-native joint-action VLA" generically — a fallback candidate should be identified during planning, not discovered mid-execution.
 - Real, pre-existing action-space mismatch to design around: the sim OpenVLA-OFT path outputs 7D Cartesian deltas (`OSC_POSE`); the physical SO-101 takes 6D joint positions. These are not interchangeable — do not reuse the sim VLA pipeline directly. Prefer a joint-action-native VLA (Path A) over Cartesian output + IK (Path B, more moving parts: forward/inverse kinematics, reference frames, singularities) for this first physical experiment.
 - Real, pre-existing unit-ambiguity bug to resolve before any policy drives the robot: LeRobot's SO-101 follower config defaults to `use_degrees=True`, but `control/keyboard_joint_control.py`'s own comments describe values as normalized -100..100 — the same value could mean degrees in one path and percent in another. Document and fix the actual contract (units, joint order, gripper scale, absolute vs. relative) before wiring in VLA output.
 - Actions must reach the robot through the existing `control/` `SO101Follower` motor-bus interface — no new hand-written serial/register code — and must pass a safety validator first: joint limits, max per-step displacement, max velocity, gripper bounds, stale observation/response rejection, malformed/NaN/infinite action rejection, e-stop, servo comms-failure handling.
 - "Complete I/O trace" replaces "reasoning trace" as the framing for VLAHW-03/04: SmolVLA (like other VLAs) maps observations directly to actions and has no natural-language reasoning/thinking output the way an LLM does — the useful analog is logging every inference step's raw camera frames (with per-camera timestamps, not sequential reads that can drift), joint state, instruction, raw model output, validated action, executed action, latency, and model version.
 - This is a real-hardware experiment; it deliberately does not wait on Phase 10's sim-only digital-twin fix.
+
 **Success Criteria** (what must be TRUE):
 
   1. A harness loads an SO-101-native joint-action VLA and calls it with real wrist-camera + overhead-camera frames and joint-state readings pulled live from the SO-ARM101 (not synthetic or simulated inputs), against an explicitly documented action contract (units, joint order, gripper scale, absolute vs. relative)
@@ -345,5 +349,5 @@ Plans:
 | 7. Camera & Depth Perception | 3/3 | Complete   | 2026-09-12 |
 | 8. Checkpoint Benchmark Suite | 0/TBD | Paused (2026-09-15) | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
-| 10. Digital-Twin Fidelity | 0/TBD | Not started | - |
+| 10. Digital-Twin Fidelity | 2/5 | In Progress|  |
 | 11. VLA Hardware Connection | 0/TBD | Not started | - |
