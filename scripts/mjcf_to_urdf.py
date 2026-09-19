@@ -46,6 +46,8 @@ link's mesh list in that file), which is exactly the "reuse mesh filename
 list" carry-over this script's plan calls for.
 """
 
+from __future__ import annotations
+
 import math
 import sys
 import xml.etree.ElementTree as ET

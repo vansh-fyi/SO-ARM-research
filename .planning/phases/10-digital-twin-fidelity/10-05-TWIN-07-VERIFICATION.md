@@ -84,3 +84,35 @@ closed.
 
 This plan (10-05) only detects and documents the mismatch — it does not
 contain a remediation task.
+
+## Gap-Closure Fix Applied
+
+**Date:** 2026-09-19
+**Applied by:** Gap-closure quick task `260919-h8v`
+
+The `gripper_left`/`gripper_right` joint `axis`, `range`, and `<position>`
+actuator `ctrlrange` in `LIBERO/libero/libero/assets/grippers/soarm_gripper.xml`
+were flipped: `gripper_left` axis `0 -1 0` → `0 1 0`, `gripper_right` axis
+`0 1 0` → `0 -1 0`, both `range`/`ctrlrange` `0 0.042` → `-0.042 0`. This
+reverses which command sign (`current_action`/external action) opens vs.
+closes the jaws in sim, without moving any geom/body position (same
+touching-closed and 84mm-apart-open physical geometry, re-labeled). The
+paired `SoarmGripper.init_qpos` in `soarm_gripper.py` was updated to
+`[-0.042, -0.042]` (the new fully-open value) and its descriptive comments
+corrected; `format_action`'s arithmetic is unchanged.
+
+`So-101/So-101.urdf` was regenerated (not hand-edited) via
+`scripts/mjcf_to_urdf.py`, and `scripts/test_verify_urdf.py` /
+`scripts/verify_urdf.py`'s hardcoded expected axis values were updated to
+match. The full TWIN-01..05 + env-reset regression suite (7 tests) passes
+with zero regressions, and an empirical MuJoCo load-and-step check confirms
+the jaws still separate monotonically and symmetrically across the same
+84mm physical stroke (closed gap ~0.018m, open gap ~0.102m).
+
+**TWIN-07 REMAINS UNVERIFIED AGAINST REAL HARDWARE.** This fix is sim-only
+and self-consistency-checked (MuJoCo + pytest); it does NOT constitute a
+hardware re-test. **A NEW human-in-the-loop re-test — repeating the
+`joint_jog.py ... gripper` real-vs-sim comparison this file originally
+documented as FAIL — MUST be run and produce an explicit PASS before
+TWIN-07 or Phase 10 can be considered closed.** The "Outcome: FAIL" header
+above stays unchanged until that re-test passes.

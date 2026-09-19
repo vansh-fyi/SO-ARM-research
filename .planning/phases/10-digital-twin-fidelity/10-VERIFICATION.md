@@ -116,6 +116,8 @@ This directly means the phase goal — "`wrist_roll` and gripper jaw joints rest
 
 **Recommended next action:** `/gsd-plan-phase 10 --gaps` to generate a gap-closure plan. Per 10-05-SUMMARY.md's own diagnosis (and this report's independent confirmation that the codebase state matches that diagnosis exactly), the likely fix is: flip the `gripper_left`/`gripper_right` axis sign in `LIBERO/libero/libero/assets/grippers/soarm_gripper.xml`, regenerate `So-101/So-101.urdf` via `scripts/mjcf_to_urdf.py`, update `scripts/test_verify_urdf.py::test_gripper_joint_axes`'s hardcoded expected axis values to match, and re-run the TWIN-07 human-in-the-loop hardware comparison to confirm PASS before Phase 10 can be closed.
 
+**Update (2026-09-19, gap-closure plan `260919-h8v`):** The code-side fix described above has been applied — `soarm_gripper.xml`'s gripper joint axis/range/ctrlrange flipped, `soarm_gripper.py`'s `init_qpos` updated, `So-101/So-101.urdf` regenerated, and `scripts/test_verify_urdf.py`/`scripts/verify_urdf.py` updated and passing (see `10-05-TWIN-07-VERIFICATION.md`'s "Gap-Closure Fix Applied" section for full detail). This is a sim-only, self-consistency-checked fix. **Phase completion remains blocked on a fresh human-in-the-loop hardware re-verification of TWIN-07** — this status/score/row is intentionally NOT flipped until that re-test produces an explicit PASS.
+
 **Non-blocking follow-up (repo hygiene, not a phase-goal gap):** `git add` the untracked `So-101/` and `coppelia/` mesh asset directories (34 files) so the URDF's relative mesh references resolve on a fresh clone.
 
 ---

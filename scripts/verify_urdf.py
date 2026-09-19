@@ -127,10 +127,10 @@ def main() -> None:
     axes_ok = (
         gripper_left is not None
         and gripper_left.type == "prismatic"
-        and list(gripper_left.axis) == [0, -1, 0]
+        and list(gripper_left.axis) == [0, 1, 0]
         and gripper_right is not None
         and gripper_right.type == "prismatic"
-        and list(gripper_right.axis) == [0, 1, 0]
+        and list(gripper_right.axis) == [0, -1, 0]
     )
     if axes_ok:
         print("✓ gripper_left/gripper_right prismatic with correct axes")
