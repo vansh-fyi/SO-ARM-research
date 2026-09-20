@@ -337,7 +337,24 @@ Plans:
   4. At least one full episode — from a task prompt to episode termination — runs end-to-end on the physical robot, producing a saved synchronized video and a matching per-step I/O log, plus recorded termination reason and success/failure outcome
   5. A short findings write-up synthesizes what was observed (including any upstream issues hit, e.g. lerobot#2210) into an explicit go/no-go recommendation for the next milestone phases
 
-**Plans**: TBD
+**Plans**: 0/5 plans complete
+Plans:
+**Wave 1** (independent — zero files_modified overlap, run fully in parallel)
+
+- [ ] 11-01-PLAN.md — Action contract + safety validator, unit-ambiguity resolution (VLAHW-01, VLAHW-02)
+- [ ] 11-03-PLAN.md — Colab PolicyServer/tunnel setup + SmolVLA checkpoint selection (VLAHW-01)
+
+**Wave 2** *(blocked on 11-01)*
+
+- [ ] 11-02-PLAN.md — JSON Lines I/O logger + real-hardware episode harness with scripted dry-run source + e-stop (VLAHW-02, VLAHW-03)
+
+**Wave 3** *(blocked on 11-02 and 11-03)*
+
+- [ ] 11-04-PLAN.md — Real Colab-bridged SmolVLA wiring into run_vla_episode.py (VLAHW-01, VLAHW-02, VLAHW-03)
+
+**Wave 4 — final phase gate** *(blocked on 11-04)*
+
+- [ ] 11-05-PLAN.md — E-stop + full episode hardware-in-the-loop checkpoints, findings write-up (VLAHW-02, VLAHW-04, VLAHW-05)
 
 ## Progress
 
@@ -356,4 +373,4 @@ Plans:
 | 8. Checkpoint Benchmark Suite | 0/TBD | Paused (2026-09-15) | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
 | 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
-| 11. VLA Hardware Connection | 0/TBD | Not started | - |
+| 11. VLA Hardware Connection | 0/5 | Not started | - |
