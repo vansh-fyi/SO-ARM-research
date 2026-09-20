@@ -51,7 +51,8 @@ CALIBRATION_PATH = (
 # linear-distance measurement -- it has no defined mapping to the
 # roboninecom 84mm parallel-jaw's 0-0.042m prismatic stroke (a completely
 # different aftermarket mechanism). soarm_gripper.xml's existing prismatic
-# limits are already correct, sourced from the 84mm hardware spec.
+# limits use the user-approved 36 mm-per-jaw cap (2026-09-20), not the full
+# hardware stroke; retain the MJCF limits rather than deriving them from ticks.
 JOINTS_FROM_CALIBRATION = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex")
 
 

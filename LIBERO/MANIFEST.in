@@ -1,0 +1,5 @@
+recursive-include libero *.py *.yaml
+recursive-include libero/libero/assets *
+recursive-include libero/libero/bddl_files *.bddl
+recursive-include libero/libero/init_files *.pruned_init *.init
+include SOARM_MODEL.md

@@ -16,7 +16,31 @@ re_verification:
 gaps: []
 ---
 
+> **2026-09-20 established-model update:** [10-ESTABLISHED-MODEL.md](10-ESTABLISHED-MODEL.md)
+> is authoritative for the accepted Coppelia-aligned assembly, black housing,
+> yellow jaws, 0.036 m per-jaw cap, corrected starting pose and LIBERO wiring.
+> Earlier settings and verification results below are historical and do not
+> establish policy success for the accepted model.
+
+
 # Phase 10: Digital-Twin Fidelity Verification Report
+
+## Accepted-model verification — 2026-09-20 (current)
+
+User acceptance applies to the established Coppelia-aligned model with black
+housing, yellow jaws and **36 mm per-jaw travel**. The focused command in
+`10-ESTABLISHED-MODEL.md` passes **10 tests**: numerical geometry, single-actuator
+coupling, six URDF/configuration checks and two real LIBERO camera integration
+checks. The verifier covers 132 geometry comparisons with error below 0.002 mm.
+The regenerated URDF includes the mounting frame, servo, pinion, colours, mimic
+relation and grasp frame. Runtime loaders use the canonical fork assets.
+
+The full task-success suite, old-dataset replay and hardware dynamics have not
+been revalidated for this configuration. **The frontmatter score and all
+2026-09-19 results below are the historical polarity-fix verification**, not a
+current full-suite claim. See `10-ESTABLISHED-MODEL.md` for current scope.
+
+## Historical verification — 2026-09-19
 
 **Phase Goal:** The URDF and the MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) form a correct, complete, 1:1 kinematic match to the real SO-ARM101 — a proper parent/child chain ending at the gripper, `wrist_roll` and gripper jaw joints restored with correct axes/direction, correct joint limits, and in-repo mesh paths. This is sim-side-only work; it does not touch the real robot or the `control/` bridge.
 

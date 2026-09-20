@@ -5,10 +5,10 @@ milestone_name: Real-Hardware MLLM Manipulation Benchmark
 current_phase: 11
 current_phase_name: VLA Hardware Connection
 status: executing
-stopped_at: Phase 10 context gathered
-last_updated: "2026-09-19T11:32:50.814Z"
-last_activity: 2026-09-19
-last_activity_desc: Phase 10 complete, transitioned to Phase 11
+stopped_at: Phase 10 established model accepted and propagated to LIBERO
+last_updated: "2026-09-20"
+last_activity: 2026-09-20
+last_activity_desc: Accepted Coppelia-aligned black/yellow gripper with 36 mm jaw travel
 progress:
   total_phases: 11
   completed_phases: 8
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** A researcher types a task prompt and watches SOARM execute it in a LIBERO simulation — the loop from language to embodied action.
-**Current focus:** Phase 10 — Digital-Twin Fidelity
+**Current focus:** Phase 11 — VLA Hardware Connection (not started)
 
 ## Current Position
 
 Phase: 11 — VLA Hardware Connection
 Plan: Not started
-Status: Executing Phase 10
-Last activity: 2026-09-19 — Phase 10 complete, transitioned to Phase 11
+Status: Phase 10 established model accepted; Phase 11 not started
+Last activity: 2026-09-20 — established model documented and synchronized across LIBERO assets, runtime, diagnostics and portable URDF
 
 ## Performance Metrics
 
@@ -69,6 +69,12 @@ Last activity: 2026-09-19 — Phase 10 complete, transitioned to Phase 11
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- **Phase 10 established model (2026-09-20):** User accepted the complete
+  Coppelia-aligned assembly. Black housing, yellow jaws, `[-0.036, 0]` joint and
+  actuator ranges, `+1` opens / `-1` closes, mechanical jaw equality, ~88°
+  wrist-flex initial pose. This supersedes earlier 84 mm aperture and visual-only
+  correction assumptions. See [10-ESTABLISHED-MODEL.md](phases/10-digital-twin-fidelity/10-ESTABLISHED-MODEL.md).
+
 - **v2.0 roadmap (2026-09-18):** Phases 10-11 derived from the 12 v2.0 requirements (TWIN-01..07, VLAHW-01..05). Phase 10 (Digital-Twin Fidelity: URDF + MuJoCo XML kinematic rebuild) and Phase 11 (VLA Hardware Connection: real-hardware HF VLA + reasoning-trace harness) are **independent and parallel-capable, not a sequential chain** — Phase 11's real-hardware experiment runs entirely through `control/`'s existing LeRobot bridge and does not consume Phase 10's sim-twin outputs; Phase 10 only matters for future sim-side verification/re-training. Numbered sequentially (10 then 11) by roadmap convention only.
 - **v2.0 scope narrowing (2026-09-17):** An initial general-MLLM-prompting experiment (`experiment-design/`, `docs/multimodal-context-ablation-experiment.md`) failed badly. Milestone narrowed to two concrete workstreams (digital-twin fix + VLA hardware connection) before committing to the full raw-autonomy MLLM-benchmark-suite design (moved to Future Requirements in REQUIREMENTS.md/PROJECT.md).
 - **Known upstream risk for Phase 11 (flagged, not yet verified):** [huggingface/lerobot#2210](https://github.com/huggingface/lerobot/issues/2210) reports SmolVLA inference failures on SO-101 — verify early during Phase 11 planning/execution, don't assume it away; identify a fallback open-source HF VLA candidate if SmolVLA proves unworkable.
@@ -87,9 +93,16 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+Begin Phase 11 with the accepted Phase 10 model preserved. See
+[Phase 11 handoff](phases/10-digital-twin-fidelity/10-ESTABLISHED-MODEL.md#phase-11-handoff--2026-09-20).
 
 ### Blockers/Concerns
+
+- **Accepted-model follow-up (2026-09-20):** Geometry, coupling, export and LIBERO
+  reset/render checks pass. Older collection success rates, camera-framing
+  calibration, normalization and replay results do not automatically transfer.
+  Revalidate before collecting/training; retain old datasets as historical data.
+  Actual collision-proxy aperture is 6..78 mm under the approved cap, not 84 mm.
 
 - 04 embodiment note for Phase 7/8/9/10: SO-ARM101 is a small ~500g-payload desktop arm; new tasks/objects must keep objects AND targets within ~0.45m reach, objects ≤84mm to be graspable, AND avoid placing objects on the base's forward centerline (y~0 close to the base) — the arm's own forearm sweeps through that corridor and will collide with anything sitting there.
 - 05 PRE-EXISTING TEST DEBT (found 2026-08-10): (1) `test_hdf5_writer.py::test_schema_and_obs_key_naming`'s stale `gripper_states.shape[1] == 1` assertion — FIXED in Phase 7 plan 07-02 (now `== 2`, matching D-07's 84mm 2-DOF gripper). (2) `test_replay.py::test_verify_full_obs_regeneration_passes_on_04_02_output` still fails with a pixel mismatch in `(demo_1, 0, agentview_rgb)` — likely MuJoCo offscreen-render non-determinism, not investigated, still open.
@@ -119,10 +132,10 @@ None yet.
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/10-digital-twin-fidelity/10-CONTEXT.md
+**Resume file:** .planning/phases/10-digital-twin-fidelity/10-ESTABLISHED-MODEL.md
 
-Last session: 2026-09-18T13:00:17.312Z
-Stopped at: Phase 10 context gathered
+Last session: 2026-09-20
+Stopped at: Established model accepted, documented and integrated into LIBERO
 
 Phases 1-6 (milestone v1.0) are all complete — their earlier resume-sequence notes
 are historical, not active blockers.
@@ -137,5 +150,6 @@ NOTE (repo sync): the outer repo has repeatedly drifted commits-ahead of
 `origin/main` without being pushed — before telling the user to `git pull` on
 Colab, always check `git status -sb` for an "ahead" count first.
 
-Next: run `/gsd-plan-phase 10` and/or `/gsd-plan-phase 11` (independent,
-parallel-capable — either order, or both, is fine; see ROADMAP.md Overview).
+Next: revalidate sim collection/camera framing against the established model,
+or plan Phase 11's independent hardware work. Do not restart the accepted
+Phase 10 geometry reconstruction.

@@ -97,6 +97,13 @@ completed: 2026-09-19
 status: complete
 ---
 
+> **2026-09-20 established-model update:** [10-ESTABLISHED-MODEL.md](10-ESTABLISHED-MODEL.md)
+> is authoritative for the accepted Coppelia-aligned assembly, black housing,
+> yellow jaws, 0.036 m per-jaw cap, corrected starting pose and LIBERO wiring.
+> Earlier settings and verification results below are historical and do not
+> establish policy success for the accepted model.
+
+
 # Phase 10 Plan 04: Verify Generated URDF Against TWIN-01..05 Summary
 
 **`yourdfpy`-based independent load-and-assert verification (`scripts/verify_urdf.py` + `scripts/test_verify_urdf.py`) confirms Plan 10-03's generated `So-101/So-101.urdf` satisfies TWIN-01..05, using a standard third-party URDF parser rather than trusting the generator's own output.**

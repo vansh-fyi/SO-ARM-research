@@ -50,6 +50,13 @@ completed: 2026-09-19
 status: complete
 ---
 
+> **2026-09-20 established-model update:** [10-ESTABLISHED-MODEL.md](10-ESTABLISHED-MODEL.md)
+> is authoritative for the accepted Coppelia-aligned assembly, black housing,
+> yellow jaws, 0.036 m per-jaw cap, corrected starting pose and LIBERO wiring.
+> Earlier settings and verification results below are historical and do not
+> establish policy success for the accepted model.
+
+
 # Phase 10 Plan 05: TWIN-07 Gripper Direction Verification Summary
 
 **Human-in-the-loop real-vs-sim gripper direction check FAILED: real robot's positive command opens the jaws, sim's positive (+1) convention closes them — directions disagree, TWIN-07 unresolved, Phase 10 gap-closure required**

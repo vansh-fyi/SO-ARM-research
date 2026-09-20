@@ -21,8 +21,9 @@ class SoarmGripper(GripperModel):
 
     Two symmetric prismatic jaws (``gripper_left`` / ``gripper_right``) driven by
     one actuator each, collapsed to a single 1-D gripper action exactly like
-    robosuite's ``PandaGripper``. 84 mm full opening stroke (+/-42 mm per jaw) so
-    it can actually grasp LIBERO objects (stock jaw was too small).
+    robosuite's ``PandaGripper``. 36 mm travel per jaw (72 mm total change in
+    aperture). Geometry is registered to the user's saved Coppelia assembly;
+    its simplified collision pads span 6..78 mm, distinct from mesh-tip spacing.
 
     Class name is preserved so the Phase-4 collector / robot contract is
     unchanged; however TWIN-07 gap-closure (plan 260919-h8v) flipped the
@@ -47,9 +48,9 @@ class SoarmGripper(GripperModel):
 
         External ``action``: +1 => open, -1 => closed (post-TWIN-07-fix
         convention; see class docstring). current_action's sign maps to
-        physical position as: -1 => -0.042 (open), +1 => 0 (closed) — both
-        jaw actuators share ctrlrange [-0.042, 0] (flipped from the pre-fix
-        [0, 0.042] -- see soarm_gripper.xml). An OPEN command (external
+        physical position as: -1 => -0.036 (open), +1 => 0 (closed) — both
+        jaw actuators share ctrlrange [-0.036, 0] (flipped from the pre-fix
+        [0, 0.036] -- see soarm_gripper.xml). An OPEN command (external
         action=+1) drives both current_action elements toward -1; a CLOSE
         command (external action=-1) drives them toward +1. Mirrors
         PandaGripper's two-element integrated action (here both elements
@@ -73,7 +74,7 @@ class SoarmGripper(GripperModel):
 
     @property
     def init_qpos(self):
-        return np.array([-0.042, -0.042])  # both jaws fully open (84 mm total; faithful roboninecom stroke; TWIN-07 fix flipped the range to [-0.042, 0])
+        return np.array([-0.036, -0.036])  # open endpoint; Coppelia q=0.044 on each jaw
 
     @property
     def speed(self):

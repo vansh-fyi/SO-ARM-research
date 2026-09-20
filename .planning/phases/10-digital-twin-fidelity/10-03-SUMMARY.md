@@ -83,6 +83,13 @@ completed: 2026-09-19
 status: complete
 ---
 
+> **2026-09-20 established-model update:** [10-ESTABLISHED-MODEL.md](10-ESTABLISHED-MODEL.md)
+> is authoritative for the accepted Coppelia-aligned assembly, black housing,
+> yellow jaws, 0.036 m per-jaw cap, corrected starting pose and LIBERO wiring.
+> Earlier settings and verification results below are historical and do not
+> establish policy success for the accepted model.
+
+
 # Phase 10 Plan 03: Generate So-101.urdf from MJCF Summary
 
 **Hand-rolled `scripts/mjcf_to_urdf.py` (stdlib ElementTree, no MuJoCo runtime) regenerates `So-101/So-101.urdf` from `robot.xml` + `soarm_gripper.xml`, replacing the broken CoppeliaSim export's disconnected-gripper/absolute-path/missing-wrist_roll structure with a correct 9-link/8-joint chain.**

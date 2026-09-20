@@ -65,7 +65,10 @@ and unchanged from the original bowl investigation):
     (input_max/min), NOT raw metric offsets — so we apply a proportional gain
     ``KP_POS`` to the metric position error and clip to [-1, 1]. A ~0.05 m error
     saturates the command, giving brisk-but-stable motion within the step budget.
-  * Gripper convention (SoarmGripper.format_action): -1 => open, +1 => closed.
+  * Current gripper convention: +1 => open, -1 => closed. The accepted
+    2026-09-20 model uses 36 mm travel per jaw and a corrected wrist start pose.
+    The reach/success measurements above describe the older model; revalidate
+    the scripted policy before collecting research data with the new geometry.
 """
 
 import argparse

@@ -1,3 +1,10 @@
+# SOARM fork: established model
+
+For this repository's approved SO-101/Robonine model, installation, asset paths,
+36 mm jaw limits, and verification commands, see [SOARM_MODEL.md](SOARM_MODEL.md).
+Use this fork for SOARM work; the upstream installation instructions below do
+not include the custom model.
+
 <div align="center">
 <img src="https://github.com/Lifelong-Robot-Learning/LIBERO/blob/master/images/libero_logo.png" width="360">
 

@@ -63,6 +63,13 @@ completed: 2026-09-19
 status: complete
 ---
 
+> **2026-09-20 established-model update:** [10-ESTABLISHED-MODEL.md](10-ESTABLISHED-MODEL.md)
+> is authoritative for the accepted Coppelia-aligned assembly, black housing,
+> yellow jaws, 0.036 m per-jaw cap, corrected starting pose and LIBERO wiring.
+> Earlier settings and verification results below are historical and do not
+> establish policy success for the accepted model.
+
+
 # Phase 10 Plan 02: Gripper Clamp Visual Mesh Fix (D-04) Summary
 
 **Recentered the SOARM gripper's clamp visual mesh offsets in soarm_gripper.xml via iterative offscreen-render dialing, fixing the gear-tooth-poking-outside-housing bug (D-04); human-confirmed flush L-shape in both open and closed states, physics untouched.**

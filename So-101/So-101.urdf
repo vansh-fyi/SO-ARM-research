@@ -246,12 +246,26 @@
     <dynamics damping="0.60" friction="0.052" />
   </joint>
   <link name="right_hand">
-    <!-- right_hand has no visual/collision mesh - no mesh exists at this split point in the CoppeliaSim export (arm/gripper boundary) -->
     <inertial>
       <origin xyz="0.000213627 0.000245138 -0.025187" rpy="0 0 0" />
       <mass value="0.087" />
       <inertia ixx="2.75087e-05" ixy="-3.35241e-07" ixz="-5.7352e-06" iyy="4.33657e-05" iyz="-5.17847e-08" izz="3.45059e-05" />
     </inertial>
+    <visual>
+      <origin xyz="0.0114191235926 0.000634485894223 -0.0196791159805" rpy="-3.141582217 -1.161431329e-05 -3.141588966" />
+      <geometry>
+        <mesh filename="So-101_gripper_servo.stl" />
+      </geometry>
+      <material name="sts3215_03a_v1_material">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0114191235926 0.000634485894223 -0.0196791159805" rpy="-3.141582217 -1.161431329e-05 -3.141588966" />
+      <geometry>
+        <mesh filename="So-101_gripper_servo.stl" />
+      </geometry>
+    </collision>
   </link>
   <joint name="right_hand_to_gripper" type="fixed">
     <parent link="right_hand" />
@@ -259,70 +273,102 @@
     <origin xyz="0 0 0" rpy="0 0 0" />
   </joint>
   <link name="right_gripper">
-    <visual>
-      <origin xyz="-0.015 -0.064 -0.02975" rpy="1.570796327 0 1.570796327" />
-      <geometry>
-        <mesh filename="So-101_gripper_main_frame_visual.stl" scale="0.001 0.001 0.001" />
-      </geometry>
-    </visual>
     <inertial>
-      <origin xyz="0 0 -0.03" rpy="0 0 0" />
+      <origin xyz="0.0044 0.0003 -0.03" rpy="0 0 0" />
       <mass value="0.07" />
       <inertia ixx="6e-05" ixy="0" ixz="0" iyy="6e-05" iyz="0" izz="4e-05" />
     </inertial>
   </link>
-  <joint name="gripper_left" type="prismatic">
+  <joint name="gripper_mechanism_mount" type="fixed">
     <parent link="right_gripper" />
+    <child link="parallel_gripper_mechanism" />
+    <origin xyz="0.004443322423 0.000294707935691 0.000326451918819" rpy="-3.138416666 1.569999995 -3.089739806" />
+  </joint>
+  <link name="parallel_gripper_mechanism">
+    <visual>
+      <origin xyz="0.03699999989 -0.06400000006 -0.02975000013" rpy="1.570782266 -2.583139258e-11 1.570792653" />
+      <geometry>
+        <mesh filename="So-101_gripper_main_frame_visual.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="soarm_frame_material">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <visual>
+      <origin xyz="0.045 0 -0.005" rpy="3.141592654 -1.570796327 3.141592654" />
+      <geometry>
+        <cylinder radius="0.01" length="0.01" />
+      </geometry>
+      <material name="soarm_gear_material">
+        <color rgba="0.2 0.2 0.2 1" />
+      </material>
+    </visual>
+  </link>
+  <joint name="gripper_left" type="prismatic">
+    <parent link="parallel_gripper_mechanism" />
     <child link="gripper_left_jaw" />
     <origin xyz="0 0 0" rpy="0 0 0" />
     <axis xyz="0 1 0" />
-    <limit lower="-0.042" upper="0" effort="60" velocity="0.5" />
+    <limit lower="-0.036" upper="0" effort="60" velocity="0.5" />
     <dynamics damping="50" friction="0.5" />
   </joint>
   <link name="gripper_left_jaw">
     <visual>
-      <origin xyz="0.13701 -0.02348 0.14546" rpy="3.141592654 0 1.570796946" />
+      <origin xyz="-0.12741 0.006879999936 0.14606" rpy="3.14159 2.745340007e-10 -1.570792654" />
       <geometry>
         <mesh filename="So-101_gripper_clamp_left_visual.stl" scale="0.001 0.001 0.001" />
       </geometry>
+      <material name="soarm_jaw_material">
+        <color rgba="1 0.82 0.12 1" />
+      </material>
     </visual>
     <inertial>
-      <origin xyz="-0.052 -0.0092 0" rpy="0 0 0" />
+      <origin xyz="0.077 -0.012 -0.006" rpy="0 0 0" />
       <mass value="0.05" />
       <inertia ixx="4e-05" ixy="0" ixz="0" iyy="4e-05" iyz="0" izz="1e-05" />
     </inertial>
     <collision>
-      <origin xyz="-0.052 -0.0092 0" rpy="0 0 0" />
+      <origin xyz="0.077 -0.012 -0.006" rpy="0 0 0" />
       <geometry>
         <box size="0.044 0.018 0.04" />
       </geometry>
     </collision>
   </link>
   <joint name="gripper_right" type="prismatic">
-    <parent link="right_gripper" />
+    <parent link="parallel_gripper_mechanism" />
     <child link="gripper_right_jaw" />
     <origin xyz="0 0 0" rpy="0 0 0" />
     <axis xyz="0 -1 0" />
-    <limit lower="-0.042" upper="0" effort="60" velocity="0.5" />
+    <limit lower="-0.036" upper="0" effort="60" velocity="0.5" />
     <dynamics damping="50" friction="0.5" />
+    <mimic joint="gripper_left" multiplier="1" offset="0" />
   </joint>
   <link name="gripper_right_jaw">
     <visual>
-      <origin xyz="0.13707 0.00806 0.15835" rpy="3.141592654 0 1.570796946" />
+      <origin xyz="-0.12742 0.008099999943 0.14571" rpy="3.14159 -9.565827735e-10 -1.570792653" />
       <geometry>
         <mesh filename="So-101_gripper_clamp_right_visual.stl" scale="0.001 0.001 0.001" />
       </geometry>
+      <material name="soarm_jaw_material">
+        <color rgba="1 0.82 0.12 1" />
+      </material>
     </visual>
     <inertial>
-      <origin xyz="-0.052 0.0088 0" rpy="0 0 0" />
+      <origin xyz="0.077 0.012 -0.006" rpy="0 0 0" />
       <mass value="0.05" />
       <inertia ixx="4e-05" ixy="0" ixz="0" iyy="4e-05" iyz="0" izz="1e-05" />
     </inertial>
     <collision>
-      <origin xyz="-0.052 0.0088 0" rpy="0 0 0" />
+      <origin xyz="0.077 0.012 -0.006" rpy="0 0 0" />
       <geometry>
         <box size="0.044 0.018 0.04" />
       </geometry>
     </collision>
   </link>
+  <joint name="gripper_to_eef" type="fixed">
+    <parent link="right_gripper" />
+    <child link="eef" />
+    <origin xyz="-0.00161080382177 -0.000000415863769 -0.0766687457065" rpy="0 0 0" />
+  </joint>
+  <link name="eef" />
 </robot>

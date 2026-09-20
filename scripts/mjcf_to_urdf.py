@@ -53,6 +53,7 @@ list" carry-over this script's plan calls for.
 from __future__ import annotations
 
 import math
+import shutil
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -272,7 +273,8 @@ def make_link(
         if mesh_scale:
             mesh_attrs["scale"] = mesh_scale
         ET.SubElement(geometry, "mesh", **mesh_attrs)
-    link.append(inertial)
+    if inertial is not None:
+        link.append(inertial)
     return link
 
 
@@ -353,7 +355,10 @@ def main() -> None:
     )
 
     right_gripper_body = gripper_bodies["right_gripper"]
-    main_frame_geom = right_gripper_body.find("./geom[@name='main_frame_visual']")
+    mechanism_body = right_gripper_body.find("./body[@name='parallel_gripper_mechanism']")
+    if mechanism_body is None:
+        mechanism_body = right_gripper_body
+    main_frame_geom = mechanism_body.find("./geom[@name='main_frame_visual']")
     if main_frame_geom is None:
         sys.exit(f"ERROR: missing geom 'main_frame_visual' on body 'right_gripper' in {GRIPPER_XML}")
     left_jaw_visual_geom = gripper_bodies["gripper_left_jaw"].find("./geom[@name='left_jaw_visual']")
@@ -581,11 +586,22 @@ def main() -> None:
         make_link(
             "right_gripper",
             inertial_from_diaginertia(right_gripper_body),
-            visual_meshes=["So-101_gripper_main_frame_visual.stl"],
+            visual_meshes=["So-101_gripper_main_frame_visual.stl"] if mechanism_body is right_gripper_body else [],
             visual_origin=(xyz, rpy),
             mesh_scale="0.001 0.001 0.001",
         )
     )
+
+    # Preserve the measured mounting frame instead of flattening its transform.
+    jaw_parent = "right_gripper"
+    if mechanism_body is not right_gripper_body:
+        jaw_parent = mechanism_body.get("name")
+        mount_xyz, mount_rpy = body_origin_rpy(mechanism_body)
+        robot.append(make_joint("gripper_mechanism_mount", "fixed", "right_gripper",
+                                jaw_parent, mount_xyz, mount_rpy))
+        robot.append(make_link(jaw_parent, None,
+                               visual_meshes=["So-101_gripper_main_frame_visual.stl"],
+                               visual_origin=(xyz, rpy), mesh_scale="0.001 0.001 0.001"))
 
     # --- gripper_left joint + gripper_left_jaw link (TWIN-03) ---
     j = gripper_joints["gripper_left"]
@@ -594,7 +610,7 @@ def main() -> None:
         make_joint(
             "gripper_left",
             "prismatic",
-            "right_gripper",
+            jaw_parent,
             "gripper_left_jaw",
             "0 0 0",
             "0 0 0",
@@ -636,7 +652,7 @@ def main() -> None:
         make_joint(
             "gripper_right",
             "prismatic",
-            "right_gripper",
+            jaw_parent,
             "gripper_right_jaw",
             "0 0 0",
             "0 0 0",
@@ -668,6 +684,56 @@ def main() -> None:
     geometry = ET.SubElement(collision, "geometry")
     ET.SubElement(geometry, "box", size=box_size)
     robot.append(right_jaw_link)
+
+    # Keep the portable export synchronized with the approved MJCF, including
+    # parts formerly omitted at the arm/gripper split and per-part colours.
+    materials = {m.get("name"): m.get("rgba")
+                 for root in (robot_root, gripper_root) for m in root.findall("./asset/material")}
+    for link_name, geom in ((jaw_parent, main_frame_geom),
+                            ("gripper_left_jaw", left_jaw_visual_geom),
+                            ("gripper_right_jaw", right_jaw_visual_geom)):
+        visual = robot.find(f"./link[@name='{link_name}']/visual")
+        material = ET.SubElement(visual, "material", name=geom.get("material"))
+        ET.SubElement(material, "color", rgba=materials[geom.get("material")])
+
+    hand = robot.find("./link[@name='right_hand']")
+    for child in list(hand):
+        if child.tag is ET.Comment:
+            hand.remove(child)
+    for tag, geom_name in (("visual", "right_hand_servo_visual"), ("collision", "right_hand_servo_collision")):
+        geom = right_hand_body.find(f"./geom[@name='{geom_name}']")
+        xyz, rpy = geom_origin_rpy(geom)
+        element = ET.SubElement(hand, tag)
+        ET.SubElement(element, "origin", xyz=xyz, rpy=rpy)
+        geometry = ET.SubElement(element, "geometry")
+        ET.SubElement(geometry, "mesh", filename="So-101_gripper_servo.stl")
+        if tag == "visual":
+            material = ET.SubElement(element, "material", name=geom.get("material"))
+            ET.SubElement(material, "color", rgba=materials[geom.get("material")])
+    pinion = mechanism_body.find("./geom[@name='pinion_visual']")
+    xyz, rpy = geom_origin_rpy(pinion)
+    visual = ET.SubElement(robot.find(f"./link[@name='{jaw_parent}']"), "visual")
+    ET.SubElement(visual, "origin", xyz=xyz, rpy=rpy)
+    geometry = ET.SubElement(visual, "geometry")
+    radius, half_length = parse_floats(pinion.get("size"))
+    ET.SubElement(geometry, "cylinder", radius=str(radius), length=str(2*half_length))
+    material = ET.SubElement(visual, "material", name=pinion.get("material"))
+    ET.SubElement(material, "color", rgba=materials[pinion.get("material")])
+    ET.SubElement(robot.find("./joint[@name='gripper_right']"), "mimic",
+                  joint="gripper_left", multiplier="1", offset="0")
+    eef = gripper_root.find(".//body[@name='eef']")
+    xyz, rpy = body_origin_rpy(eef)
+    robot.append(make_joint("gripper_to_eef", "fixed", "right_gripper", "eef", xyz, rpy))
+    robot.append(ET.Element("link", name="eef"))
+
+    OUTPUT_URDF.parent.mkdir(parents=True, exist_ok=True)
+    for source, dest in (("main_frame_visual", "main_frame_visual"),
+                         ("clamp_1_visual", "clamp_left_visual"),
+                         ("clamp_2_visual", "clamp_right_visual")):
+        shutil.copyfile(GRIPPER_XML.parent / "soarm_parallel" / f"{source}.stl",
+                        OUTPUT_URDF.parent / f"So-101_gripper_{dest}.stl")
+    shutil.copyfile(ROBOT_XML.parent / "assets/sts3215_03a_v1.stl",
+                    OUTPUT_URDF.parent / "So-101_gripper_servo.stl")
 
     ET.indent(robot, space="  ")
     tree = ET.ElementTree(robot)

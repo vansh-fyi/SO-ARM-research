@@ -1,138 +1,61 @@
-<?xml version="1.0" ?>
-<!-- SOARM parallel-jaw gripper MJCF (SPIKE upgrade), robosuite 1.4 / MuJoCo 2.3.7.
-
-     Replaces the stock single-jaw SO101 gripper (too small to grasp any LIBERO
-     object) with the open-source roboninecom SO-ARM100/101 PARALLEL gripper
-     (84 mm stroke, 120 N, same STS3215 servo). Upstream:
-     https://github.com/roboninecom/SO-ARM100-101-Parallel-Gripper
-
-     Structure mirrors robosuite's panda_gripper.xml (two prismatic fingers, one
-     actuator each, single 1-D gripper action collapsed in SoarmGripper.format_action):
-       - root body "right_gripper" at identity (attaches onto the arm's right_hand)
-       - the arm holds a FIXED tool orientation at home: gripper local X -> world
-         +Z, local Y -> world +Y, local Z -> world -X. So the fingers extend along
-         local -X (= straight DOWN in the world, for a top-down grasp) and open
-         along local Y (= world-horizontal). The grip_site (eef) sits BETWEEN the
-         downward fingers so the Phase-4 FSM (which servos grip_site to the object)
-         drives a top-down approach.
-       - two symmetric slide jaws, 0..0.042 m each => 0.084 m (84 mm) max opening,
-         FAITHFUL to the real roboninecom 84 mm stroke. Grasps sub-84 mm objects
-         (most LIBERO objects: cans/boxes ~4-8 cm). NOT the akita_black_bowl
-         (~11 cm hollow — too big for an 84 mm jaw; use a sub-84 mm object).
-         Re-validation of grasp+place on a sub-84 mm in-reach object is the
-         pending Phase-4 step (the 12/12 validation was at the old 130 mm stroke).
-       - box collision "jaws" (clean convex contact, condim=4, high friction) drive
-         the physics; the real roboninecom clamp meshes are attached as VISUALS
-         (group 1, contype/conaffinity 0) recentred onto each finger for fidelity
-       - ft_frame site + force/torque sensors (SingleArm.control reads them each step)
-
-     Fidelity note: the upstream clamp STLs are baked in full-arm-assembly
-     coordinates; the visual geoms recentre them via a 180deg rotation about
-     (1,1,0) (quat 0 0.7071 0.7071 0: mesh +y -> local +X finger axis, mesh x ->
-     local Y opening) plus a computed translation. Grip physics use box pads, as
-     robosuite itself does for the Panda/Robotiq fingerpads. -->
+<?xml version='1.0' encoding='utf-8'?>
 <mujoco model="soarm_gripper">
+    <!-- Registered to the saved SO-ARM 101-parallel.ttm on 2026-09-20.
+         See diagnostics/COPPELIA_MUJOCO_ALIGNMENT.md for measured verification.
+         mechanism +X is finger approach; +/-Y is jaw travel. Its full transform
+         relative to right_hand is essential. STL coordinates remain in mm.
+         MJ q=0 corresponds to Coppelia q=0.008; MJ q=-0.036 to Coppelia q=0.044.
+         The verified rack equality and action/actuator interface are preserved.
+         Collision boxes reproduce the source jaw proxies, not tooth contacts.
+         Mass, friction and actuator parameters remain uncalibrated estimates. -->
     <asset>
-        <mesh name="soarm_clamp_left" file="soarm_parallel/clamp_1_visual.stl" scale="0.001 0.001 0.001"/>
-        <mesh name="soarm_clamp_right" file="soarm_parallel/clamp_2_visual.stl" scale="0.001 0.001 0.001"/>
-        <!-- Fixed Main frame (roboninecom RB9.01.062.010) that bolts to the wrist and
-             houses the gear/racks holding the two clamps. VISUAL-ONLY (the physics is
-             the box jaws + slide joints below); it was previously omitted, which left the
-             clamps rendering with no connecting structure ("floating claws"). The CAD part
-             is in its own corner-origin frame; a cyclic-axis rotation (quat 0.5 0.5 0.5 0.5)
-             maps mesh X->local Y (jaw-travel/opening), mesh Y->local Z, mesh Z->local X
-             (mount-face normal / approach). Placement dialed in via offscreen render so the
-             frame sits at the wrist mount and bridges to the jaws. -->
-        <mesh name="soarm_main_frame" file="soarm_parallel/main_frame_visual.stl" scale="0.001 0.001 0.001"/>
-        <material name="soarm_frame_material" rgba="0.55 0.57 0.6 1"/>
-        <material name="soarm_jaw_material" rgba="0.75 0.78 0.8 1"/>
+        <mesh name="soarm_clamp_left" file="soarm_parallel/clamp_1_visual.stl" scale="0.001 0.001 0.001" />
+        <mesh name="soarm_clamp_right" file="soarm_parallel/clamp_2_visual.stl" scale="0.001 0.001 0.001" />
+        <mesh name="soarm_main_frame" file="soarm_parallel/main_frame_visual.stl" scale="0.001 0.001 0.001" />
+        <material name="soarm_frame_material" rgba="0.1 0.1 0.1 1" />
+        <material name="soarm_jaw_material" rgba="1 0.82 0.12 1" />
+        <material name="soarm_gear_material" rgba="0.2 0.2 0.2 1" />
     </asset>
     <equality>
-        <!-- Real hardware has ONE motor driving a central gear that slaves both
-             jaw racks together (roboninecom parallel gripper mechanism); there
-             is no way to command the two jaws independently. Prior to this
-             constraint, gripper_left/gripper_right were two fully independent
-             actuators kept in sync ONLY by SoarmGripper.format_action always
-             sending them identical ctrl values in software; nothing in the
-             physics model itself enforced that. This equality constraint makes
-             the coupling mechanically real: gripper_right_qpos is forced equal
-             to gripper_left_qpos (both share the same axis-vs-range convention,
-             so no negation/offset needed) regardless of what drives the ctrl
-             inputs. Both actuators are kept (not reduced to one) to avoid
-             changing SoarmGripper's 2-element current_action / robosuite
-             actuator-count contract; the constraint bounds the second
-             actuator's authority to whatever gripper_left is doing. -->
-        <joint joint1="gripper_right" joint2="gripper_left" polycoef="0 1 0 0 0"/>
+        <joint joint1="gripper_right" joint2="gripper_left" polycoef="0 1 0 0 0" />
     </equality>
     <actuator>
-        <!-- One position actuator per jaw. Post-TWIN-07-fix polarity: ctrl=0
-             (qpos=0) stays CLOSED; ctrl=-0.042 (qpos=-0.042) is now OPEN,
-             the reverse of the pre-fix convention. See
-             SoarmGripper.format_action and Phase 10 gap-closure plan
-             260919-h8v for the derivation.
-             kp high + strong forcerange to emulate the 120 N grip spec. -->
-        <position ctrllimited="true" ctrlrange="-0.042 0" joint="gripper_left" kp="1000" name="gripper_left" forcelimited="true" forcerange="-60 60"/>
-        <position ctrllimited="true" ctrlrange="-0.042 0" joint="gripper_right" kp="1000" name="gripper_right" forcelimited="true" forcerange="-60 60"/>
+        <position ctrllimited="true" ctrlrange="-0.036 0" joint="gripper_left" kp="1000" name="gripper_left" forcelimited="true" forcerange="-60 60" />
+        <position ctrllimited="true" ctrlrange="-0.036 0" joint="gripper_right" kp="1000" name="gripper_right" forcelimited="true" forcerange="-60 60" />
     </actuator>
     <worldbody>
         <body name="right_gripper" pos="0 0 0" quat="1 0 0 0">
-            <site name="ft_frame" pos="0 0 0" size="0.01 0.01 0.01" rgba="1 0 0 1" type="sphere" group="1"/>
-            <!-- Fixed Main frame visual (bolts to wrist, houses gear/racks). See asset note. -->
-            <geom type="mesh" mesh="soarm_main_frame" material="soarm_frame_material" contype="0" conaffinity="0" group="1" pos="-0.015 -0.064 -0.02975" quat="0.5 0.5 0.5 0.5" name="main_frame_visual"/>
-            <!-- Mount/base share of the assembly mass (~0.17 kg total; the two
-                 jaws carry the rest). -->
-            <inertial pos="0 0 -0.03" mass="0.07" diaginertia="6e-05 6e-05 4e-05"/>
-            <!-- EEF / grip_site sits BETWEEN the downward fingers. At the arm's
-                 fixed home tool pose local -X -> world -Z, so the grip point is
-                 placed along local -X (= straight down in the world). -->
-            <body name="eef" pos="-0.052 -0.0002 0.0" quat="1 0 0 0">
-                <site name="grip_site" pos="0 0 0" size="0.01 0.01 0.01" rgba="1 0 0 0.5" type="sphere" group="1"/>
-                <site name="ee" pos="0 0 0" size="0.01 0.01 0.01" rgba="0 0 1 0" type="sphere" group="1"/>
-                <site name="ee_x" pos="0.1 0 0" size="0.005 .1" quat="0.707105 0 0.707108 0" rgba="1 0 0 0" type="cylinder" group="1"/>
-                <site name="ee_y" pos="0 0.1 0" size="0.005 .1" quat="0.707105 0.707108 0 0" rgba="0 1 0 0" type="cylinder" group="1"/>
-                <site name="ee_z" pos="0 0 0.1" size="0.005 .1" quat="1 0 0 0" rgba="0 0 1 0" type="cylinder" group="1"/>
-                <site name="grip_site_cylinder" pos="0 0 0" size="0.005 10" rgba="0 1 0 0.3" type="cylinder" group="1"/>
+            <site name="ft_frame" pos="0 0 0" size="0.01 0.01 0.01" rgba="1 0 0 1" type="sphere" group="1" />
+            <inertial pos="0.0044 0.0003 -0.03" mass="0.07" diaginertia="6e-05 6e-05 4e-05" />
+            <body name="eef" pos="-0.00161080382177 -0.000000415863769 -0.0766687457065" quat="1 0 0 0">
+                <site name="grip_site" pos="0 0 0" size="0.01 0.01 0.01" rgba="1 0 0 0.5" type="sphere" group="1" />
+                <site name="ee" pos="0 0 0" size="0.01 0.01 0.01" rgba="0 0 1 0" type="sphere" group="1" />
+                <site name="ee_x" pos="0.1 0 0" size="0.005 .1" quat="0.707105 0 0.707108 0" rgba="1 0 0 0" type="cylinder" group="1" />
+                <site name="ee_y" pos="0 0.1 0" size="0.005 .1" quat="0.707105 0.707108 0 0" rgba="0 1 0 0" type="cylinder" group="1" />
+                <site name="ee_z" pos="0 0 0.1" size="0.005 .1" quat="1 0 0 0" rgba="0 0 1 0" type="cylinder" group="1" />
+                <site name="grip_site_cylinder" pos="0 0 0" size="0.005 10" rgba="0 1 0 0.3" type="cylinder" group="1" />
             </body>
-            <!-- Fingers extend along LOCAL -X (= world -Z, DOWN, at the arm's fixed
-                 home tool orientation: local X->world+Z, local Y->world+Y,
-                 local Z->world-X). Opening is along LOCAL Y (= world +Y,
-                 horizontal). Grip line: local (x in [-0.03,-0.10], y=-0.0002).
-                 Real roboninecom clamp meshes attached as VISUALS via a 180deg
-                 rotation about (1,1,0) (quat 0 0.7071 0.7071 0): mesh finger-length
-                 (mesh +y) -> local +X, mesh opening (mesh x) -> local Y. -->
-            <!-- LEFT jaw: opens toward -y (axis 0 1 0, range -0.042..0, TWIN-07
-                 gap-closure fix). qpos=0 stays at the touching-closed geometry;
-                 qpos=-0.042 reaches the same 84mm-apart open position as
-                 before, just re-labeled per plan 260919-h8v's derivation. -->
-            <body name="gripper_left_jaw" pos="0 0 0" quat="1 0 0 0">
-                <joint name="gripper_left" type="slide" axis="0 1 0" limited="true" range="-0.042 0" damping="50" armature="1.0" frictionloss="0.5"/>
-                <inertial pos="-0.052 -0.0092 0" mass="0.05" diaginertia="4e-05 4e-05 1e-05"/>
-                <!-- D-04 fix: clamp visual recentered via iterative offscreen-render dialing
-                     (diagnostics/render_gripper_clamp.py), see Phase 10 CONTEXT.md D-04.
-                     Previous pos left the gear-tooth mesh detail poking outside
-                     main_frame_visual's housing. -->
-                <geom type="mesh" mesh="soarm_clamp_left" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="0.13701 -0.02348 0.14546" quat="0 0.707107 0.707107 0" name="left_jaw_visual"/>
-                <!-- box collision jaw (fingers point down, local -X): inner (+y) face at grip line y=-0.0002 -->
-                <geom type="box" size="0.022 0.009 0.020" pos="-0.052 -0.0092 0" group="0" contype="1" conaffinity="1" condim="4" solref="0.01 1" friction="2 0.05 0.0001" name="left_jaw_collision"/>
-            </body>
-            <!-- RIGHT jaw: opens toward +y (axis 0 -1 0, range -0.042..0, TWIN-07
-                 gap-closure fix). qpos=0 stays at the touching-closed geometry;
-                 qpos=-0.042 reaches the same 84mm-apart open position as
-                 before, just re-labeled per plan 260919-h8v's derivation. -->
-            <body name="gripper_right_jaw" pos="0 0 0" quat="1 0 0 0">
-                <joint name="gripper_right" type="slide" axis="0 -1 0" limited="true" range="-0.042 0" damping="50" armature="1.0" frictionloss="0.5"/>
-                <inertial pos="-0.052 0.0088 0" mass="0.05" diaginertia="4e-05 4e-05 1e-05"/>
-                <!-- D-04 fix: clamp visual recentered via iterative offscreen-render dialing
-                     (diagnostics/render_gripper_clamp.py), see Phase 10 CONTEXT.md D-04.
-                     Previous pos left the gear-tooth mesh detail poking outside
-                     main_frame_visual's housing. -->
-                <geom type="mesh" mesh="soarm_clamp_right" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="0.13707 0.00806 0.15835" quat="0 0.707107 0.707107 0" name="right_jaw_visual"/>
-                <geom type="box" size="0.022 0.009 0.020" pos="-0.052 0.0088 0" group="0" contype="1" conaffinity="1" condim="4" solref="0.01 1" friction="2 0.05 0.0001" name="right_jaw_collision"/>
+            <body name="parallel_gripper_mechanism" pos="0.004443322423 0.000294707935691 0.000326451918819" quat="0.70661586601 -0.0172159141252 0.707178743779 0.0172004229618">
+                <geom type="mesh" mesh="soarm_main_frame" material="soarm_frame_material" contype="0" conaffinity="0" group="1" pos="0.03699999989 -0.06400000006 -0.02975000013" quat="0.5000044338 0.4999974033 0.4999955662 0.5000025967" name="main_frame_visual" />
+                <!-- Source Gear is a cylinder; equality supplies the rack coupling. -->
+                <geom type="cylinder" name="pinion_visual" pos="0.045 0 -0.005" quat="0.707106781187 0 -0.707106781187 0" size="0.01 0.005" material="soarm_gear_material" contype="0" conaffinity="0" group="1" />
+                <body name="gripper_left_jaw" pos="0 0 0" quat="1 0 0 0">
+                    <joint name="gripper_left" type="slide" axis="0 1 0" limited="true" range="-0.036 0" damping="50" armature="1.0" frictionloss="0.5" />
+                    <inertial pos="0.077 -0.012 -0.006" mass="0.05" diaginertia="4e-05 4e-05 1e-05" />
+                    <geom type="mesh" mesh="soarm_clamp_left" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="-0.12741 0.006879999936 0.14606" quat="0.0000009381547174 0.7071080799 -0.7071054825 -0.0000009383453958" name="left_jaw_visual" />
+                    <geom type="box" size="0.022 0.009 0.020" pos="0.077 -0.012 -0.006" group="0" contype="1" conaffinity="1" condim="4" solref="0.01 1" friction="2 0.05 0.0001" name="left_jaw_collision" />
+                </body>
+                <body name="gripper_right_jaw" pos="0 0 0" quat="1 0 0 0">
+                    <joint name="gripper_right" type="slide" axis="0 -1 0" limited="true" range="-0.036 0" damping="50" armature="1.0" frictionloss="0.5" />
+                    <inertial pos="0.077 0.012 -0.006" mass="0.05" diaginertia="4e-05 4e-05 1e-05" />
+                    <geom type="mesh" mesh="soarm_clamp_right" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="-0.12742 0.008099999943 0.14571" quat="0.0000009385312933 0.7071080802 -0.7071054822 -0.0000009378514401" name="right_jaw_visual" />
+                    <geom type="box" size="0.022 0.009 0.020" pos="0.077 0.012 -0.006" group="0" contype="1" conaffinity="1" condim="4" solref="0.01 1" friction="2 0.05 0.0001" name="right_jaw_collision" />
+                </body>
             </body>
         </body>
     </worldbody>
     <sensor>
-        <force name="force_ee" site="ft_frame"/>
-        <torque name="torque_ee" site="ft_frame"/>
+        <force name="force_ee" site="ft_frame" />
+        <torque name="torque_ee" site="ft_frame" />
     </sensor>
 </mujoco>

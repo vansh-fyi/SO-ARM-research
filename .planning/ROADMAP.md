@@ -271,6 +271,12 @@ Plans:
 
 ### Phase 10: Digital-Twin Fidelity
 
+**Established model accepted 2026-09-20:** Coppelia-registered assembly, black
+housing, yellow jaws, 0.036 m travel per jaw, mechanical coupling and corrected
+LIBERO starting pose. [Accepted configuration and source inventory](phases/10-digital-twin-fidelity/10-ESTABLISHED-MODEL.md)
+supersede the original assumptions below. Geometry/runtime integration are
+verified; task-success and hardware-dynamics revalidation remain separate.
+
 **Goal**: The URDF and the MuJoCo XML (`LIBERO/libero/libero/assets/robots/soarm101/robot.xml`) form a correct, complete, 1:1 kinematic match to the real SO-ARM101 — a proper parent/child chain ending at the gripper, `wrist_roll` and gripper jaw joints restored with correct axes/direction, correct joint limits, and in-repo mesh paths. This is sim-side-only work; it does not touch the real robot or the `control/` bridge.
 **Mode:** mvp
 **Depends on**: Nothing new (independent of Phase 9's paused work; parallel-capable with Phase 11 — see Overview for reasoning)

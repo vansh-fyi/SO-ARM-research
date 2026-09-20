@@ -1,3 +1,10 @@
+
+> **2026-09-20 established-model update:** [10-ESTABLISHED-MODEL.md](10-ESTABLISHED-MODEL.md)
+> is authoritative for the accepted Coppelia-aligned assembly, black housing,
+> yellow jaws, 0.036 m per-jaw cap, corrected starting pose and LIBERO wiring.
+> Earlier settings and verification results below are historical and do not
+> establish policy success for the accepted model.
+
 # Phase 10: Digital-Twin Fidelity - Discussion Log
 
 > **Audit trail only.** Do not use as input to planning, research, or execution agents.

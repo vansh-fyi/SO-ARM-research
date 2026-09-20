@@ -52,7 +52,10 @@ class MountedSoarm101(ManipulatorModel):
 
     @property
     def init_qpos(self):
-        return np.zeros(5)  # D-07: new-calib zero IS the documented home pose
+        # Saved Coppelia reference pose: the parallel gripper points down with
+        # wrist_flex at ~88 degrees. Joint calibration/zero definitions are
+        # unchanged; this is only the initial simulation configuration.
+        return np.array([0.0, 0.0, 0.0, 1.5355350971152681, 0.0])
 
     @property
     def base_xpos_offset(self):

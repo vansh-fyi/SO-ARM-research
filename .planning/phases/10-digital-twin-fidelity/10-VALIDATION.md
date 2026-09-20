@@ -1,13 +1,33 @@
 ---
 phase: 10
 slug: digital-twin-fidelity
-status: draft
+status: established_model_accepted
+current_model_full_suite: pending
 nyquist_compliant: true
 wave_0_complete: false
 created: 2026-09-18
 ---
 
+> **2026-09-20 established-model update:** [10-ESTABLISHED-MODEL.md](10-ESTABLISHED-MODEL.md)
+> is authoritative for the accepted Coppelia-aligned assembly, black housing,
+> yellow jaws, 0.036 m per-jaw cap, corrected starting pose and LIBERO wiring.
+> Earlier settings and verification results below are historical and do not
+> establish policy success for the accepted model.
+
+
 # Phase 10 — Validation Strategy
+
+## Current accepted-model checks (2026-09-20)
+
+The accepted model passes the Coppelia geometry/coupling tests, URDF tests and
+LIBERO RGB/depth reset/render integration. Run:
+
+`python -m pytest diagnostics/test_coppelia_alignment.py scripts/test_verify_urdf.py LIBERO/libero/libero/envs/test_camera_config.py -q`
+
+Use `python diagnostics/verify_coppelia_alignment.py` for the 132 numerical
+geometry comparisons. User visual acceptance is complete, including the final
+36 mm cap. The original planning checklist below is historical. Its full-suite
+and collection-success gate has not been re-established for the new geometry.
 
 > Per-phase validation contract for feedback sampling during execution.
 

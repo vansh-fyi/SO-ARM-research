@@ -17,6 +17,7 @@ repo-root anchoring pattern, since this test needs no `libero.*` imports).
 """
 import math
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -31,6 +32,29 @@ import verify_urdf
 # silently pass if both modules' constants drifted together.
 WRIST_ROLL_LOWER = -2.7438472969992493
 WRIST_ROLL_UPPER = 2.841206309382605
+
+
+def test_established_gripper_export_matches_approved_configuration():
+    root = Path(__file__).resolve().parents[1]
+    urdf = ET.parse(root / "So-101/So-101.urdf").getroot()
+    mjcf = ET.parse(root / "LIBERO/libero/libero/assets/grippers/soarm_gripper.xml").getroot()
+    for name in ("gripper_left", "gripper_right"):
+        limit = urdf.find(f"./joint[@name='{name}']/limit")
+        assert float(limit.get("lower")) == -.036
+        assert float(limit.get("upper")) == 0
+        assert [float(x) for x in mjcf.find(f".//joint[@name='{name}']").get("range").split()] == [-.036, 0]
+        assert [float(x) for x in mjcf.find(f"./actuator/position[@joint='{name}']").get("ctrlrange").split()] == [-.036, 0]
+    mimic = urdf.find("./joint[@name='gripper_right']/mimic")
+    assert mimic.get("joint") == "gripper_left"
+    for name, rgba in (("parallel_gripper_mechanism", [0.1,0.1,0.1,1]),
+                       ("gripper_left_jaw", [1,.82,.12,1]),
+                       ("gripper_right_jaw", [1,.82,.12,1])):
+        color = urdf.find(f"./link[@name='{name}']/visual/material/color")
+        assert [float(x) for x in color.get("rgba").split()] == rgba
+    mesh = urdf.find("./link[@name='right_hand']/visual/geometry/mesh")
+    assert (root / "So-101" / mesh.get("filename")).read_bytes() == (root / "LIBERO/libero/libero/assets/robots/soarm101/assets/sts3215_03a_v1.stl").read_bytes()
+    assert urdf.find("./link[@name='parallel_gripper_mechanism']/visual/geometry/cylinder") is not None
+    assert urdf.find("./joint[@name='gripper_to_eef']/child").get("link") == "eef"
 
 # Regression guard against Pitfall 1: the naive full-turn calibration-
 # derived value that must NOT have leaked into wrist_roll's URDF limit.
