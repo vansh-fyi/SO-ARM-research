@@ -38,11 +38,8 @@ CAM_DISTANCE_FRONTAL = 0.3
 CAM_AZIMUTH_FRONTAL = 0
 CAM_ELEVATION_FRONTAL = 0
 
-# (jaw_value, output_filename_suffix) -- open (-0.036, jaws fully apart) and
-# closed (0.0, jaws together). Post-TWIN-07-fix range is [-0.036, 0] (was
-# [0, 0.036] before the gripper axis/range polarity flip); qpos=-0.036 is
-# now the open end, qpos=0 is still closed (see soarm_gripper.xml).
-JAW_STATES = [(-0.036, "open"), (0.0, "closed")]
+# Increasing jaw position opens: 0 is closed, 0.036 is fully open.
+JAW_STATES = [(0.036, "open"), (0.0, "closed")]
 
 
 def main():

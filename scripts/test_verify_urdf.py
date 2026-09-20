@@ -40,10 +40,10 @@ def test_established_gripper_export_matches_approved_configuration():
     mjcf = ET.parse(root / "LIBERO/libero/libero/assets/grippers/soarm_gripper.xml").getroot()
     for name in ("gripper_left", "gripper_right"):
         limit = urdf.find(f"./joint[@name='{name}']/limit")
-        assert float(limit.get("lower")) == -.036
-        assert float(limit.get("upper")) == 0
-        assert [float(x) for x in mjcf.find(f".//joint[@name='{name}']").get("range").split()] == [-.036, 0]
-        assert [float(x) for x in mjcf.find(f"./actuator/position[@joint='{name}']").get("ctrlrange").split()] == [-.036, 0]
+        assert float(limit.get("lower")) == 0
+        assert float(limit.get("upper")) == .036
+        assert [float(x) for x in mjcf.find(f".//joint[@name='{name}']").get("range").split()] == [0, .036]
+        assert [float(x) for x in mjcf.find(f"./actuator/position[@joint='{name}']").get("ctrlrange").split()] == [0, .036]
     mimic = urdf.find("./joint[@name='gripper_right']/mimic")
     assert mimic.get("joint") == "gripper_left"
     for name, rgba in (("parallel_gripper_mechanism", [0.1,0.1,0.1,1]),
@@ -91,11 +91,11 @@ def test_gripper_joint_axes(robot):
     opposing jaw-travel axes."""
     left = robot.joint_map["gripper_left"]
     assert left.type == "prismatic"
-    assert list(left.axis) == [0, 1, 0]
+    assert list(left.axis) == [0, -1, 0]
 
     right = robot.joint_map["gripper_right"]
     assert right.type == "prismatic"
-    assert list(right.axis) == [0, -1, 0]
+    assert list(right.axis) == [0, 1, 0]
 
 
 def test_no_absolute_mesh_paths(robot):

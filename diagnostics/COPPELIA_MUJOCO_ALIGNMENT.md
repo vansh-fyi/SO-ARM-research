@@ -7,10 +7,17 @@ The source model was loaded and read, not edited by the conversion tools.
 
 **Appearance/travel update:** the user subsequently requested a black housing,
 yellow jaws matching the arm (`1 0.82 0.12`), and a 36 mm per-jaw travel cap.
-The current open endpoint is MuJoCo -0.036 (Coppelia-equivalent 0.044), with
+The current open endpoint is MuJoCo +0.036 (Coppelia-equivalent 0.044), with
 72 mm total aperture change and 6..78 mm collision-proxy separation. The table
 and 42 mm source interval below describe the original captured reference.
 Verification now samples the reduced range; the source fixture stays unchanged.
+
+**Positive-opening coordinate update (2026-09-20):** at the user's request,
+both jaw axes and coordinate signs were reversed without moving any geometry.
+The current range is `[0, 0.036]`, closed to open; source mapping is now
+`Coppelia q = 0.008 + MuJoCo q`. The LIBERO action adapter was also reversed,
+preserving external `+1 = open`, `-1 = close`. Negative joint coordinates in
+the historical investigation below describe the superseded convention.
 
 ## What was wrong
 

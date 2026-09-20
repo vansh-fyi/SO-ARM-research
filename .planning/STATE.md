@@ -70,7 +70,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
 - **Phase 10 established model (2026-09-20):** User accepted the complete
-  Coppelia-aligned assembly. Black housing, yellow jaws, `[-0.036, 0]` joint and
+  Coppelia-aligned assembly. Black housing, yellow jaws, `[0, 0.036]` joint and
   actuator ranges, `+1` opens / `-1` closes, mechanical jaw equality, ~88°
   wrist-flex initial pose. This supersedes earlier 84 mm aperture and visual-only
   correction assumptions. See [10-ESTABLISHED-MODEL.md](phases/10-digital-twin-fidelity/10-ESTABLISHED-MODEL.md).

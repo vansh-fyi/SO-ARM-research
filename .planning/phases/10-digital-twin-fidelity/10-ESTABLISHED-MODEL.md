@@ -21,19 +21,30 @@ assembly; future changes require a concrete reason and regression verification.
 | Arm / gripper | SO-101 / Robonine parallel gripper |
 | Housing RGBA | `0.1 0.1 0.1 1` |
 | Jaw RGBA | `1 0.82 0.12 1`, matching arm yellow |
-| Both slide joint ranges | `[-0.036, 0]` metres |
-| Both position-actuator ctrlranges | `[-0.036, 0]` metres |
-| Open / closed jaw q | `-0.036` / `0` |
+| Both slide joint ranges | `[0, 0.036]` metres |
+| Both position-actuator ctrlranges | `[0, 0.036]` metres |
+| Open / closed jaw q | `0.036` / `0` |
 | Total change in aperture | 72 mm; distinct from proxy aperture 6..78 mm |
 | External action | `+1` opens, `-1` closes |
 | Mechanical coupling | `gripper_right = gripper_left` joint equality |
 | Arm initial q (radians) | `[0, 0, 0, 1.5355350971152681, 0]` |
-| Gripper initial q | `[-0.036, -0.036]` |
+| Gripper initial q | `[0.036, 0.036]` |
 | Arm calibration / limits | Unchanged by assembly correction |
 
 The final cap intentionally uses less travel than the captured Coppelia interval
-`[0.008, 0.050]`. Reference mapping is `Coppelia q = 0.008 - MuJoCo q`.
+`[0.008, 0.050]`. Reference mapping is `Coppelia q = 0.008 + MuJoCo q`.
 Do not restore the earlier 42 mm or intermediate 40 mm caps.
+
+### Positive-opening coordinate revision — 2026-09-20
+
+The user requested increasing position to open, matching Coppelia and the
+physical arm's convention. Both axes were negated and joint/actuator ranges
+changed from `[-0.036, 0]` to `[0, 0.036]`; all mesh, mounting, contact and
+inertial placements remain unchanged. The LIBERO integrated-action sign was
+reversed too, preserving external `+1 = open`, `-1 = close`. Earlier Phase 10
+records of negative opening coordinates are superseded by this section.
+Old recorded jaw positions/velocities require sign conversion before use with
+the new model; this does not change hardware calibration or motor limits.
 
 ## Decisions superseding the original context
 
@@ -84,7 +95,7 @@ coupling, URDF structure/calibration/assets/appearance, and real LIBERO reset
 with RGB/depth rendering. Live viewer O/C opening and closing were inspected;
 the user accepted the final 36 mm configuration.
 
-Current focused result: **10 passed** (2 geometry/coupling, 6 URDF/configuration,
+Current focused result: **11 passed** (3 geometry/coupling/action, 6 URDF/configuration,
 2 LIBERO camera integration). Package manifest generation includes the canonical
 robot/gripper XML, meshes, registration code and task resources.
 

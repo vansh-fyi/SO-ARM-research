@@ -12,7 +12,7 @@ LIBERO runs the canonical MJCF assets directly:
 - [Gripper](../LIBERO/libero/libero/assets/grippers/soarm_gripper.xml)
 
 The accepted configuration has black gripper housing, yellow jaws, and
-**0.036 m travel per jaw** (joint range `[-0.036, 0]`). See the
+**0.036 m travel per jaw** (joint range `[0, 0.036]`). See the
 [runtime model guide](../LIBERO/SOARM_MODEL.md) and
 [Phase 10 acceptance / Phase 11 handoff](../.planning/phases/10-digital-twin-fidelity/10-ESTABLISHED-MODEL.md).
 

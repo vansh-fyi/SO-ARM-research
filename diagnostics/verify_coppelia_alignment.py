@@ -146,9 +146,9 @@ def verify(model, data, reference):
     results = []
     for pose_name, offset in (("reference", np.zeros(5)), ("wrist_rotated", [0,0,0,0,.8]), ("arm_moved", [.2,-.3,.4,-.5,-.4])):
         positions = {name: baseline[name]+offset[i] for i, name in enumerate(ARM_JOINTS)}
-        for jaw in (0, -.012, -.018, -.036):
+        for jaw in (0, .012, .018, .036):
             set_pose(model, data, positions, jaw)
-            matrices = source_matrices(objects, dict(positions, parallel_gripper_left=.008-jaw, parallel_gripper_right=.008-jaw))
+            matrices = source_matrices(objects, dict(positions, parallel_gripper_left=.008+jaw, parallel_gripper_right=.008+jaw))
             for geom, source in SHAPES.items():
                 pose = align @ matrices[source]
                 points = np.array(objects[source]["vertices"]).reshape(-1,3) @ pose[:3,:3].T + pose[:3,3]
@@ -183,7 +183,7 @@ def render(model, data, baseline):
     model.site_rgba[:,3] = 0
     images = []
     try:
-        for label, jaw in (("reference", -.012), ("closed", 0), ("open", -.036)):
+        for label, jaw in (("reference", .012), ("closed", 0), ("open", .036)):
             set_pose(model, data, baseline, jaw)
             for azimuth in (60, 150, 240, 330):
                 camera = mujoco.MjvCamera()
@@ -227,10 +227,10 @@ def main():
         render(model, data, baseline)
     if args.view:
         from mujoco import viewer as mj_viewer
-        set_pose(model, data, baseline, -.012)
+        set_pose(model, data, baseline, .012)
         def keypress(key):
             if key in (ord("O"), ord("C")):
-                jaw = -.036 if key == ord("O") else 0
+                jaw = .036 if key == ord("O") else 0
                 set_pose(model, data, baseline, jaw)
         with mj_viewer.launch_passive(model, data, key_callback=keypress) as viewer:
             viewer.cam.lookat[:] = [.125,0,.13]

@@ -4,7 +4,7 @@
          See diagnostics/COPPELIA_MUJOCO_ALIGNMENT.md for measured verification.
          mechanism +X is finger approach; +/-Y is jaw travel. Its full transform
          relative to right_hand is essential. STL coordinates remain in mm.
-         MJ q=0 corresponds to Coppelia q=0.008; MJ q=-0.036 to Coppelia q=0.044.
+         MJ q=0 corresponds to Coppelia q=0.008; MJ q=0.036 to Coppelia q=0.044.
          The verified rack equality and action/actuator interface are preserved.
          Collision boxes reproduce the source jaw proxies, not tooth contacts.
          Mass, friction and actuator parameters remain uncalibrated estimates. -->
@@ -20,8 +20,8 @@
         <joint joint1="gripper_right" joint2="gripper_left" polycoef="0 1 0 0 0" />
     </equality>
     <actuator>
-        <position ctrllimited="true" ctrlrange="-0.036 0" joint="gripper_left" kp="1000" name="gripper_left" forcelimited="true" forcerange="-60 60" />
-        <position ctrllimited="true" ctrlrange="-0.036 0" joint="gripper_right" kp="1000" name="gripper_right" forcelimited="true" forcerange="-60 60" />
+        <position ctrllimited="true" ctrlrange="0 0.036" joint="gripper_left" kp="1000" name="gripper_left" forcelimited="true" forcerange="-60 60" />
+        <position ctrllimited="true" ctrlrange="0 0.036" joint="gripper_right" kp="1000" name="gripper_right" forcelimited="true" forcerange="-60 60" />
     </actuator>
     <worldbody>
         <body name="right_gripper" pos="0 0 0" quat="1 0 0 0">
@@ -40,13 +40,13 @@
                 <!-- Source Gear is a cylinder; equality supplies the rack coupling. -->
                 <geom type="cylinder" name="pinion_visual" pos="0.045 0 -0.005" quat="0.707106781187 0 -0.707106781187 0" size="0.01 0.005" material="soarm_gear_material" contype="0" conaffinity="0" group="1" />
                 <body name="gripper_left_jaw" pos="0 0 0" quat="1 0 0 0">
-                    <joint name="gripper_left" type="slide" axis="0 1 0" limited="true" range="-0.036 0" damping="50" armature="1.0" frictionloss="0.5" />
+                    <joint name="gripper_left" type="slide" axis="0 -1 0" limited="true" range="0 0.036" damping="50" armature="1.0" frictionloss="0.5" />
                     <inertial pos="0.077 -0.012 -0.006" mass="0.05" diaginertia="4e-05 4e-05 1e-05" />
                     <geom type="mesh" mesh="soarm_clamp_left" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="-0.12741 0.006879999936 0.14606" quat="0.0000009381547174 0.7071080799 -0.7071054825 -0.0000009383453958" name="left_jaw_visual" />
                     <geom type="box" size="0.022 0.009 0.020" pos="0.077 -0.012 -0.006" group="0" contype="1" conaffinity="1" condim="4" solref="0.01 1" friction="2 0.05 0.0001" name="left_jaw_collision" />
                 </body>
                 <body name="gripper_right_jaw" pos="0 0 0" quat="1 0 0 0">
-                    <joint name="gripper_right" type="slide" axis="0 -1 0" limited="true" range="-0.036 0" damping="50" armature="1.0" frictionloss="0.5" />
+                    <joint name="gripper_right" type="slide" axis="0 1 0" limited="true" range="0 0.036" damping="50" armature="1.0" frictionloss="0.5" />
                     <inertial pos="0.077 0.012 -0.006" mass="0.05" diaginertia="4e-05 4e-05 1e-05" />
                     <geom type="mesh" mesh="soarm_clamp_right" material="soarm_jaw_material" contype="0" conaffinity="0" group="1" pos="-0.12742 0.008099999943 0.14571" quat="0.0000009385312933 0.7071080802 -0.7071054822 -0.0000009378514401" name="right_jaw_visual" />
                     <geom type="box" size="0.022 0.009 0.020" pos="0.077 0.012 -0.006" group="0" contype="1" conaffinity="1" condim="4" solref="0.01 1" friction="2 0.05 0.0001" name="right_jaw_collision" />

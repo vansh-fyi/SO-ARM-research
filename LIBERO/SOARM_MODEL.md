@@ -11,14 +11,19 @@ per jaw**. This is the authoritative model for this LIBERO fork.
 - `libero/libero/envs/robots/soarm.py`: `MountedSoarm101`, initial joints
   `[0, 0, 0, 1.5355350971152681, 0]` radians.
 - `libero/libero/envs/grippers/soarm_gripper.py`: `SoarmGripper`, initial jaws
-  `[-0.036, -0.036]`; external action **+1 opens, -1 closes**.
+  `[0.036, 0.036]`; external action **+1 opens, -1 closes**.
 - `libero/libero/envs/robots/__init__.py` registers both models with robosuite.
 
 Use `robots=["Soarm101"]` in LIBERO environments. Both jaw joint ranges and
-position-actuator ranges are `[-0.036, 0]`. Equality mechanically couples the
+position-actuator ranges are `[0, 0.036]`. Equality mechanically couples the
 two simulated joints; observations retain two jaw coordinates. The 72 mm total
 travel change is distinct from the simplified collision-pad aperture (6..78 mm).
 The material RGBA values are housing `0.1 0.1 0.1 1`, jaws `1 0.82 0.12 1`.
+
+Increasing joint position opens: 0 is closed and +0.036 is fully open.
+This supersedes the earlier negative-opening coordinate convention; geometry
+is unchanged. Old recorded jaw positions/velocities need sign conversion
+before reuse with this model. External actions remain +1 open / -1 close.
 
 Use this repository's fork, not a fresh upstream LIBERO checkout. From the
 repository root, set `PYTHONPATH` to include both the root and `LIBERO/libero`

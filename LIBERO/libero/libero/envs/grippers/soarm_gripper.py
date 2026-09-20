@@ -25,15 +25,10 @@ class SoarmGripper(GripperModel):
     aperture). Geometry is registered to the user's saved Coppelia assembly;
     its simplified collision pads span 6..78 mm, distinct from mesh-tip spacing.
 
-    Class name is preserved so the Phase-4 collector / robot contract is
-    unchanged; however TWIN-07 gap-closure (plan 260919-h8v) flipped the
-    underlying MJCF joint axis/range polarity in ``soarm_gripper.xml`` so the
-    sim's OPEN/CLOSE direction now agrees with the real SO-ARM101 hardware's
-    positive-command-opens convention. The external action's sign meaning
-    therefore flipped too: ``+1 => open, -1 => closed`` (was ``-1 => open,
-    +1 => closed`` before the fix; see ``collector.py``'s ``OPEN_CMD``/
-    ``CLOSE_CMD`` constants, which were updated to match). ``format_action``'s
-    arithmetic below is unchanged; only the MJCF geometry mapping changed.
+    Both joint coordinates increase when opening: 0 is closed, 0.036 is open.
+    The integrated action increases with external +1 (open), and decreases
+    with external -1 (close). This preserves the collector's action contract
+    while matching the positive-opening coordinate convention of Coppelia.
 
     Args:
         idn (int or str): Number or some other unique identification string
@@ -46,17 +41,9 @@ class SoarmGripper(GripperModel):
     def format_action(self, action):
         """Maps the 1-D gripper action into the two jaw position targets.
 
-        External ``action``: +1 => open, -1 => closed (post-TWIN-07-fix
-        convention; see class docstring). current_action's sign maps to
-        physical position as: -1 => -0.036 (open), +1 => 0 (closed) — both
-        jaw actuators share ctrlrange [-0.036, 0] (flipped from the pre-fix
-        [0, 0.036] -- see soarm_gripper.xml). An OPEN command (external
-        action=+1) drives both current_action elements toward -1; a CLOSE
-        command (external action=-1) drives them toward +1. Mirrors
-        PandaGripper's two-element integrated action (here both elements
-        move together — the jaws are symmetric). The arithmetic below is
-        unchanged by the fix; only the MJCF's joint-to-physical-position
-        mapping changed.
+        External +1 opens and -1 closes. robosuite scales current_action
+        from [-1, +1] to the actuator range [0, 0.036] metres: -1 is closed,
+        +1 is open. Both symmetric jaws integrate in the same direction.
 
         Args:
             action (np.array): gripper-specific action
@@ -66,7 +53,7 @@ class SoarmGripper(GripperModel):
         """
         assert len(action) == self.dof
         self.current_action = np.clip(
-            self.current_action + np.array([-1.0, -1.0]) * self.speed * np.sign(action),
+            self.current_action + np.array([1.0, 1.0]) * self.speed * np.sign(action),
             -1.0,
             1.0,
         )
@@ -74,7 +61,7 @@ class SoarmGripper(GripperModel):
 
     @property
     def init_qpos(self):
-        return np.array([-0.036, -0.036])  # open endpoint; Coppelia q=0.044 on each jaw
+        return np.array([0.036, 0.036])  # open endpoint; Coppelia q=0.044 on each jaw
 
     @property
     def speed(self):

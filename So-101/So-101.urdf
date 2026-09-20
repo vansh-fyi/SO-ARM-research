@@ -308,8 +308,8 @@
     <parent link="parallel_gripper_mechanism" />
     <child link="gripper_left_jaw" />
     <origin xyz="0 0 0" rpy="0 0 0" />
-    <axis xyz="0 1 0" />
-    <limit lower="-0.036" upper="0" effort="60" velocity="0.5" />
+    <axis xyz="0 -1 0" />
+    <limit lower="0" upper="0.036" effort="60" velocity="0.5" />
     <dynamics damping="50" friction="0.5" />
   </joint>
   <link name="gripper_left_jaw">
@@ -338,8 +338,8 @@
     <parent link="parallel_gripper_mechanism" />
     <child link="gripper_right_jaw" />
     <origin xyz="0 0 0" rpy="0 0 0" />
-    <axis xyz="0 -1 0" />
-    <limit lower="-0.036" upper="0" effort="60" velocity="0.5" />
+    <axis xyz="0 1 0" />
+    <limit lower="0" upper="0.036" effort="60" velocity="0.5" />
     <dynamics damping="50" friction="0.5" />
     <mimic joint="gripper_left" multiplier="1" offset="0" />
   </joint>
