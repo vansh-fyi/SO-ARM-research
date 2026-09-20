@@ -107,6 +107,14 @@ None - no external service configuration required for Task 1's work. Task 3 (not
 2. Execute Task 3 (write `policy_server_launch.md`, embedding the selected checkpoint id) and halt again at its own `checkpoint:human-verify` (pyngrok legitimacy + TCP-tunnel/checkpoint-id correctness).
 3. Only after Task 3's human "approved" is this plan's SUMMARY finalized as `status: complete`.
 
+## Self-Check: PASSED
+
+- FOUND: `control/vla_bridge/check_checkpoint.py`
+- FOUND: `control/vla_bridge/checkpoint_candidates.md`
+- FOUND: `.planning/phases/11-vla-hardware-connection/11-03-SUMMARY.md`
+- FOUND commit: `4f1956f` (Task 1)
+- FOUND commit: `dabc3b1` (partial SUMMARY)
+
 ---
 *Phase: 11-vla-hardware-connection*
 *Completed (partial): 2026-09-21*
