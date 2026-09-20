@@ -18,3 +18,9 @@ control/outputs/
 .DS_Store
 .planning/research/.cache/
 AGENTS.md
+experiment-design/
+
+# Local manual orientation screenshots; numerical reference is tracked in diagnostics/reference/.
+/orientation/
+# Superseded Coppelia export, archived independently; not a runtime model.
+/So-101-coppelia/
