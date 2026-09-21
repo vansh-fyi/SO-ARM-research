@@ -131,10 +131,13 @@ def control_loop(robot, keyboard, start_positions, kp=0.5, control_freq=30):
                         if joint == "gripper":
                             new_target = max(0.0, min(100.0, current_target + direction * 5.0))
                         else:
-                            # RANGE_M100_100 joints (see so_follower.py Motor() norm_mode) - unclamped
-                            # accumulation here let repeated presses drive the target past +-100
-                            # indefinitely, pushing the servo into its mechanical hard stop and
-                            # tripping overload protection (observed on wrist_flex).
+                            # DEGREES-mode joints (SOFollowerConfig.use_degrees=True default,
+                            # confirmed by reading config_so_follower.py; see
+                            # control/vla_bridge/action_contract.py for the full documented
+                            # contract) - unclamped accumulation here let repeated presses drive
+                            # the target past +-100 indefinitely, pushing the servo into its
+                            # mechanical hard stop and tripping overload protection (observed on
+                            # wrist_flex).
                             new_target = max(-100.0, min(100.0, current_target + direction))
                         target_positions[joint] = new_target
                         print(f"{joint}: target -> {new_target:.1f}")
