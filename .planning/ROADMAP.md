@@ -337,7 +337,7 @@ Plans:
   4. At least one full episode — from a task prompt to episode termination — runs end-to-end on the physical robot, producing a saved synchronized video and a matching per-step I/O log, plus recorded termination reason and success/failure outcome
   5. A short findings write-up synthesizes what was observed (including any upstream issues hit, e.g. lerobot#2210) into an explicit go/no-go recommendation for the next milestone phases
 
-**Plans**: 3/5 plans executed
+**Plans**: 4/5 plans executed
 Plans:
 **Wave 1** (independent — zero files_modified overlap, run fully in parallel)
 
@@ -350,7 +350,7 @@ Plans:
 
 **Wave 3** *(blocked on 11-02 and 11-03)*
 
-- [ ] 11-04-PLAN.md — Real Colab-bridged SmolVLA wiring into run_vla_episode.py (VLAHW-01, VLAHW-02, VLAHW-03)
+- [x] 11-04-PLAN.md — Real Colab-bridged SmolVLA wiring into run_vla_episode.py (VLAHW-01, VLAHW-02, VLAHW-03)
 
 **Wave 4 — final phase gate** *(blocked on 11-04)*
 
@@ -373,4 +373,4 @@ Plans:
 | 8. Checkpoint Benchmark Suite | 0/TBD | Paused (2026-09-15) | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
 | 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
-| 11. VLA Hardware Connection | 3/5 | In Progress|  |
+| 11. VLA Hardware Connection | 4/5 | In Progress|  |
