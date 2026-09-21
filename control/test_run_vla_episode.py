@@ -15,6 +15,20 @@ from vla_bridge import action_contract
 from vla_bridge.io_logger import IOLogger
 
 
+class _NeverOpensCapture:
+    """Stand-in for `cv2.VideoCapture` that never actually opens a device --
+    keeps the bridge-selection tests below hermetic (no real camera probing)."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def isOpened(self):
+        return False
+
+    def release(self):
+        pass
+
+
 class FakeCamera:
     def read(self):
         return True, np.zeros((4, 4, 3), dtype=np.uint8)
@@ -127,3 +141,120 @@ def test_keyboard_interrupt_triggers_return_to_start_before_disconnect(
 
     termination = json.loads((tmp_path / "termination.json").read_text())
     assert termination["reason"] == "keyboard_interrupt"
+
+
+# --- --server-address / --checkpoint bridge selection (Plan 11-04, Task 2) ---
+
+
+def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeypatch, tmp_path):
+    calls = {}
+
+    class FakeBridgeClient:
+        def __init__(self):
+            self.robot = object()
+
+        def stop(self):
+            calls["stopped"] = True
+
+    fake_client = FakeBridgeClient()
+
+    def fake_connect_bridge(server_address, checkpoint, robot_config, task, policy_device="cuda"):
+        calls["connect_bridge_args"] = (server_address, checkpoint, task, policy_device)
+        return fake_client
+
+    class FakeBridgeActionSource:
+        def __init__(self, client, checkpoint, joint_limits_deg):
+            calls["bridge_action_source_client"] = client
+            calls["bridge_action_source_checkpoint"] = checkpoint
+
+    def fake_run_episode(
+        robot, caps, camera_names, io_logger, action_source, instruction, max_steps, control_hz, joint_limits_deg
+    ):
+        calls["action_source_type"] = type(action_source).__name__
+
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", FakeBridgeActionSource)
+    monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/fake_port",
+            "fake_robot_id",
+            "--out",
+            str(tmp_path),
+            "--camera",
+            "0",
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+        ],
+    )
+
+    run_vla_episode.main()
+
+    assert calls["action_source_type"] == "FakeBridgeActionSource"
+    assert calls["bridge_action_source_client"] is fake_client
+    assert calls["bridge_action_source_checkpoint"] == "victorvanhalst/smolvla_so101_cube"
+    assert calls["connect_bridge_args"][0] == "0.tcp.ngrok.io:12345"
+    assert calls["connect_bridge_args"][1] == "victorvanhalst/smolvla_so101_cube"
+    assert calls.get("stopped") is True
+
+
+def test_bridge_unreachable_writes_termination_reason_without_driving_robot(monkeypatch, tmp_path):
+    calls = {"run_episode_called": False}
+
+    def fake_connect_bridge_returns_none(server_address, checkpoint, robot_config, task, policy_device="cuda"):
+        return None
+
+    def fake_run_episode(*args, **kwargs):
+        calls["run_episode_called"] = True
+
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge_returns_none)
+    monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/fake_port",
+            "fake_robot_id",
+            "--out",
+            str(tmp_path),
+            "--camera",
+            "0",
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+        ],
+    )
+
+    run_vla_episode.main()
+
+    assert calls["run_episode_called"] is False
+    termination = json.loads((tmp_path / "termination.json").read_text())
+    assert termination["reason"] == "bridge_unreachable"
+    assert termination["steps_completed"] == 0
+
+
+def test_checkpoint_without_server_address_errors_clearly(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/fake_port",
+            "fake_robot_id",
+            "--out",
+            str(tmp_path),
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        run_vla_episode.main()
