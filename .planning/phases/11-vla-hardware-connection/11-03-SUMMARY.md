@@ -25,9 +25,9 @@ key-files:
   modified: []
 
 key-decisions:
-  - "None yet — Task 2 (checkpoint:decision) is a blocking human decision point this plan halted at; no checkpoint has been selected"
+  - "Task 2 decision: selected `victorvanhalst/smolvla_so101_cube` as the checkpoint to drive the real robot — exact task-instruction match to D-02's red-cube task ('Pick the red cube and place it in the bowl'), and its 3-camera-slot config.json is resolved against this project's real 2-physical-camera rig via a 3-genuine-feed split-stereo mapping (wrist=camera1, stereo-left-half=camera2, stereo-right-half=camera3), not a dummy/empty 3rd slot"
 
-requirements-completed: []  # VLAHW-01 not yet complete — plan halted at Task 2's blocking human decision
+requirements-completed: []  # VLAHW-01 not yet complete — plan now paused at Task 3's blocking checkpoint:human-verify (pyngrok legitimacy)
 
 coverage: []  # No deliverables to classify yet at this partial checkpoint — see coverage note below
 
@@ -37,15 +37,15 @@ completed: 2026-09-21
 status: paused-checkpoint
 ---
 
-# Phase 11 Plan 03: SmolVLA Checkpoint Selection + Colab Bridge Docs Summary (PARTIAL — paused at Task 2)
+# Phase 11 Plan 03: SmolVLA Checkpoint Selection + Colab Bridge Docs Summary (PARTIAL — paused at Task 3)
 
-**Task 1 fetched real `config.json` data for all 4 candidate SmolVLA checkpoints, revealing none actually matches this project's 2-camera rig — 3 expect 3 cameras (not 2, despite one's "_2_cameras" name), 1 expects 5, and one candidate 404s. Plan halted at Task 2's blocking `checkpoint:decision` for human checkpoint selection.**
+**Task 1 fetched real `config.json` data for all 4 candidate SmolVLA checkpoints, revealing none actually matches this project's 2-camera rig as a plain 1:1 mapping — 3 expect 3 cameras (not 2, despite one's "_2_cameras" name), 1 expects 5, and one candidate 404s. The human selected `victorvanhalst/smolvla_so101_cube` at Task 2's `checkpoint:decision`, resolving the 3-camera-slot mismatch via a split-stereo mapping rather than a dummy feed (wrist=camera1, stereo-left-half=camera2, stereo-right-half=camera3). Task 3 is now drafting `policy_server_launch.md` embedding that checkpoint and camera mapping, then will halt at its own blocking `checkpoint:human-verify` (pyngrok legitimacy + TCP-tunnel/checkpoint-id correctness).**
 
 ## Performance
 
-- **Duration:** partial (Task 1 only; Tasks 2-3 not yet executed)
+- **Duration:** partial (Task 1 complete, Task 2 decided, Task 3 in progress)
 - **Started:** 2026-09-21 (session start)
-- **Tasks:** 1 of 3 completed
+- **Tasks:** 1 of 3 fully completed (Task 2's decision is recorded; Task 3's file/checkpoint not yet reached)
 - **Files modified:** 2
 
 ## Accomplishments
@@ -57,13 +57,14 @@ status: paused-checkpoint
   - `lerobot/svla_so100_pickplace`: **404 / RepositoryNotFoundError** — this candidate does not exist at the given repo id (renamed, private, or never existed under `lerobot`'s namespace); cannot be selected as-is
   - `cn0303/smolvla-so101-strawberry-v3`: **5** camera inputs (3 real + 2 `empty_camera_*` dummy slots) — UNCLEAR FIT
 - Explicitly documented the AR0144-stereo-is-one-physical-2560x720-frame caveat in the generated file, per acceptance criteria.
-- **Halted at Task 2** (`checkpoint:decision`, `gate="blocking"`): per the executor's checkpoint protocol and this plan's own `<checkpoint_note>`, the human must select which checkpoint (or the ACT/pi0 fallback) Phase 11 uses, informed by this real fetched data (which materially changes the picture RESEARCH.md's `[ASSUMED]` table painted — no candidate is a clean 2-camera fit).
+- **Task 2 decision resolved** (`checkpoint:decision`, `gate="blocking"`): the human selected `victorvanhalst/smolvla_so101_cube` — the exact task-instruction match to D-02's red-cube task ("Pick the red cube and place it in the bowl") — over the other 3 candidates and the ACT/pi0 fallback. The candidate's 3-camera-slot config.json (`camera1`/`camera2`/`camera3`, none marked `empty_camera_*`) is resolved against this project's real 2-physical-camera rig by treating the AR0144's single 2560x720 stereo frame as **two distinct real feeds** (left half + right half) rather than one wide image or a dummy slot, giving 3 genuinely distinct real camera views total: `camera1`=IMX335 wrist, `camera2`=AR0144 stereo-left (columns `[0:1280]`), `camera3`=AR0144 stereo-right (columns `[1280:2560]`). This pattern was corroborated by researching community SmolVLA fine-tunes with similar 2-real-camera + inherited-3rd-slot conventions (`bklassen3434/smolvla_pick_pen_v2_frozen`, `Yilin1001/smolvla-pen-v2-030000`); this project's case is an even better fit since all 3 slots map to genuinely distinct real views, not a dummy.
 
 ## Task Commits
 
 1. **Task 1: Fetch and compare candidate SmolVLA checkpoints** - `4f1956f` (feat)
+2. **Task 2: Record checkpoint decision** - (this commit, docs)
 
-Tasks 2 (checkpoint:decision) and 3 (checkpoint:human-verify) not yet executed — this plan is paused at the Task 2 checkpoint pending human input.
+Task 3 (checkpoint:human-verify) not yet executed — proceeding to draft `policy_server_launch.md` next, then this plan will halt at Task 3's own blocking checkpoint pending human pyngrok-legitimacy sign-off.
 
 ## Files Created/Modified
 
@@ -72,7 +73,11 @@ Tasks 2 (checkpoint:decision) and 3 (checkpoint:human-verify) not yet executed �
 
 ## Decisions Made
 
-None yet by a human — this is exactly what Task 2 is blocking on. Task 1's own findings are a material update to RESEARCH.md's assumptions: **all 3 successfully-fetched candidates expect either 3 or 5 cameras, none expects exactly 2**, and `lerobot/svla_so100_pickplace` (the highest-provenance-trust option per RESEARCH.md, published under the official `lerobot` org) does not resolve at all. This new information should inform, not just Task 2's raw options table, but potentially require the human to reconsider the ACT/pi0 fallback more seriously than RESEARCH.md initially framed it, or accept that a 3-camera checkpoint requires wiring a dummy/empty 3rd feed.
+**Task 2 (`checkpoint:decision`) — resolved:** the human selected **`victorvanhalst/smolvla_so101_cube`** (option id `victorvanhalst-cube`) over `majinwakeup30-stack`, `svla-so100-pickplace` (404s, cannot be selected as-is), `strawberry`, and the `act-fallback`. Rationale: exact task-instruction match to D-02's red-cube task ("Pick the red cube and place it in the bowl") — since this phase does not fine-tune anything itself, a checkpoint's own trained task determines what the VLA actually knows how to do, making task-semantic match the deciding factor over raw camera-count fit.
+
+The candidate's 3-camera-slot mismatch (Task 1 found `camera1`/`camera2`/`camera3`, none marked `empty_camera_*`) is resolved not by a dummy/empty 3rd feed but by using **3 genuinely distinct real camera views**: this project's AR0144 "overhead" camera is one physical 2560x720 side-by-side stereo frame (confirmed in `diagnostics/UAT/function/basic/UAT.md`), which can be split into independent left/right halves — `camera1`=IMX335 wrist (as-is), `camera2`=AR0144 stereo-left (crop columns `[0:1280]`), `camera3`=AR0144 stereo-right (crop columns `[1280:2560]`). This is a better structural fit than a dummy slot: all 3 of the checkpoint's expected inputs receive genuinely distinct real image data, none is a zero/black placeholder. The pattern of pairing a real-hardware 2-camera rig with a checkpoint's 3-camera-slot config via a similar real/inherited-slot split is independently corroborated by other community SmolVLA fine-tunes (`bklassen3434/smolvla_pick_pen_v2_frozen`, `Yilin1001/smolvla-pen-v2-030000`), though those use a dummy 3rd slot where this project uses a genuinely distinct 3rd real feed (split-stereo) instead — an even better fit.
+
+This also confirms Task 1's own findings remain valid as a material update to RESEARCH.md's assumptions: **all 3 successfully-fetched candidates expect either 3 or 5 cameras, none expects exactly 2**, and `lerobot/svla_so100_pickplace` (the highest-provenance-trust option per RESEARCH.md, published under the official `lerobot` org) does not resolve at all — but the split-stereo mapping resolves the apparent 2-vs-3-camera mismatch without needing the ACT/pi0 fallback.
 
 ## Deviations from Plan
 
@@ -98,14 +103,11 @@ None yet by a human — this is exactly what Task 2 is blocking on. Task 1's own
 
 ## User Setup Required
 
-None - no external service configuration required for Task 1's work. Task 3 (not yet reached) will require a human `pyngrok` legitimacy check before any Colab-side install — see this plan's Task 3 definition.
+None yet for Task 2 (a decision, not an install). Task 3 (in progress) requires a human `pyngrok` legitimacy check before any Colab-side install — see this plan's Task 3 definition; this plan will halt at that checkpoint next.
 
 ## Next Phase Readiness
 
-**Not ready to proceed to Plan 11-04 or 11-05.** This plan is paused at Task 2's blocking `checkpoint:decision`. The human must select an option (one of the 4 checkpoint ids, or the ACT/pi0 fallback) informed by Task 1's real fetched data above — notably that no candidate is a clean 2-camera match, and the previously highest-provenance-trust option (`lerobot/svla_so100_pickplace`) does not resolve. Once selected, a continuation agent will:
-1. Record the selection in this SUMMARY.
-2. Execute Task 3 (write `policy_server_launch.md`, embedding the selected checkpoint id) and halt again at its own `checkpoint:human-verify` (pyngrok legitimacy + TCP-tunnel/checkpoint-id correctness).
-3. Only after Task 3's human "approved" is this plan's SUMMARY finalized as `status: complete`.
+**Not yet ready to proceed to Plan 11-04 or 11-05.** Task 2's decision is now resolved (`victorvanhalst/smolvla_so101_cube`, 3-real-camera split-stereo mapping). Proceeding now to Task 3: draft `control/vla_bridge/policy_server_launch.md` embedding this checkpoint id and camera mapping, then halt at Task 3's own blocking `checkpoint:human-verify` (pyngrok legitimacy + TCP-tunnel/checkpoint-id correctness). Only after a human types "approved" (or specifies the cloudflared fallback) is this plan's SUMMARY finalized as `status: complete`.
 
 ## Self-Check: PASSED
 
@@ -114,6 +116,7 @@ None - no external service configuration required for Task 1's work. Task 3 (not
 - FOUND: `.planning/phases/11-vla-hardware-connection/11-03-SUMMARY.md`
 - FOUND commit: `4f1956f` (Task 1)
 - FOUND commit: `dabc3b1` (partial SUMMARY)
+- FOUND commit: `42611f7` (self-check append)
 
 ---
 *Phase: 11-vla-hardware-connection*
