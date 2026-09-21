@@ -102,6 +102,28 @@ def test_pop_validated_action_empty_queue_holds_position(mock_calibration_file):
 # --- connect_bridge ----------------------------------------------------------
 
 
+class FakeRobotWithObservation:
+    """Minimal `.robot`-shaped double exposing `get_observation()`, so
+    `_wire_stereo_split_cameras()` (called internally by `connect_bridge()`)
+    has something to wrap -- never a real `SO101Follower`."""
+
+    def get_observation(self):
+        return {"shoulder_pan.pos": 0.0}
+
+
+class FakeStereoSplitCamera:
+    """Stand-in for `StereoSplitCamera` -- never opens a real cv2 device."""
+
+    def __init__(self, index=1):
+        self.index = index
+
+    def read_left(self):
+        return "fake-left-frame"
+
+    def read_right(self):
+        return "fake-right-frame"
+
+
 class FakeRobotClientHandshakeFails:
     """Stand-in for `RobotClient` simulating an unreachable Colab bridge:
     `start()` returns False (matches the installed library's own contract --
@@ -110,7 +132,7 @@ class FakeRobotClientHandshakeFails:
     def __init__(self, config):
         self.config = config
         self.stopped = False
-        self.robot = object()
+        self.robot = FakeRobotWithObservation()
 
     def start(self) -> bool:
         return False
@@ -128,6 +150,7 @@ def test_connect_bridge_returns_none_and_cleans_up_when_start_fails(monkeypatch)
         return instance
 
     monkeypatch.setattr(robot_client, "RobotClient", fake_ctor)
+    monkeypatch.setattr(robot_client, "StereoSplitCamera", FakeStereoSplitCamera)
 
     result = robot_client.connect_bridge(
         server_address="0.tcp.ngrok.io:12345",
@@ -147,6 +170,7 @@ class FakeRobotClientHandshakeSucceeds(FakeRobotClientHandshakeFails):
 
 def test_connect_bridge_returns_connected_client_on_success(monkeypatch):
     monkeypatch.setattr(robot_client, "RobotClient", FakeRobotClientHandshakeSucceeds)
+    monkeypatch.setattr(robot_client, "StereoSplitCamera", FakeStereoSplitCamera)
 
     result = robot_client.connect_bridge(
         server_address="0.tcp.ngrok.io:12345",
@@ -157,6 +181,11 @@ def test_connect_bridge_returns_connected_client_on_success(monkeypatch):
 
     assert isinstance(result, FakeRobotClientHandshakeSucceeds)
     assert result.stopped is False
+    # connect_bridge() must wire camera2/camera3 from the split-stereo feed --
+    # never two independent cv2.VideoCapture(1) opens.
+    obs = result.robot.get_observation()
+    assert obs["camera2"] == "fake-left-frame"
+    assert obs["camera3"] == "fake-right-frame"
 
 
 # --- BridgeActionSource --------------------------------------------------------

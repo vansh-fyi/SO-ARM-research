@@ -29,6 +29,7 @@ from lerobot.async_inference.configs import RobotClientConfig
 from lerobot.async_inference.robot_client import RobotClient
 
 from vla_bridge import safety_validator
+from vla_bridge.stereo_camera import StereoSplitCamera
 
 
 def connect_bridge(
@@ -39,6 +40,7 @@ def connect_bridge(
     actions_per_chunk: int = 50,
     chunk_size_threshold: float = 0.5,
     policy_device: str = "cuda",
+    stereo_camera_index: int = 1,
 ):
     """Connect to a Colab-hosted `PolicyServer` bridge.
 
@@ -47,6 +49,10 @@ def connect_bridge(
     attribute is the one true robot handle for the rest of the caller's
     control loop; callers must NOT also construct a second, separate
     `SO101Follower` for this path.
+
+    Also wires the AR0144 split-stereo camera feeds (Plan 11-03's camera
+    mapping, `policy_server_launch.md`) into the returned client's
+    observation-building step -- see `_wire_stereo_split_cameras()`.
 
     Returns the connected, handshaken `RobotClient` on success, or `None`
     (never an exception) if the bridge handshake fails -- calling `.stop()`
@@ -63,12 +69,52 @@ def connect_bridge(
         chunk_size_threshold=chunk_size_threshold,
     )
     client = RobotClient(config)
+    _wire_stereo_split_cameras(client, stereo_camera_index=stereo_camera_index)
 
     if not client.start():
         client.stop()
         return None
 
     return client
+
+
+def _wire_stereo_split_cameras(client, stereo_camera_index: int = 1, stereo_camera=None) -> None:
+    """Make every observation this client's `control_loop_observation()`
+    sends include real `camera2`/`camera3` split-stereo feeds, sourced from
+    a single shared `StereoSplitCamera` -- not two independent
+    `cv2.VideoCapture(1)` opens of the same physical AR0144 device.
+
+    `lerobot.cameras.camera.CameraConfig` IS a `draccus.ChoiceRegistry` (a
+    custom camera `type` plugin route genuinely exists -- confirmed by
+    reading `control/.venv/.../lerobot/cameras/camera.py` and
+    `configuration_opencv.py` this session), but there is no built-in
+    facility for two independently-registered camera configs to share one
+    physical device instance -- a plugin route would still have to solve
+    that same single-device-sharing problem `StereoSplitCamera` already
+    solves internally. Monkey-patching the already-connected robot's own
+    `get_observation()` (the actual observation-building step
+    `control_loop_observation()` calls internally, per
+    `lerobot/async_inference/robot_client.py`) is the simpler,
+    directly-testable mechanism that's actually scriptable here, per
+    `policy_server_launch.md`'s "observation-dict patch" option.
+
+    `stereo_camera` is an injectable override (a already-constructed
+    `StereoSplitCamera`-shaped double) so tests can verify this wiring
+    without opening a real cv2 device.
+    """
+    stereo = stereo_camera if stereo_camera is not None else StereoSplitCamera(index=stereo_camera_index)
+    original_get_observation = client.robot.get_observation
+
+    def get_observation_with_stereo_split():
+        obs = original_get_observation()
+        obs["camera2"] = stereo.read_left()
+        obs["camera3"] = stereo.read_right()
+        return obs
+
+    client.robot.get_observation = get_observation_with_stereo_split
+    # Keep a reference so the StereoSplitCamera (and its open cv2 device) isn't
+    # garbage-collected once this function returns.
+    client._stereo_camera = stereo
 
 
 def pop_validated_action(
