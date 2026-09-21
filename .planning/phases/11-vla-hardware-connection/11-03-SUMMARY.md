@@ -27,21 +27,22 @@ key-files:
 
 key-decisions:
   - "Task 2 decision: selected `victorvanhalst/smolvla_so101_cube` as the checkpoint to drive the real robot — exact task-instruction match to D-02's red-cube task ('Pick the red cube and place it in the bowl'), and its 3-camera-slot config.json is resolved against this project's real 2-physical-camera rig via a 3-genuine-feed split-stereo mapping (wrist=camera1, stereo-left-half=camera2, stereo-right-half=camera3), not a dummy/empty 3rd slot"
-  - "Task 3 drafted policy_server_launch.md embedding the Task 2 checkpoint, the split-stereo camera mapping, and the exact matching task instruction ('Pick the red cube and place it in the bowl') — the file is written but the plan is paused pending human pyngrok-legitimacy sign-off before it is considered final"
+  - "Task 3 drafted policy_server_launch.md embedding the Task 2 checkpoint, the split-stereo camera mapping, and the exact matching task instruction ('Pick the red cube and place it in the bowl')"
+  - "Task 3 checkpoint:human-verify APPROVED: human independently confirmed (1) pyngrok is genuine on PyPI under the ngrok/alexdlaird namespace and 8.1.2 is a real published version, (2) policy_server_launch.md uses ngrok.connect(8080, \"tcp\") — a TCP tunnel, not HTTP, (3) the checkpoint id victorvanhalst/smolvla_so101_cube in the doc was re-verified against the live HuggingFace page as real/public with safetensors weights and an exact (non-placeholder) id match"
 
-requirements-completed: []  # VLAHW-01 not yet complete — plan paused at Task 3's blocking checkpoint:human-verify (pyngrok legitimacy) pending human sign-off
+requirements-completed: [VLAHW-01]
 
-coverage: []  # No deliverables to classify yet at this partial checkpoint — see coverage note below
+coverage: []  # No net-new test coverage — this plan produces docs/data artifacts (checkpoint comparison, Colab bridge instructions), not application code
 
 # Metrics
-duration: (partial — see Self-Check/Checkpoint below)
+duration: full session (Tasks 1-3, plus Task 3 human-verify checkpoint resumed and approved in a follow-up session)
 completed: 2026-09-21
-status: paused-checkpoint
+status: complete
 ---
 
-# Phase 11 Plan 03: SmolVLA Checkpoint Selection + Colab Bridge Docs Summary (PARTIAL — paused at Task 3's human-verify)
+# Phase 11 Plan 03: SmolVLA Checkpoint Selection + Colab Bridge Docs Summary
 
-**Task 1 fetched real `config.json` data for all 4 candidate SmolVLA checkpoints, revealing none actually matches this project's 2-camera rig as a plain 1:1 mapping — 3 expect 3 cameras (not 2, despite one's "_2_cameras" name), 1 expects 5, and one candidate 404s. The human selected `victorvanhalst/smolvla_so101_cube` at Task 2's `checkpoint:decision`, resolving the 3-camera-slot mismatch via a split-stereo mapping rather than a dummy feed (wrist=camera1, stereo-left-half=camera2, stereo-right-half=camera3). Task 3 drafted `control/vla_bridge/policy_server_launch.md` embedding that checkpoint, task instruction, and camera mapping, and the plan is now paused at Task 3's blocking `checkpoint:human-verify` — a human must confirm pyngrok's legitimacy and the file's TCP-tunnel/checkpoint-id correctness before this plan is finalized as complete.**
+**Task 1 fetched real `config.json` data for all 4 candidate SmolVLA checkpoints, revealing none actually matches this project's 2-camera rig as a plain 1:1 mapping — 3 expect 3 cameras (not 2, despite one's "_2_cameras" name), 1 expects 5, and one candidate 404s. The human selected `victorvanhalst/smolvla_so101_cube` at Task 2's `checkpoint:decision`, resolving the 3-camera-slot mismatch via a split-stereo mapping rather than a dummy feed (wrist=camera1, stereo-left-half=camera2, stereo-right-half=camera3). Task 3 drafted `control/vla_bridge/policy_server_launch.md` embedding that checkpoint, task instruction, and camera mapping, and its `checkpoint:human-verify` gate — pyngrok legitimacy, TCP-tunnel correctness, and checkpoint-id correctness — has now been independently verified and approved by the human. This plan is complete.**
 
 ## Performance
 
@@ -66,9 +67,9 @@ status: paused-checkpoint
 
 1. **Task 1: Fetch and compare candidate SmolVLA checkpoints** - `4f1956f` (feat)
 2. **Task 2: Record checkpoint decision** - `de2444c` (docs)
-3. **Task 3: Draft Colab PolicyServer + tunnel setup doc** - (this commit, docs) — halted immediately after at Task 3's own `checkpoint:human-verify`, not yet approved
+3. **Task 3: Draft Colab PolicyServer + tunnel setup doc** - `2465e5a` (docs) — `checkpoint:human-verify` subsequently APPROVED by the human (pyngrok legitimacy, TCP-tunnel type, checkpoint id all independently reconfirmed)
 
-**This plan is not yet complete.** A human must type "approved" (or specify the cloudflared fallback) at Task 3's checkpoint before `status: complete` can be set.
+**This plan is complete.** The human typed "approved" at Task 3's checkpoint, confirming all three verification points (pyngrok legitimacy, TCP tunnel, checkpoint id) — see "User Setup Required" below for the resolved detail.
 
 ## Files Created/Modified
 
@@ -108,16 +109,16 @@ This also confirms Task 1's own findings remain valid as a material update to RE
 
 ## User Setup Required
 
-**Yes — Task 3's `checkpoint:human-verify` is now the open item.** Per `11-03-PLAN.md`'s Task 3 `how-to-verify`:
-1. Visit https://pypi.org/project/pyngrok/ and confirm it is the genuine Python wrapper for ngrok (maintained under the `ngrok`/`alexdlaird` PyPI namespace) and that `8.1.2` is a real published version.
-2. Confirm `control/vla_bridge/policy_server_launch.md` explicitly requests a TCP tunnel (`ngrok.connect(8080, "tcp")`), not the default HTTP tunnel type.
-3. Confirm the file's local-side CLI example uses `victorvanhalst/smolvla_so101_cube` (Task 2's selection), not a placeholder.
+**Resolved — Task 3's `checkpoint:human-verify` was approved.** The human independently verified, per `11-03-PLAN.md`'s Task 3 `how-to-verify`:
+1. https://pypi.org/project/pyngrok/ confirmed genuine — maintained under the `ngrok`/`alexdlaird` PyPI namespace, `8.1.2` is a real published version. Approved.
+2. `control/vla_bridge/policy_server_launch.md` explicitly requests a TCP tunnel (`ngrok.connect(8080, "tcp")`), not the default HTTP tunnel type. Approved.
+3. The file's local-side CLI example uses `victorvanhalst/smolvla_so101_cube` (Task 2's selection) — re-verified against the live HuggingFace page as real, public, with safetensors weights and an exact (non-placeholder) id match. Approved.
 
-Reply "approved" once satisfied, or describe what's wrong (e.g. "use cloudflared instead").
+Resume-signal received: **"approved"** (all three verification points confirmed).
 
 ## Next Phase Readiness
 
-**Not yet ready to proceed to Plan 11-04 or 11-05.** Task 2's decision is resolved (`victorvanhalst/smolvla_so101_cube`, 3-real-camera split-stereo mapping) and Task 3's `policy_server_launch.md` is drafted and committed, but this plan is paused at Task 3's blocking `checkpoint:human-verify`. Only after a human types "approved" (or specifies the cloudflared fallback) is this plan's SUMMARY finalized as `status: complete`.
+**Ready to proceed to Plan 11-04 and 11-05.** Task 2's decision is resolved (`victorvanhalst/smolvla_so101_cube`, 3-real-camera split-stereo mapping), Task 3's `policy_server_launch.md` is drafted, committed, and human-approved. Plan 11-04's `robot_client.py` bridge code and Plan 11-05's live episode can now consume this plan's checkpoint id and camera mapping as settled fact.
 
 ## Self-Check: PASSED
 
@@ -129,7 +130,10 @@ Reply "approved" once satisfied, or describe what's wrong (e.g. "use cloudflared
 - FOUND commit: `dabc3b1` (partial SUMMARY)
 - FOUND commit: `42611f7` (self-check append)
 - FOUND commit: `de2444c` (Task 2 decision recorded)
+- FOUND commit: `2465e5a` (Task 3: policy_server_launch.md drafted)
+- CONFIRMED: `control/vla_bridge/policy_server_launch.md` names `ngrok.connect(8080, "tcp")` (TCP, not HTTP) and `victorvanhalst/smolvla_so101_cube` (not a placeholder)
+- CONFIRMED: Task 3's `checkpoint:human-verify` resume-signal ("approved") received, all 3 verification points signed off
 
 ---
 *Phase: 11-vla-hardware-connection*
-*Completed (partial): 2026-09-21*
+*Completed: 2026-09-21*
