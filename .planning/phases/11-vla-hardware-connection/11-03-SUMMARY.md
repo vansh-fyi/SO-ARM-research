@@ -22,12 +22,14 @@ key-files:
   created:
     - control/vla_bridge/check_checkpoint.py
     - control/vla_bridge/checkpoint_candidates.md
+    - control/vla_bridge/policy_server_launch.md
   modified: []
 
 key-decisions:
   - "Task 2 decision: selected `victorvanhalst/smolvla_so101_cube` as the checkpoint to drive the real robot — exact task-instruction match to D-02's red-cube task ('Pick the red cube and place it in the bowl'), and its 3-camera-slot config.json is resolved against this project's real 2-physical-camera rig via a 3-genuine-feed split-stereo mapping (wrist=camera1, stereo-left-half=camera2, stereo-right-half=camera3), not a dummy/empty 3rd slot"
+  - "Task 3 drafted policy_server_launch.md embedding the Task 2 checkpoint, the split-stereo camera mapping, and the exact matching task instruction ('Pick the red cube and place it in the bowl') — the file is written but the plan is paused pending human pyngrok-legitimacy sign-off before it is considered final"
 
-requirements-completed: []  # VLAHW-01 not yet complete — plan now paused at Task 3's blocking checkpoint:human-verify (pyngrok legitimacy)
+requirements-completed: []  # VLAHW-01 not yet complete — plan paused at Task 3's blocking checkpoint:human-verify (pyngrok legitimacy) pending human sign-off
 
 coverage: []  # No deliverables to classify yet at this partial checkpoint — see coverage note below
 
@@ -37,16 +39,16 @@ completed: 2026-09-21
 status: paused-checkpoint
 ---
 
-# Phase 11 Plan 03: SmolVLA Checkpoint Selection + Colab Bridge Docs Summary (PARTIAL — paused at Task 3)
+# Phase 11 Plan 03: SmolVLA Checkpoint Selection + Colab Bridge Docs Summary (PARTIAL — paused at Task 3's human-verify)
 
-**Task 1 fetched real `config.json` data for all 4 candidate SmolVLA checkpoints, revealing none actually matches this project's 2-camera rig as a plain 1:1 mapping — 3 expect 3 cameras (not 2, despite one's "_2_cameras" name), 1 expects 5, and one candidate 404s. The human selected `victorvanhalst/smolvla_so101_cube` at Task 2's `checkpoint:decision`, resolving the 3-camera-slot mismatch via a split-stereo mapping rather than a dummy feed (wrist=camera1, stereo-left-half=camera2, stereo-right-half=camera3). Task 3 is now drafting `policy_server_launch.md` embedding that checkpoint and camera mapping, then will halt at its own blocking `checkpoint:human-verify` (pyngrok legitimacy + TCP-tunnel/checkpoint-id correctness).**
+**Task 1 fetched real `config.json` data for all 4 candidate SmolVLA checkpoints, revealing none actually matches this project's 2-camera rig as a plain 1:1 mapping — 3 expect 3 cameras (not 2, despite one's "_2_cameras" name), 1 expects 5, and one candidate 404s. The human selected `victorvanhalst/smolvla_so101_cube` at Task 2's `checkpoint:decision`, resolving the 3-camera-slot mismatch via a split-stereo mapping rather than a dummy feed (wrist=camera1, stereo-left-half=camera2, stereo-right-half=camera3). Task 3 drafted `control/vla_bridge/policy_server_launch.md` embedding that checkpoint, task instruction, and camera mapping, and the plan is now paused at Task 3's blocking `checkpoint:human-verify` — a human must confirm pyngrok's legitimacy and the file's TCP-tunnel/checkpoint-id correctness before this plan is finalized as complete.**
 
 ## Performance
 
-- **Duration:** partial (Task 1 complete, Task 2 decided, Task 3 in progress)
+- **Duration:** partial (Tasks 1-3 all executed to the point automatable; Task 3's human sign-off is the only remaining gate)
 - **Started:** 2026-09-21 (session start)
-- **Tasks:** 1 of 3 fully completed (Task 2's decision is recorded; Task 3's file/checkpoint not yet reached)
-- **Files modified:** 2
+- **Tasks:** 2 of 3 fully completed (Task 1, Task 2); Task 3's file is written and its own `checkpoint:human-verify` is now the open item
+- **Files modified:** 3
 
 ## Accomplishments
 
@@ -58,18 +60,21 @@ status: paused-checkpoint
   - `cn0303/smolvla-so101-strawberry-v3`: **5** camera inputs (3 real + 2 `empty_camera_*` dummy slots) — UNCLEAR FIT
 - Explicitly documented the AR0144-stereo-is-one-physical-2560x720-frame caveat in the generated file, per acceptance criteria.
 - **Task 2 decision resolved** (`checkpoint:decision`, `gate="blocking"`): the human selected `victorvanhalst/smolvla_so101_cube` — the exact task-instruction match to D-02's red-cube task ("Pick the red cube and place it in the bowl") — over the other 3 candidates and the ACT/pi0 fallback. The candidate's 3-camera-slot config.json (`camera1`/`camera2`/`camera3`, none marked `empty_camera_*`) is resolved against this project's real 2-physical-camera rig by treating the AR0144's single 2560x720 stereo frame as **two distinct real feeds** (left half + right half) rather than one wide image or a dummy slot, giving 3 genuinely distinct real camera views total: `camera1`=IMX335 wrist, `camera2`=AR0144 stereo-left (columns `[0:1280]`), `camera3`=AR0144 stereo-right (columns `[1280:2560]`). This pattern was corroborated by researching community SmolVLA fine-tunes with similar 2-real-camera + inherited-3rd-slot conventions (`bklassen3434/smolvla_pick_pen_v2_frozen`, `Yilin1001/smolvla-pen-v2-030000`); this project's case is an even better fit since all 3 slots map to genuinely distinct real views, not a dummy.
+- **Task 3 drafted `control/vla_bridge/policy_server_launch.md`**: Colab notebook cell instructions for (1) `pip install 'lerobot[async]'` (approved, transitive dep), (2) `pip install pyngrok==8.1.2` (flagged SUS — gated on this task's own checkpoint), (3) `PolicyServerConfig(host="0.0.0.0", port=8080)` + `serve(config)`, (4) `ngrok.connect(8080, "tcp")` — explicit TCP tunnel, not HTTP, per Pitfall 5 — printing the public host:port, (5) the local-side `robot_client` CLI invocation embedding the selected checkpoint id, the split-stereo camera mapping (`camera1`/`camera2`/`camera3`), and the exact task instruction "Pick the red cube and place it in the bowl", and (6) explicit teardown instructions (stop the ngrok tunnel and `PolicyServer` process every session, per T-11-08). The file also flags that the stock `robot_client.py` CLI has no built-in "split one wide frame into two named cameras" option — Plan 11-04 is responsible for implementing the actual split mechanism (custom camera-type plugin or an observation-building patch); this file only fixes the target mapping.
 
 ## Task Commits
 
 1. **Task 1: Fetch and compare candidate SmolVLA checkpoints** - `4f1956f` (feat)
-2. **Task 2: Record checkpoint decision** - (this commit, docs)
+2. **Task 2: Record checkpoint decision** - `de2444c` (docs)
+3. **Task 3: Draft Colab PolicyServer + tunnel setup doc** - (this commit, docs) — halted immediately after at Task 3's own `checkpoint:human-verify`, not yet approved
 
-Task 3 (checkpoint:human-verify) not yet executed — proceeding to draft `policy_server_launch.md` next, then this plan will halt at Task 3's own blocking checkpoint pending human pyngrok-legitimacy sign-off.
+**This plan is not yet complete.** A human must type "approved" (or specify the cloudflared fallback) at Task 3's checkpoint before `status: complete` can be set.
 
 ## Files Created/Modified
 
 - `control/vla_bridge/check_checkpoint.py` - fetches/compares 4 candidate SmolVLA checkpoints' HF Hub config.json against the real 2-camera rig
 - `control/vla_bridge/checkpoint_candidates.md` - generated comparison table (data artifact, real fetched results)
+- `control/vla_bridge/policy_server_launch.md` - Colab `PolicyServer` + ngrok TCP tunnel launch instructions, embedding the Task 2 checkpoint and camera mapping (docs artifact, not executable code)
 
 ## Decisions Made
 
@@ -103,20 +108,27 @@ This also confirms Task 1's own findings remain valid as a material update to RE
 
 ## User Setup Required
 
-None yet for Task 2 (a decision, not an install). Task 3 (in progress) requires a human `pyngrok` legitimacy check before any Colab-side install — see this plan's Task 3 definition; this plan will halt at that checkpoint next.
+**Yes — Task 3's `checkpoint:human-verify` is now the open item.** Per `11-03-PLAN.md`'s Task 3 `how-to-verify`:
+1. Visit https://pypi.org/project/pyngrok/ and confirm it is the genuine Python wrapper for ngrok (maintained under the `ngrok`/`alexdlaird` PyPI namespace) and that `8.1.2` is a real published version.
+2. Confirm `control/vla_bridge/policy_server_launch.md` explicitly requests a TCP tunnel (`ngrok.connect(8080, "tcp")`), not the default HTTP tunnel type.
+3. Confirm the file's local-side CLI example uses `victorvanhalst/smolvla_so101_cube` (Task 2's selection), not a placeholder.
+
+Reply "approved" once satisfied, or describe what's wrong (e.g. "use cloudflared instead").
 
 ## Next Phase Readiness
 
-**Not yet ready to proceed to Plan 11-04 or 11-05.** Task 2's decision is now resolved (`victorvanhalst/smolvla_so101_cube`, 3-real-camera split-stereo mapping). Proceeding now to Task 3: draft `control/vla_bridge/policy_server_launch.md` embedding this checkpoint id and camera mapping, then halt at Task 3's own blocking `checkpoint:human-verify` (pyngrok legitimacy + TCP-tunnel/checkpoint-id correctness). Only after a human types "approved" (or specifies the cloudflared fallback) is this plan's SUMMARY finalized as `status: complete`.
+**Not yet ready to proceed to Plan 11-04 or 11-05.** Task 2's decision is resolved (`victorvanhalst/smolvla_so101_cube`, 3-real-camera split-stereo mapping) and Task 3's `policy_server_launch.md` is drafted and committed, but this plan is paused at Task 3's blocking `checkpoint:human-verify`. Only after a human types "approved" (or specifies the cloudflared fallback) is this plan's SUMMARY finalized as `status: complete`.
 
 ## Self-Check: PASSED
 
 - FOUND: `control/vla_bridge/check_checkpoint.py`
 - FOUND: `control/vla_bridge/checkpoint_candidates.md`
+- FOUND: `control/vla_bridge/policy_server_launch.md`
 - FOUND: `.planning/phases/11-vla-hardware-connection/11-03-SUMMARY.md`
 - FOUND commit: `4f1956f` (Task 1)
 - FOUND commit: `dabc3b1` (partial SUMMARY)
 - FOUND commit: `42611f7` (self-check append)
+- FOUND commit: `de2444c` (Task 2 decision recorded)
 
 ---
 *Phase: 11-vla-hardware-connection*
