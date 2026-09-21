@@ -37,6 +37,7 @@ from lerobot.robots.so_follower.so_follower import SO101Follower
 from keyboard_joint_control import move_to_positions, read_positions
 from vla_bridge import action_contract, safety_validator
 from vla_bridge.io_logger import IOLogger
+from vla_bridge.robot_client import BridgeActionSource, connect_bridge
 
 # Camera indices can shift on USB replug -- see control/COMMANDS.md's own
 # caveat. This mapping is fixed for the default 2-camera rig (IMX335 wrist @
@@ -198,7 +199,25 @@ def main():
     parser.add_argument("--instruction", type=str, default="Pick up the red cube")
     parser.add_argument("--max-steps", type=int, default=60)
     parser.add_argument("--control-hz", type=float, default=2.0)
+    parser.add_argument(
+        "--server-address",
+        type=str,
+        default=None,
+        help="Colab PolicyServer bridge address (host:port). When given, drives the robot "
+        "with a real Colab-hosted VLA via BridgeActionSource instead of ScriptedActionSource.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="HF Hub SmolVLA checkpoint id. Required when --server-address is given.",
+    )
     args = parser.parse_args()
+
+    if args.server_address and not args.checkpoint:
+        parser.error("--checkpoint is required when --server-address is given")
+    if args.checkpoint and not args.server_address:
+        parser.error("--server-address is required when --checkpoint is given")
 
     if not args.camera:
         args.camera = _probe_camera_indices()
@@ -211,19 +230,47 @@ def main():
         else:
             print(f"WARNING: camera index {idx} did not open, skipping")
 
-    robot = SO101Follower(
-        SOFollowerRobotConfig(
+    joint_limits_deg = action_contract.load_joint_limits_deg()
+
+    if args.server_address:
+        # Real, network-bridged SmolVLA path (Plan 11-04). `connect_bridge()`
+        # constructs AND connects the physical robot internally -- its
+        # returned client's `.robot` is the one true robot handle; do NOT
+        # also construct a separate local SO101Follower here.
+        robot_config = SOFollowerRobotConfig(
             port=args.port,
             id=args.robot_id,
             max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG,
         )
-    )
-    robot.connect(calibrate=False)
-    with robot.bus.torque_disabled():
-        robot.bus.write_calibration(robot.calibration)
-
-    action_source = ScriptedActionSource()
-    joint_limits_deg = action_contract.load_joint_limits_deg()
+        client = connect_bridge(
+            args.server_address,
+            args.checkpoint,
+            robot_config=robot_config,
+            task=args.instruction,
+            policy_device="cuda",
+        )
+        if client is None:
+            print(f"Bridge unreachable at {args.server_address}, aborting before touching the robot.")
+            args.out.mkdir(parents=True, exist_ok=True)
+            _write_termination(args.out, "bridge_unreachable", 0)
+            for cap in caps.values():
+                cap.release()
+            return
+        robot = client.robot
+        action_source = BridgeActionSource(client, args.checkpoint, joint_limits_deg)
+    else:
+        # Plan 11-02's scripted dry-run path, unchanged.
+        robot = SO101Follower(
+            SOFollowerRobotConfig(
+                port=args.port,
+                id=args.robot_id,
+                max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG,
+            )
+        )
+        robot.connect(calibrate=False)
+        with robot.bus.torque_disabled():
+            robot.bus.write_calibration(robot.calibration)
+        action_source = ScriptedActionSource()
 
     try:
         with IOLogger(args.out, DEFAULT_CAMERA_NAMES) as io_logger:
@@ -241,7 +288,10 @@ def main():
     finally:
         for cap in caps.values():
             cap.release()
-        robot.disconnect()
+        if args.server_address:
+            client.stop()
+        else:
+            robot.disconnect()
 
 
 if __name__ == "__main__":
