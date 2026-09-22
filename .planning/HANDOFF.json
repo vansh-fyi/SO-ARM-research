@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-21T06:47:09.352Z",
+  "phase": "11",
+  "phase_name": "VLA Hardware Connection",
+  "phase_dir": ".planning/phases/11-vla-hardware-connection",
+  "plan": "11-05",
+  "task": 1,
+  "total_tasks": 3,
+  "status": "paused",
+  "completed_tasks": [],
+  "remaining_tasks": [
+    {"id": 1, "name": "E-stop hardware-in-the-loop verification", "status": "awaiting_human_verification"},
+    {"id": 2, "name": "Full VLA-driven episode, recorded end-to-end", "status": "not_started"},
+    {"id": 3, "name": "Findings write-up and go/no-go recommendation", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "Task 1's checkpoint:human-verify is awaiting the user's e-stop test report against the real SO-ARM101 — no response received yet in this session.", "type": "human_action", "workaround": "none — requires physical hardware access"}
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {
+      "action": "Run the e-stop hardware check and report the outcome",
+      "context": "cd control && .venv/bin/python run_vla_episode.py <PORT> soarm_follower_02 --out outputs/estop_check_001 --max-steps 200 --control-hz 2.0 ; press Ctrl+C mid-motion (gripper toggles every 30 steps); confirm (a) no motion after interrupt, (b) arm returns to start within ~5s, (c) clean exit no traceback, (d) outputs/estop_check_001/termination.json has reason=keyboard_interrupt. Reply 'approved' or describe what actually happened.",
+      "blocking": true
+    }
+  ],
+  "decisions": [
+    {"decision": "Checkpoint: victorvanhalst/smolvla_so101_cube (fine-tuned on victorvanhalst/so101_cube_picking1)", "rationale": "Exact task-instruction match to the red-cube task (\"Pick the red cube and place it in the bowl\"); confirmed real/public/non-placeholder on HF Hub. lerobot/smolvla_base zero-shot is confirmed non-viable (lerobot#2210 root cause: missing baked-in normalization stats, not an SO-101 incompatibility).", "phase": "11"},
+    {"decision": "Task stays the red cube pick (D-02), NOT Pen Transfer", "rationale": "A live mid-session discussion considered switching to the paper's Pen Transfer task for literature alignment, but the selected checkpoint is only trained on the red-cube task — since no fine-tuning happens in this phase, the checkpoint's own trained task determines what's actually achievable.", "phase": "11"},
+    {"decision": "Camera mapping: 3 real feeds — camera1=IMX335 wrist, camera2=AR0144 stereo LEFT half [0:1280], camera3=AR0144 stereo RIGHT half [1280:2560]", "rationale": "The selected checkpoint's config.json expects 3 real (non-empty) camera slots. Splitting the AR0144's single 2560x720 stereo frame into two genuinely distinct halves is a better fit than a dummy/duplicate 3rd slot. Implemented in Plan 11-04 Task 3 (control/vla_bridge/stereo_camera.py, StereoSplitCamera) — this task was added to 11-04-PLAN.md AFTER the plan was originally written/plan-checker-approved, once this camera decision was made live.", "phase": "11"},
+    {"decision": "Colab bridge: lerobot.async_inference gRPC PolicyServer/RobotClient + ngrok TCP tunnel (not HTTP)", "rationale": "Matches D-01's Colab-GPU-relay requirement; already shipped in installed lerobot==0.6.1, no hand-rolled serial/gRPC code needed. gRPC needs raw TCP — an HTTP-only tunnel would silently break it.", "phase": "11"},
+    {"decision": "pyngrok package legitimacy approved by human (visited pypi.org, confirmed ngrok/alexdlaird namespace, 8.1.2 real published version)", "rationale": "RESEARCH.md's Package Legitimacy Audit flagged pyngrok as SUS pending human sign-off before any Colab install cell runs it.", "phase": "11"},
+    {"decision": "Bridge safety design: never call RobotClient.control_loop_action()/control_loop() — those call robot.send_action() internally, unvalidated", "rationale": "Direct reading of installed lerobot 0.6.1 source (not just docs) found this would silently bypass VLAHW-02's safety validator. Plan 11-04 instead uses control_loop_observation() + a hand-rolled pop_validated_action() that always routes through safety_validator.validate_action() before any send_action() call.", "phase": "11"}
+  ],
+  "uncommitted_files": [
+    ".planning/phases/11-vla-hardware-connection/11-PATTERNS.md (untracked, pre-existing since discuss-phase; harmless, not blocking)"
+  ],
+  "next_action": "Wait for the user to report the e-stop hardware test outcome from the pending checkpoint. On response: spawn a fresh gsd-executor continuation agent reattached to the EXISTING worktree at .claude/worktrees/agent-afe9e290a91f86d2e (branch worktree-agent-afe9e290a91f86d2e, currently at commit 946b9ee) — do NOT create a new worktree. If approved, continue to Task 2 (full live VLA episode via Colab bridge). If the user reports a failure, treat it as a real safety finding — do not proceed to Task 2 until the e-stop issue is understood/fixed.",
+  "context_notes": "Phase 11 (VLA Hardware Connection) is down to its last plan (11-05), which is 100% hardware-in-the-loop and cannot be automated further by an agent — every remaining task requires the user to physically operate the real SO-ARM101 and Colab. Waves 1-3 (plans 11-01, 11-02, 11-03, 11-04) are fully merged to master and passing (41/41 control/ tests green). An open worktree exists for 11-05 with one commit (partial SUMMARY.md, plan started, no tasks complete yet) — reuse it on resume, do not re-dispatch a fresh worktree for this plan. Remember: after any future worktree merge in this phase, the main checkout's control/.venv needs pytest/grpcio/protobuf installed manually (worktree-created venvs are gitignored and don't survive the merge) before running the post-merge test gate."
+}
