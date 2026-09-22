@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 import run_vla_episode
-from run_vla_episode import ScriptedActionSource, run_episode
+from run_vla_episode import ScriptedActionSource, _build_camera_names, run_episode
 from vla_bridge import action_contract
 from vla_bridge.io_logger import IOLogger
 
@@ -143,6 +143,25 @@ def test_keyboard_interrupt_triggers_return_to_start_before_disconnect(
     assert termination["reason"] == "keyboard_interrupt"
 
 
+# --- _build_camera_names (Plan 11-05, Task 1/2 prep -- positional relabeling) ---
+
+
+def test_build_camera_names_assigns_positionally_not_by_raw_index():
+    # Plan 11-05 Task 1 found the AR0144 stereo camera at index 0 and the
+    # IMX335 wrist camera at index 1 on this session's hardware -- the
+    # reverse of the previous fixed {0: "wrist", 1: "overhead"} table. Passing
+    # --camera in physical-reality order must relabel correctly.
+    assert _build_camera_names([1, 0]) == {1: "wrist", 0: "overhead"}
+
+
+def test_build_camera_names_default_order_matches_prior_default_table():
+    assert _build_camera_names([0, 1]) == {0: "wrist", 1: "overhead"}
+
+
+def test_build_camera_names_drops_extra_indices_beyond_known_names():
+    assert _build_camera_names([0, 1, 2]) == {0: "wrist", 1: "overhead"}
+
+
 # --- --server-address / --checkpoint bridge selection (Plan 11-04, Task 2) ---
 
 
@@ -158,8 +177,11 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
 
     fake_client = FakeBridgeClient()
 
-    def fake_connect_bridge(server_address, checkpoint, robot_config, task, policy_device="cuda"):
+    def fake_connect_bridge(
+        server_address, checkpoint, robot_config, task, policy_device="cuda", stereo_camera_index=1
+    ):
         calls["connect_bridge_args"] = (server_address, checkpoint, task, policy_device)
+        calls["stereo_camera_index"] = stereo_camera_index
         return fake_client
 
     class FakeBridgeActionSource:
@@ -202,12 +224,63 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
     assert calls["connect_bridge_args"][0] == "0.tcp.ngrok.io:12345"
     assert calls["connect_bridge_args"][1] == "victorvanhalst/smolvla_so101_cube"
     assert calls.get("stopped") is True
+    # Default --stereo-camera-index is 1 when not given on the CLI.
+    assert calls["stereo_camera_index"] == 1
+
+
+def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch, tmp_path):
+    calls = {}
+
+    class FakeBridgeClient:
+        def __init__(self):
+            self.robot = object()
+
+        def stop(self):
+            pass
+
+    fake_client = FakeBridgeClient()
+
+    def fake_connect_bridge(
+        server_address, checkpoint, robot_config, task, policy_device="cuda", stereo_camera_index=1
+    ):
+        calls["stereo_camera_index"] = stereo_camera_index
+        return fake_client
+
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/fake_port",
+            "fake_robot_id",
+            "--out",
+            str(tmp_path),
+            "--camera",
+            "0",
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+            "--stereo-camera-index",
+            "0",
+        ],
+    )
+
+    run_vla_episode.main()
+
+    assert calls["stereo_camera_index"] == 0
 
 
 def test_bridge_unreachable_writes_termination_reason_without_driving_robot(monkeypatch, tmp_path):
     calls = {"run_episode_called": False}
 
-    def fake_connect_bridge_returns_none(server_address, checkpoint, robot_config, task, policy_device="cuda"):
+    def fake_connect_bridge_returns_none(
+        server_address, checkpoint, robot_config, task, policy_device="cuda", stereo_camera_index=1
+    ):
         return None
 
     def fake_run_episode(*args, **kwargs):

@@ -40,10 +40,29 @@ from vla_bridge.io_logger import IOLogger
 from vla_bridge.robot_client import BridgeActionSource, connect_bridge
 
 # Camera indices can shift on USB replug -- see control/COMMANDS.md's own
-# caveat. This mapping is fixed for the default 2-camera rig (IMX335 wrist @
-# index 0, AR0144 stereo overhead @ index 1); override at the CLI if indices
-# have shifted.
-DEFAULT_CAMERA_NAMES = {0: "wrist", 1: "overhead"}
+# caveat. Semantic names are assigned POSITIONALLY from the order `--camera`
+# indices are given (or ascending probe order, if omitted) via
+# `_build_camera_names()` below -- NOT from a fixed index->name table -- so
+# `--camera <idx1> --camera <idx2>` genuinely relabels which physical device
+# is "wrist" vs "overhead" when USB enumeration order shifts. This was a real
+# bug found in Plan 11-05 Task 1: a previous fixed `{0: "wrist", 1:
+# "overhead"}` table silently mislabeled recorded camera output whenever the
+# physical index assignment didn't match the table, even though `--camera`
+# was passed in the "corrected" order (the table ignored --camera's order
+# entirely). Default assumption if `--camera` is omitted: index 0 = wrist,
+# index 1 = overhead -- reverify with `ls /dev/cu.usbmodem*`-style physical
+# checks (e.g. cover-the-lens test) before trusting it, since it has already
+# been observed to invert on this rig.
+CAMERA_SEMANTIC_NAMES = ["wrist", "overhead"]
+
+
+def _build_camera_names(camera_indices: list[int]) -> dict[int, str]:
+    """Maps physical camera indices to semantic names positionally: the Nth
+    index in `camera_indices` (CLI `--camera` order, or ascending probe
+    order) gets the Nth name in `CAMERA_SEMANTIC_NAMES`. Indices beyond the
+    known semantic names are left unlabeled (still present in `caps` for
+    direct iteration, just not recorded under a semantic name)."""
+    return dict(zip(camera_indices, CAMERA_SEMANTIC_NAMES))
 
 
 class ActionSource(Protocol):
@@ -212,6 +231,16 @@ def main():
         default=None,
         help="HF Hub SmolVLA checkpoint id. Required when --server-address is given.",
     )
+    parser.add_argument(
+        "--stereo-camera-index",
+        type=int,
+        default=1,
+        help="cv2 index of the AR0144 stereo camera for the --server-address bridge path's "
+        "camera2/camera3 split (vla_bridge.robot_client.connect_bridge's stereo_camera_index). "
+        "Independent of --camera (which only controls this script's own IOLogger recording "
+        "caps) -- verify which physical index is actually the AR0144 before a live run; it has "
+        "been observed to shift (Plan 11-05 Task 1).",
+    )
     args = parser.parse_args()
 
     if args.server_address and not args.checkpoint:
@@ -221,6 +250,8 @@ def main():
 
     if not args.camera:
         args.camera = _probe_camera_indices()
+
+    camera_names = _build_camera_names(args.camera)
 
     caps = {}
     for idx in args.camera:
@@ -248,6 +279,7 @@ def main():
             robot_config=robot_config,
             task=args.instruction,
             policy_device="cuda",
+            stereo_camera_index=args.stereo_camera_index,
         )
         if client is None:
             print(f"Bridge unreachable at {args.server_address}, aborting before touching the robot.")
@@ -273,11 +305,11 @@ def main():
         action_source = ScriptedActionSource()
 
     try:
-        with IOLogger(args.out, DEFAULT_CAMERA_NAMES) as io_logger:
+        with IOLogger(args.out, camera_names) as io_logger:
             run_episode(
                 robot,
                 caps,
-                DEFAULT_CAMERA_NAMES,
+                camera_names,
                 io_logger,
                 action_source,
                 args.instruction,
