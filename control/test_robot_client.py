@@ -188,6 +188,58 @@ def test_connect_bridge_returns_connected_client_on_success(monkeypatch):
     assert obs["camera3"] == "fake-right-frame"
 
 
+class FakeRobotConfigWithCameras:
+    """Stand-in `robot_config`-shaped double exposing a real, mutable
+    `.cameras` dict -- the field `connect_bridge()`'s camera1 wiring writes
+    to, without needing a real `SOFollowerRobotConfig`."""
+
+    def __init__(self):
+        self.cameras: dict = {}
+
+
+def test_connect_bridge_wires_camera1_wrist_when_wrist_camera_index_given(monkeypatch):
+    """The camera1 (wrist) wiring gap found live this session: connect_bridge()
+    must populate robot_config.cameras["camera1"] with a real camera source
+    sourced from wrist_camera_index, not leave it empty/missing."""
+    monkeypatch.setattr(robot_client, "RobotClient", FakeRobotClientHandshakeSucceeds)
+    monkeypatch.setattr(robot_client, "StereoSplitCamera", FakeStereoSplitCamera)
+
+    robot_config = FakeRobotConfigWithCameras()
+
+    result = robot_client.connect_bridge(
+        server_address="0.tcp.ngrok.io:12345",
+        checkpoint="victorvanhalst/smolvla_so101_cube",
+        robot_config=robot_config,
+        task="Pick the red cube and place it in the bowl",
+        wrist_camera_index=2,
+    )
+
+    assert isinstance(result, FakeRobotClientHandshakeSucceeds)
+    assert "camera1" in robot_config.cameras
+    from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+
+    camera1_config = robot_config.cameras["camera1"]
+    assert isinstance(camera1_config, OpenCVCameraConfig)
+    assert camera1_config.index_or_path == 2
+
+
+def test_connect_bridge_leaves_cameras_untouched_when_wrist_camera_index_omitted(monkeypatch):
+    """Default (wrist_camera_index=None) must not touch robot_config.cameras at
+    all -- regression: robot_config=object() (no .cameras attribute) must
+    still work unchanged, matching the pre-fix call signature."""
+    monkeypatch.setattr(robot_client, "RobotClient", FakeRobotClientHandshakeSucceeds)
+    monkeypatch.setattr(robot_client, "StereoSplitCamera", FakeStereoSplitCamera)
+
+    result = robot_client.connect_bridge(
+        server_address="0.tcp.ngrok.io:12345",
+        checkpoint="victorvanhalst/smolvla_so101_cube",
+        robot_config=object(),  # no .cameras attribute -- must not be touched
+        task="Pick the red cube and place it in the bowl",
+    )
+
+    assert isinstance(result, FakeRobotClientHandshakeSucceeds)
+
+
 # --- BridgeActionSource --------------------------------------------------------
 
 

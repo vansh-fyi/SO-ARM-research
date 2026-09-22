@@ -165,6 +165,14 @@ def test_build_camera_names_drops_extra_indices_beyond_known_names():
 # --- --server-address / --checkpoint bridge selection (Plan 11-04, Task 2) ---
 
 
+def _point_device_map_at_nonexistent_path(monkeypatch, tmp_path):
+    """Keeps bridge-selection tests hermetic regardless of whether a real
+    control/device_map.json happens to exist on the machine running these
+    tests -- device_map.json resolution is exercised by its own dedicated
+    tests below."""
+    monkeypatch.setattr(run_vla_episode, "DEVICE_MAP_PATH", tmp_path / "nonexistent_device_map.json")
+
+
 def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeypatch, tmp_path):
     calls = {}
 
@@ -178,10 +186,17 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
     fake_client = FakeBridgeClient()
 
     def fake_connect_bridge(
-        server_address, checkpoint, robot_config, task, policy_device="cuda", stereo_camera_index=1
+        server_address,
+        checkpoint,
+        robot_config,
+        task,
+        policy_device="cuda",
+        stereo_camera_index=1,
+        wrist_camera_index=None,
     ):
         calls["connect_bridge_args"] = (server_address, checkpoint, task, policy_device)
         calls["stereo_camera_index"] = stereo_camera_index
+        calls["wrist_camera_index"] = wrist_camera_index
         return fake_client
 
     class FakeBridgeActionSource:
@@ -194,6 +209,7 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
     ):
         calls["action_source_type"] = type(action_source).__name__
 
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
     monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(run_vla_episode, "BridgeActionSource", FakeBridgeActionSource)
     monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
@@ -224,8 +240,11 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
     assert calls["connect_bridge_args"][0] == "0.tcp.ngrok.io:12345"
     assert calls["connect_bridge_args"][1] == "victorvanhalst/smolvla_so101_cube"
     assert calls.get("stopped") is True
-    # Default --stereo-camera-index is 1 when not given on the CLI.
+    # Default --stereo-camera-index is 1 when neither the CLI nor device_map.json
+    # supplies one.
     assert calls["stereo_camera_index"] == 1
+    # Single --camera 0 given -> _build_camera_names([0]) == {0: "wrist"}.
+    assert calls["wrist_camera_index"] == 0
 
 
 def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch, tmp_path):
@@ -241,11 +260,18 @@ def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch,
     fake_client = FakeBridgeClient()
 
     def fake_connect_bridge(
-        server_address, checkpoint, robot_config, task, policy_device="cuda", stereo_camera_index=1
+        server_address,
+        checkpoint,
+        robot_config,
+        task,
+        policy_device="cuda",
+        stereo_camera_index=1,
+        wrist_camera_index=None,
     ):
         calls["stereo_camera_index"] = stereo_camera_index
         return fake_client
 
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
     monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
@@ -275,17 +301,81 @@ def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch,
     assert calls["stereo_camera_index"] == 0
 
 
+def test_wrist_camera_index_threads_through_from_camera_names(monkeypatch, tmp_path):
+    """The camera1 (wrist) wiring gap fix: connect_bridge() must receive
+    whichever physical index _build_camera_names() positionally assigned to
+    "wrist" -- here, --camera 5 (first) --camera 7 (second) -> wrist=5."""
+    calls = {}
+
+    class FakeBridgeClient:
+        def __init__(self):
+            self.robot = object()
+
+        def stop(self):
+            pass
+
+    fake_client = FakeBridgeClient()
+
+    def fake_connect_bridge(
+        server_address,
+        checkpoint,
+        robot_config,
+        task,
+        policy_device="cuda",
+        stereo_camera_index=1,
+        wrist_camera_index=None,
+    ):
+        calls["wrist_camera_index"] = wrist_camera_index
+        return fake_client
+
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/fake_port",
+            "fake_robot_id",
+            "--out",
+            str(tmp_path),
+            "--camera",
+            "5",
+            "--camera",
+            "7",
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+        ],
+    )
+
+    run_vla_episode.main()
+
+    assert calls["wrist_camera_index"] == 5
+
+
 def test_bridge_unreachable_writes_termination_reason_without_driving_robot(monkeypatch, tmp_path):
     calls = {"run_episode_called": False}
 
     def fake_connect_bridge_returns_none(
-        server_address, checkpoint, robot_config, task, policy_device="cuda", stereo_camera_index=1
+        server_address,
+        checkpoint,
+        robot_config,
+        task,
+        policy_device="cuda",
+        stereo_camera_index=1,
+        wrist_camera_index=None,
     ):
         return None
 
     def fake_run_episode(*args, **kwargs):
         calls["run_episode_called"] = True
 
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
     monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge_returns_none)
     monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
     monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
@@ -316,6 +406,7 @@ def test_bridge_unreachable_writes_termination_reason_without_driving_robot(monk
 
 
 def test_checkpoint_without_server_address_errors_clearly(monkeypatch, tmp_path):
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -331,3 +422,174 @@ def test_checkpoint_without_server_address_errors_clearly(monkeypatch, tmp_path)
 
     with pytest.raises(SystemExit):
         run_vla_episode.main()
+
+
+# --- device_map.json integration (Plan 11-05 Task 2) --------------------------------
+
+
+def test_device_map_supplies_port_robot_id_camera_defaults_when_cli_args_omitted(monkeypatch, tmp_path):
+    device_map_path = tmp_path / "device_map.json"
+    device_map_path.write_text(
+        json.dumps(
+            {
+                "detected_at": "2026-09-22T10:00:00Z",
+                "follower": {"port": "/dev/cu.fake999", "id": "soarm_follower_02"},
+                "leader": None,
+                "cameras": {"wrist": 3, "stereo_overhead": 4},
+            }
+        )
+    )
+    monkeypatch.setattr(run_vla_episode, "DEVICE_MAP_PATH", device_map_path)
+
+    calls = {}
+
+    class FakeBridgeClient:
+        def __init__(self):
+            self.robot = object()
+
+        def stop(self):
+            calls["stopped"] = True
+
+    fake_client = FakeBridgeClient()
+
+    def fake_connect_bridge(
+        server_address,
+        checkpoint,
+        robot_config,
+        task,
+        policy_device="cuda",
+        stereo_camera_index=1,
+        wrist_camera_index=None,
+    ):
+        calls["port"] = robot_config.port
+        calls["robot_id"] = robot_config.id
+        calls["stereo_camera_index"] = stereo_camera_index
+        calls["wrist_camera_index"] = wrist_camera_index
+        return fake_client
+
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "--out",
+            str(tmp_path / "out"),
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+        ],
+    )
+
+    run_vla_episode.main()
+
+    assert calls["port"] == "/dev/cu.fake999"
+    assert calls["robot_id"] == "soarm_follower_02"
+    assert calls["stereo_camera_index"] == 4
+    assert calls["wrist_camera_index"] == 3
+
+
+def test_explicit_cli_args_override_device_map_json(monkeypatch, tmp_path):
+    device_map_path = tmp_path / "device_map.json"
+    device_map_path.write_text(
+        json.dumps(
+            {
+                "detected_at": "2026-09-22T10:00:00Z",
+                "follower": {"port": "/dev/cu.should_not_be_used", "id": "wrong_id"},
+                "leader": None,
+                "cameras": {"wrist": 99, "stereo_overhead": 98},
+            }
+        )
+    )
+    monkeypatch.setattr(run_vla_episode, "DEVICE_MAP_PATH", device_map_path)
+
+    calls = {}
+
+    class FakeBridgeClient:
+        def __init__(self):
+            self.robot = object()
+
+        def stop(self):
+            pass
+
+    fake_client = FakeBridgeClient()
+
+    def fake_connect_bridge(
+        server_address,
+        checkpoint,
+        robot_config,
+        task,
+        policy_device="cuda",
+        stereo_camera_index=1,
+        wrist_camera_index=None,
+    ):
+        calls["port"] = robot_config.port
+        calls["robot_id"] = robot_config.id
+        calls["stereo_camera_index"] = stereo_camera_index
+        return fake_client
+
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/cu.explicit_port",
+            "explicit_robot_id",
+            "--camera",
+            "0",
+            "--out",
+            str(tmp_path / "out"),
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+            "--stereo-camera-index",
+            "1",
+        ],
+    )
+
+    run_vla_episode.main()
+
+    assert calls["port"] == "/dev/cu.explicit_port"
+    assert calls["robot_id"] == "explicit_robot_id"
+    assert calls["stereo_camera_index"] == 1
+
+
+def test_missing_port_and_device_map_errors_clearly(monkeypatch, tmp_path):
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    monkeypatch.setattr("sys.argv", ["run_vla_episode.py", "--out", str(tmp_path / "out")])
+
+    with pytest.raises(SystemExit):
+        run_vla_episode.main()
+
+
+def test_missing_camera_and_device_map_errors_clearly(monkeypatch, tmp_path):
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["run_vla_episode.py", "/dev/fake_port", "fake_robot_id", "--out", str(tmp_path / "out")],
+    )
+
+    with pytest.raises(SystemExit):
+        run_vla_episode.main()
+
+
+def test_help_still_documents_port_robot_id_camera_as_explicit_overrides(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["run_vla_episode.py", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_vla_episode.main()
+
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "port" in captured.out
+    assert "robot_id" in captured.out
+    assert "--camera" in captured.out

@@ -27,6 +27,7 @@ Usage:
 import argparse
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
@@ -38,6 +39,12 @@ from keyboard_joint_control import move_to_positions, read_positions
 from vla_bridge import action_contract, safety_validator
 from vla_bridge.io_logger import IOLogger
 from vla_bridge.robot_client import BridgeActionSource, connect_bridge
+
+# Plan 11-05 Task 2's `detect_devices.py` output -- the new default source of
+# truth for PORT/ROBOT_ID/camera indices, since both were confirmed to drift
+# across sessions/replugs on this rig. See `_load_device_map()`.
+DEVICE_MAP_PATH = Path(__file__).resolve().parent / "device_map.json"
+DEVICE_MAP_MAX_AGE_HOURS = 24
 
 # Camera indices can shift on USB replug -- see control/COMMANDS.md's own
 # caveat. Semantic names are assigned POSITIONALLY from the order `--camera`
@@ -117,6 +124,36 @@ def _probe_camera_indices() -> list[int]:
         cap.release()
     print(f"Found cameras: {found}")
     return found
+
+
+def _load_device_map() -> dict | None:
+    """Loads `control/device_map.json` (Plan 11-05 Task 2's `detect_devices.py`
+    output) if present and parseable. Returns `None` -- never raises -- on
+    any failure (missing file, unreadable, invalid JSON), so callers can
+    fall through to requiring explicit CLI args instead of crashing."""
+    if not DEVICE_MAP_PATH.exists():
+        return None
+    try:
+        device_map = json.loads(DEVICE_MAP_PATH.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"WARNING: {DEVICE_MAP_PATH} exists but could not be read ({e}); ignoring it.")
+        return None
+
+    detected_at = device_map.get("detected_at")
+    if detected_at:
+        try:
+            detected_dt = datetime.strptime(detected_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            age_hours = (datetime.now(timezone.utc) - detected_dt).total_seconds() / 3600.0
+            if age_hours > DEVICE_MAP_MAX_AGE_HOURS:
+                print(
+                    f"WARNING: {DEVICE_MAP_PATH} is {age_hours:.1f}h old (>{DEVICE_MAP_MAX_AGE_HOURS}h) -- "
+                    "ports/camera indices may have shifted since detection. Re-run detect_devices.py "
+                    "if any USB device has been unplugged/replugged since then."
+                )
+        except ValueError:
+            pass  # Unparseable timestamp -- use the file anyway, just skip the freshness check.
+
+    return device_map
 
 
 def _write_termination(out_dir: Path, reason: str, steps_completed: int) -> None:
@@ -209,10 +246,27 @@ def run_episode(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("port")
-    parser.add_argument("robot_id")
     parser.add_argument(
-        "--camera", type=int, action="append", default=[], help="repeatable, e.g. --camera 0 --camera 1"
+        "port",
+        nargs="?",
+        default=None,
+        help="Serial port, e.g. /dev/cu.usbmodemXXXX. If omitted, read from "
+        "control/device_map.json's follower.port (run detect_devices.py first).",
+    )
+    parser.add_argument(
+        "robot_id",
+        nargs="?",
+        default=None,
+        help="Robot calibration id, e.g. soarm_follower_02. If omitted, read from "
+        "control/device_map.json's follower.id.",
+    )
+    parser.add_argument(
+        "--camera",
+        type=int,
+        action="append",
+        default=[],
+        help="repeatable, e.g. --camera 0 --camera 1. If omitted, read from "
+        "control/device_map.json's cameras.wrist/cameras.stereo_overhead.",
     )
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--instruction", type=str, default="Pick up the red cube")
@@ -234,12 +288,14 @@ def main():
     parser.add_argument(
         "--stereo-camera-index",
         type=int,
-        default=1,
+        default=None,
         help="cv2 index of the AR0144 stereo camera for the --server-address bridge path's "
         "camera2/camera3 split (vla_bridge.robot_client.connect_bridge's stereo_camera_index). "
         "Independent of --camera (which only controls this script's own IOLogger recording "
         "caps) -- verify which physical index is actually the AR0144 before a live run; it has "
-        "been observed to shift (Plan 11-05 Task 1).",
+        "been observed to shift (Plan 11-05 Task 1). If omitted, read from "
+        "control/device_map.json's cameras.stereo_overhead (falls back to 1 if "
+        "device_map.json is unavailable).",
     )
     args = parser.parse_args()
 
@@ -248,8 +304,40 @@ def main():
     if args.checkpoint and not args.server_address:
         parser.error("--server-address is required when --checkpoint is given")
 
+    device_map = _load_device_map()
+
+    if args.port is None or args.robot_id is None:
+        if device_map is None or device_map.get("follower") is None:
+            parser.error(
+                "PORT/ROBOT_ID not given and control/device_map.json's follower entry is "
+                "unavailable -- run detect_devices.py first, or pass PORT ROBOT_ID explicitly."
+            )
+        if args.port is None:
+            args.port = device_map["follower"]["port"]
+            print(f"Using port from device_map.json: {args.port}")
+        if args.robot_id is None:
+            args.robot_id = device_map["follower"]["id"]
+            print(f"Using robot_id from device_map.json: {args.robot_id}")
+
     if not args.camera:
-        args.camera = _probe_camera_indices()
+        if device_map is None or "cameras" not in device_map:
+            parser.error(
+                "--camera not given and control/device_map.json is unavailable -- "
+                "run detect_devices.py first, or pass --camera explicitly (repeatable)."
+            )
+        args.camera = [device_map["cameras"]["wrist"], device_map["cameras"]["stereo_overhead"]]
+        print(
+            f"Using cameras from device_map.json: wrist={args.camera[0]}, "
+            f"stereo_overhead={args.camera[1]}"
+        )
+
+    if args.stereo_camera_index is None:
+        if device_map is not None and "cameras" in device_map:
+            args.stereo_camera_index = device_map["cameras"]["stereo_overhead"]
+            print(f"Using stereo-camera-index from device_map.json: {args.stereo_camera_index}")
+        else:
+            args.stereo_camera_index = 1
+            print("Using default --stereo-camera-index=1 (device_map.json unavailable)")
 
     camera_names = _build_camera_names(args.camera)
 
@@ -273,6 +361,13 @@ def main():
             id=args.robot_id,
             max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG,
         )
+        # camera1 (wrist) wiring gap found live this session (Plan 11-05 Task 2):
+        # `connect_bridge()` only wired camera2/camera3 (the AR0144 stereo split),
+        # never camera1 -- silently starving the VLA checkpoint of its wrist view.
+        # `_build_camera_names()` assigns the FIRST `--camera`/device_map index to
+        # "wrist" positionally, so recover that same index here rather than
+        # re-deriving it a second way.
+        wrist_camera_index = next((idx for idx, name in camera_names.items() if name == "wrist"), None)
         client = connect_bridge(
             args.server_address,
             args.checkpoint,
@@ -280,6 +375,7 @@ def main():
             task=args.instruction,
             policy_device="cuda",
             stereo_camera_index=args.stereo_camera_index,
+            wrist_camera_index=wrist_camera_index,
         )
         if client is None:
             print(f"Bridge unreachable at {args.server_address}, aborting before touching the robot.")

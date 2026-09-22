@@ -3,8 +3,22 @@
 Copy-paste reference for all `control/` scripts. Run from the `control/` directory
 with the venv active (`source .venv/bin/activate` if not already).
 
-**Known hardware (update if ports change — macOS reassigns `/dev/cu.usbmodem*`
-suffixes on replug; check with `ls /dev/cu.usbmodem*`):**
+**Device auto-discovery (preferred over the table below):** ports AND camera
+indices were both confirmed to drift across sessions/replugs on this rig (Plan
+11-05). Run this first, any time a USB device has been unplugged/replugged:
+
+```bash
+python detect_devices.py
+```
+
+Writes `control/device_map.json` (gitignored, machine-local) with resolved
+follower/leader ports+ids and wrist/stereo-overhead camera indices.
+`run_vla_episode.py`, run with no `PORT`/`ROBOT_ID`/`--camera` given, reads its
+defaults from this file automatically; explicit CLI args still override it.
+
+**Known hardware (stale reference only — update if used; prefer
+`detect_devices.py` above. macOS reassigns `/dev/cu.usbmodem*` suffixes on
+replug; check with `ls /dev/cu.usbmodem*`):**
 
 | Arm | Port | ID |
 |---|---|---|

@@ -13,9 +13,11 @@ diagnostics/.venv/
 diagnostics/.direnv/
 diagnostics/outputs/
 control/.venv/
+control/.venv
 control/.direnv/
 control/outputs/
 control/logs/
+control/device_map.json
 .DS_Store
 .planning/research/.cache/
 AGENTS.md
