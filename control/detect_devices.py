@@ -11,9 +11,19 @@ Two independent detection problems, solved differently:
 
 1. Serial port -> robot identity: NOT solved by fixed port-string matching (this
    session confirmed that drifts). Instead, for each candidate `/dev/cu.usbmodem*`
-   port, this script attempts an actual connect+calibration-load round trip against
-   each known robot id's saved calibration file -- success is the signal, not the
-   port string itself. See `resolve_port_identity()`.
+   port, this script connects and reads the LIVE calibration values off the
+   servos, then compares them against each known robot id's saved calibration
+   file -- a match is the signal, not the port string itself, and this check
+   is READ-ONLY (never writes to a servo). See `resolve_port_identity()`.
+   (An earlier version of this check wrote each candidate id's saved
+   calibration onto the port being tested and treated "no exception" as
+   proof of identity -- confirmed unsafe live during 11-05 Task 3 prep: a
+   robot-class/id combination with no saved calibration file loads an EMPTY
+   calibration, so the "test" write was silently a no-op that raised nothing,
+   letting a wrong id "resolve" without ever proving identity. Had that id
+   happened to have a real saved file for a DIFFERENT physical robot, the
+   write would have silently pushed that robot's homing offsets/position
+   limits onto this port's real servos.)
 
 2. Camera identity: `system_profiler SPCameraDataType` names devices, but macOS does
    NOT guarantee its enumeration order matches cv2's ascending `VideoCapture` index
@@ -86,13 +96,25 @@ def _make_leader_robot(port: str, robot_id: str):
 
 
 def resolve_port_identity(port: str, robot_id: str, make_robot=None) -> bool:
-    """Attempts a real connect+calibration-load round trip against `port` for
-    `robot_id`'s saved calibration file -- the actual signal used to resolve serial
-    port identity (fixed port-string matching was confirmed to drift
-    session-to-session on this rig, per this session's live findings).
+    """Connects to `port` and performs a READ-ONLY identity check: reads the
+    calibration values LIVE off the servos (`bus.read_calibration()`) and compares
+    them against `robot_id`'s own saved calibration file (loaded automatically at
+    robot construction into `robot.calibration`). Returns True only if every motor
+    in the saved file has an exact live match -- genuine proof this port really is
+    `robot_id`, not merely "a robot answered on this port."
 
-    Returns True on success (disconnects before returning), False on ANY failure --
-    never raises, so one bad port/id guess doesn't crash the whole detection run.
+    NEVER writes to the servos. An earlier version called `bus.write_calibration()`
+    as its "test" and treated "no exception" as proof of identity -- this is unsafe:
+    when `robot_id` has no saved calibration file for this robot class,
+    `robot.calibration` loads as an empty dict, so `write_calibration({})` is a
+    silent no-op that never raises, letting a wrong id "resolve" without ever
+    proving identity. Had that id instead resolved to a real saved file belonging
+    to a DIFFERENT physical robot, the write would have silently pushed that
+    robot's homing offsets and position limits onto this port's real servos.
+
+    Returns False on ANY failure -- connect error, no saved calibration file for
+    this id, or a live/saved mismatch on any motor -- never raises, so one bad
+    port/id guess doesn't crash the whole detection run.
 
     `make_robot(port, robot_id) -> robot` is injectable (defaults to a real
     `SO101Follower`/`SOFollowerRobotConfig` round trip) so tests never touch a real
@@ -103,13 +125,37 @@ def resolve_port_identity(port: str, robot_id: str, make_robot=None) -> bool:
     try:
         robot = make_robot(port, robot_id)
         robot.connect(calibrate=False)
-        # Min/Max_Position_Limit are EEPROM addresses the servo rejects while torque
-        # is enabled ("Incorrect status packet") -- must happen with torque off, same
-        # requirement documented in keyboard_joint_control.py.
-        with robot.bus.torque_disabled():
-            robot.bus.write_calibration(robot.calibration)
-        robot.disconnect()
-        return True
+        try:
+            saved = robot.calibration
+            if not saved:
+                print(
+                    f"WARNING: port {port} did not resolve to id {robot_id!r}: "
+                    f"no saved calibration file for this id, cannot confirm identity"
+                )
+                return False
+            live = robot.bus.read_calibration()
+            for motor, saved_cal in saved.items():
+                live_cal = live.get(motor)
+                if live_cal is None:
+                    print(
+                        f"WARNING: port {port} did not resolve to id {robot_id!r}: "
+                        f"motor {motor!r} missing from live calibration readback"
+                    )
+                    return False
+                if (
+                    live_cal.homing_offset != saved_cal.homing_offset
+                    or live_cal.range_min != saved_cal.range_min
+                    or live_cal.range_max != saved_cal.range_max
+                ):
+                    print(
+                        f"WARNING: port {port} did not resolve to id {robot_id!r}: "
+                        f"motor {motor!r} calibration mismatch "
+                        f"(live={live_cal}, saved={saved_cal})"
+                    )
+                    return False
+            return True
+        finally:
+            robot.disconnect()
     except Exception as e:
         print(f"WARNING: port {port} did not resolve to id {robot_id!r}: {e}")
         return False

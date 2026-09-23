@@ -7,6 +7,7 @@ these tests.
 
 import json
 import subprocess
+from dataclasses import dataclass
 
 import numpy as np
 import pytest
@@ -23,6 +24,24 @@ from detect_devices import (
     resolve_port_identity,
 )
 from vla_bridge.stereo_camera import STEREO_HEIGHT, STEREO_WIDTH
+
+
+@dataclass
+class _FakeMotorCalibration:
+    """Stand-in for lerobot's `MotorCalibration` -- same fields `resolve_port_identity`
+    reads (`homing_offset`, `range_min`, `range_max`)."""
+
+    id: int
+    drive_mode: int
+    homing_offset: int
+    range_min: int
+    range_max: int
+
+
+_SAMPLE_CALIBRATION = {
+    "shoulder_pan": _FakeMotorCalibration(id=1, drive_mode=0, homing_offset=-1653, range_min=1269, range_max=2869),
+    "gripper": _FakeMotorCalibration(id=6, drive_mode=1, homing_offset=-197, range_min=48, range_max=3637),
+}
 
 SYSTEM_PROFILER_SAMPLE = """Camera:
 
@@ -268,12 +287,19 @@ def test_ambiguous_stereo_resolution_candidates_raises():
 
 
 class FakeConnectableRobot:
-    """Stand-in for `SO101Follower`/`SOLeader` -- never touches a real serial port."""
+    """Stand-in for `SO101Follower`/`SOLeader` -- never touches a real serial port.
 
-    def __init__(self):
-        self.calibration = {}
+    `calibration` mirrors what the real robot loads from its saved calibration
+    file at construction time; `live_calibration` mirrors what's actually on the
+    servos right now (read via `bus.read_calibration()`). Tests set these
+    independently to simulate a match (genuine identity) or a mismatch (wrong id
+    resolved, or no saved file at all).
+    """
+
+    def __init__(self, calibration=None, live_calibration=None):
+        self.calibration = calibration if calibration is not None else {}
         self.connected = False
-        self.bus = _FakeBus()
+        self.bus = _FakeBus(live_calibration if live_calibration is not None else self.calibration)
 
     def connect(self, calibrate=False):
         self.connected = True
@@ -283,6 +309,9 @@ class FakeConnectableRobot:
 
 
 class _FakeBus:
+    def __init__(self, live_calibration):
+        self._live_calibration = live_calibration
+
     def __enter__(self):
         return self
 
@@ -293,7 +322,13 @@ class _FakeBus:
         return self
 
     def write_calibration(self, calibration):
-        pass
+        raise AssertionError(
+            "resolve_port_identity() must never call write_calibration() -- "
+            "identity resolution is read-only"
+        )
+
+    def read_calibration(self):
+        return self._live_calibration
 
 
 class FakeUnreachableRobot:
@@ -304,11 +339,11 @@ class FakeUnreachableRobot:
         raise ConnectionError("no such port")
 
 
-def test_resolve_port_identity_returns_true_on_successful_round_trip():
+def test_resolve_port_identity_returns_true_when_live_matches_saved_calibration():
     def make_robot(port, robot_id):
         assert port == "/dev/cu.fake1"
         assert robot_id == "soarm_follower_02"
-        return FakeConnectableRobot()
+        return FakeConnectableRobot(calibration=_SAMPLE_CALIBRATION, live_calibration=_SAMPLE_CALIBRATION)
 
     assert resolve_port_identity("/dev/cu.fake1", "soarm_follower_02", make_robot=make_robot) is True
 
@@ -318,6 +353,46 @@ def test_resolve_port_identity_returns_false_never_raises_on_connect_failure():
         return FakeUnreachableRobot()
 
     assert resolve_port_identity("/dev/cu.fake1", "soarm_follower_02", make_robot=make_robot) is False
+
+
+def test_resolve_port_identity_returns_false_when_no_saved_calibration_for_id():
+    """The exact failure mode found live during 11-05 Task 3 prep: an id with no
+    saved calibration file loads as an empty dict. Must fail closed, not silently
+    'succeed' via a no-op write."""
+
+    def make_robot(port, robot_id):
+        return FakeConnectableRobot(calibration={}, live_calibration=_SAMPLE_CALIBRATION)
+
+    assert resolve_port_identity("/dev/cu.fake1", "soarm_leader_01", make_robot=make_robot) is False
+
+
+def test_resolve_port_identity_returns_false_when_live_calibration_does_not_match_saved():
+    """Simulates the real cross-robot scenario: this id's saved file describes a
+    DIFFERENT physical robot than what's actually connected on this port."""
+    wrong_robot_calibration = {
+        "shoulder_pan": _FakeMotorCalibration(id=1, drive_mode=0, homing_offset=-1978, range_min=917, range_max=3133),
+        "gripper": _FakeMotorCalibration(id=6, drive_mode=0, homing_offset=1804, range_min=1611, range_max=2896),
+    }
+
+    def make_robot(port, robot_id):
+        return FakeConnectableRobot(calibration=wrong_robot_calibration, live_calibration=_SAMPLE_CALIBRATION)
+
+    assert resolve_port_identity("/dev/cu.fake1", "soarm_leader_01", make_robot=make_robot) is False
+
+
+def test_resolve_port_identity_never_writes_to_the_bus():
+    """`_FakeBus.write_calibration` raises if called -- this test passes only if
+    resolve_port_identity() never invokes it, on success or failure paths."""
+
+    def make_robot(port, robot_id):
+        return FakeConnectableRobot(calibration=_SAMPLE_CALIBRATION, live_calibration=_SAMPLE_CALIBRATION)
+
+    resolve_port_identity("/dev/cu.fake1", "soarm_follower_02", make_robot=make_robot)
+
+    def make_mismatched_robot(port, robot_id):
+        return FakeConnectableRobot(calibration=_SAMPLE_CALIBRATION, live_calibration={})
+
+    resolve_port_identity("/dev/cu.fake1", "soarm_follower_02", make_robot=make_mismatched_robot)
 
 
 # --- detect_devices (top-level) -----------------------------------------------------------
@@ -330,12 +405,12 @@ def _no_op_prompt(msg):
 def test_detect_devices_resolves_follower_leader_and_cameras(monkeypatch):
     def make_follower(port, robot_id):
         if port == "/dev/cu.follower_port":
-            return FakeConnectableRobot()
+            return FakeConnectableRobot(calibration=_SAMPLE_CALIBRATION, live_calibration=_SAMPLE_CALIBRATION)
         raise ConnectionError("wrong port")
 
     def make_leader(port, robot_id):
         if port == "/dev/cu.leader_port":
-            return FakeConnectableRobot()
+            return FakeConnectableRobot(calibration=_SAMPLE_CALIBRATION, live_calibration=_SAMPLE_CALIBRATION)
         raise ConnectionError("wrong port")
 
     monkeypatch.setattr(
@@ -363,7 +438,7 @@ def test_detect_devices_resolves_follower_leader_and_cameras(monkeypatch):
 
 def test_detect_devices_leader_is_none_when_not_connected(monkeypatch):
     def make_follower(port, robot_id):
-        return FakeConnectableRobot()
+        return FakeConnectableRobot(calibration=_SAMPLE_CALIBRATION, live_calibration=_SAMPLE_CALIBRATION)
 
     def make_leader(port, robot_id):
         raise ConnectionError("no leader connected")
