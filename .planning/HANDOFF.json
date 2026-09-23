@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-23T10:06:40.998Z",
+  "timestamp": "2026-09-23T11:25:43.739Z",
   "phase": "11",
   "phase_name": "VLA Hardware Connection",
   "phase_dir": ".planning/phases/11-vla-hardware-connection",
@@ -13,53 +13,61 @@
     {"id": 2, "name": "Device auto-discovery (device_map.json) + bridge camera1 wiring fix", "status": "done", "commit": "fa99468"}
   ],
   "remaining_tasks": [
-    {"id": 3, "name": "Full VLA-driven episode, recorded end-to-end", "status": "not_started", "progress": "All prerequisites resolved and verified against real hardware this session (see decisions/blockers below); the live run itself has not been attempted yet -- it needs the user to start Colab + ngrok and be physically present to judge success/failure per the plan's blocking human-verify design."},
+    {
+      "id": 3,
+      "name": "Full VLA-driven episode, recorded end-to-end",
+      "status": "in_progress",
+      "progress": "Three real bugs found and fixed live against real hardware + a real Colab-hosted PolicyServer this session (see decisions below). Robot still did not move by end of session -- root cause identified via web research + reading installed lerobot source: an upstream lerobot async_inference self-reinforcing deadlock (server-side observation similarity filter), not a bug in this project's own code. Next attempt should get further now that both fixes are in, but has not yet been retried."
+    },
     {"id": 4, "name": "Findings write-up and go/no-go recommendation", "status": "not_started"}
   ],
-  "blockers": [],
+  "blockers": [
+    {
+      "description": "Upstream lerobot async_inference deadlock: PolicyServer's _obs_sanity_checks()/observations_similar() skips running inference on any observation whose joint-space state is nearly identical (~1 degree tolerance) to the last one it actually processed, unless a must_go flag forces it through. Because the robot wasn't moving (initially due to the now-fixed staleness bug below), every subsequent observation looked unchanged to the server, so it silently discarded them instead of running inference -- explaining 0% GPU utilization and an action queue that never refreshed after the first chunk. Matches open, unresolved upstream GitHub issues: huggingface/lerobot#2356 (\"AsyncInference only running one action chunk\"), #2374 (\"SmolVLA freezes and barely fluctuates around neutral\" on SO-101), #1500 (\"Observation #0 has been filtered out\", names the exact mechanism). No confirmed upstream fix exists as of this research.",
+      "type": "technical",
+      "workaround": "Not yet applied/verified. Working theory: now that both local bugs are fixed, the very first real action may arrive fast enough to pass the corrected STALE_ACTION_S=3.0s threshold and cause genuine robot motion, which would make subsequent observations genuinely differ in joint-space and break the deadlock naturally -- untested, needs a fresh live retry. If that doesn't work, the deadlock may need addressing more directly (e.g. investigating whether the client's `must_go` flag is actually reaching the server as expected, or whether the server's own observation_queue maxsize=1 is dropping non-must_go observations regardless)."
+    }
+  ],
   "async_jobs": [],
   "human_actions_pending": [
     {
-      "action": "Measure the red cube (must be <=78mm, the real measured collision-proxy gripper aperture per STATE.md, not the original 84mm design cap) and place it within the arm's ~0.45m reach, off the base's forward centerline.",
-      "context": "Task 3's how-to-verify step 1 -- a precondition for the live episode, not yet done this session.",
+      "action": "Start a fresh Colab PolicyServer + ngrok tunnel session (the previous one was torn down per policy_server_launch.md's Step 6 teardown at end of last session) and re-attempt run_vla_episode.py's live episode, now with both code fixes in place.",
+      "context": "Task 3 still needs one full successful (or clearly-failed-and-understood) live episode before Task 4's findings write-up can be drafted.",
       "blocking": true
     },
     {
-      "action": "Start the Colab notebook per control/vla_bridge/policy_server_launch.md and note the printed ngrok TCP host:port.",
-      "context": "Task 3's how-to-verify step 3 -- run_vla_episode.py's --server-address needs this; no Colab session exists yet this session.",
-      "blocking": true
-    },
-    {
-      "action": "Confirm the checkpoint id from control/vla_bridge/checkpoint_candidates.md (Plan 11-03's selection) to pass as --checkpoint.",
-      "context": "Task 3's how-to-verify step 4.",
-      "blocking": true
-    },
-    {
-      "action": "Run run_vla_episode.py with --server-address/--checkpoint/--instruction, physically present and ready to Ctrl+C, then judge and report success/failure, termination reason, and whether lerobot#2210 reproduced.",
-      "context": "Task 3 is a blocking checkpoint:human-verify task per 11-05-PLAN.md -- requires human judgment of physical robot behavior that cannot be automated or delegated.",
+      "action": "Watch the robot during the retry and report: did it move at all this time, did the deadlock recur, what was the first action's obs_age_s, and the final termination reason.",
+      "context": "Task 3 is a blocking checkpoint:human-verify task requiring physical presence and judgment.",
       "blocking": true
     }
   ],
   "decisions": [
     {
-      "decision": "Fixed resolve_port_identity() in control/detect_devices.py to use a genuine read-only calibration comparison (bus.read_calibration() vs the id's saved file) instead of a write_calibration()-based no-op-succeeds test.",
-      "rationale": "Live testing before this session found the original write-based test could silently 'confirm' a wrong robot id with zero real signal, when the id/class combination resolves to no saved calibration file (write_calibration({}) is a no-op that never raises). Verified no hardware corruption occurred by that bug (follower's live servo values still matched its saved file exactly) before applying the fix. Commit eb85f22 in the phase-11 worktree (worktree-agent-afe9e290a91f86d2e).",
+      "decision": "Fixed connect_bridge() in control/vla_bridge/robot_client.py to explicitly start the library's receive_actions() background thread (as a daemon thread, with client.start_barrier downsized to 1 party since the library's own control_loop() partner thread is deliberately never run here, per T-11-09's safety-validator-bypass avoidance).",
+      "rationale": "Live testing found action_queue was permanently empty -- an entire 22-step episode ran with the robot never moving because nothing was pulling computed actions off the gRPC stream. receive_actions() never calls robot.send_action() itself, so starting it doesn't reintroduce the T-11-09 bypass. Commit 343fa28.",
       "phase": "11"
     },
     {
-      "decision": "Switched StereoSplitCamera's AR0144 capture backend from cv2.VideoCapture to an ffmpeg subprocess, and switched device_map.json's stereo camera identifier from a numeric cv2/ffmpeg index to the AVFoundation device NAME string ('CCB Camera').",
-      "rationale": "cv2.VideoCapture's AVFoundation backend cannot be made to report the AR0144's true 2560x720 frame on macOS (confirmed unfixed OpenCV bug, opencv/opencv#23368) -- it silently serves a lower resolution regardless of explicit CAP_PROP requests. ffmpeg with explicit -pixel_format uyvy422 -video_size 2560x720 captures the real frame reliably. Separately found that ffmpeg's OWN AVFoundation device index numbering is not stable between process launches (same physical camera showed up at a different index moments apart), so device_map.json now persists cameras.stereo_overhead_name (the device name) as the authoritative identifier for the ffmpeg path, keeping the numeric cameras.stereo_overhead only for the unrelated, non-safety-critical IOLogger cv2 recording caps. Commit 0541458.",
+      "decision": "Fixed pop_validated_action()/validate_action() in control/vla_bridge/robot_client.py and control/vla_bridge/safety_validator.py so the bridge path checks action staleness against STALE_ACTION_S (3.0s, defined specifically for network round-trip latency) instead of STALE_OBSERVATION_S (1.0s, meant for a synchronous local loop). Added an explicit stale_threshold_s parameter to validate_action() (default STALE_OBSERVATION_S, unchanged for existing synchronous callers).",
+      "rationale": "After the receive_actions() fix, real actions started arriving in the queue but every single one was being rejected as stale under the 1.0s synchronous threshold, which a real cloud round-trip (tens of seconds, worse on a cold-started policy server) can never meet. STALE_ACTION_S already existed in the code with a comment saying it was 'used by a later plan's bridge path' (i.e. this plan) but was never actually wired in. Commit e55aa53. Note: 3.0s is still an unvalidated starting guess, not yet confirmed against a real warm-server round-trip measurement -- a real warm round-trip time was never obtained this session because the deadlock below prevented a second chunk from ever being computed.",
       "phase": "11"
     },
     {
-      "decision": "Fixed detect_devices() to default the leader identity check to _make_leader_robot (SOLeader) instead of silently falling back to _make_follower_robot.",
-      "rationale": "main() never passed make_leader through to detect_devices(), so the leader check always constructed an SO101Follower even for the leader id -- whose calibration_fpath resolves under robots/so_follower/, where the leader's real saved calibration never lives (it's under teleoperators/so_leader/). Leader auto-discovery was dead on arrival since Task 2 landed; only surfaced now because this session re-tested with the leader physically connected and powered. Commit e8519f8.",
+      "decision": "Also fixed BridgeActionSource.get_action() to surface pop_validated_action()'s flags (e.g. \"no action available, holding position\", \"stale observation...\") through model_version instead of silently discarding them.",
+      "rationale": "Before this fix, an empty-queue hold and a genuine valid action were indistinguishable in episode.jsonl (both logged as '@unknown') -- this hid the real diagnostic signal that led to finding both bugs above. Commit 343fa28.",
+      "phase": "11"
+    },
+    {
+      "decision": "Diagnosed (via live testing + reading installed lerobot source + web research) but did NOT attempt to patch: PolicyServer's observation-similarity filter causing a motion deadlock.",
+      "rationale": "This is upstream library behavior (lerobot.async_inference.policy_server), not this project's code -- patching it would mean monkey-patching or vendoring a fix into an installed third-party package, a bigger decision than a live-verification session should make unilaterally. Matches unresolved upstream issues huggingface/lerobot#2356, #2374, #1500. Deferred to next session's retry to see if the two already-applied fixes are sufficient to avoid triggering it in practice.",
       "phase": "11"
     }
   ],
   "uncommitted_files": [
-    ".planning/phases/11-vla-hardware-connection/11-PATTERNS.md (untracked, pre-existing since discuss-phase; harmless, not blocking)"
+    ".planning/phases/11-vla-hardware-connection/11-PATTERNS.md (untracked, pre-existing since discuss-phase; harmless, not blocking)",
+    "control/vla_bridge/policy_server_launch.md (modified, cosmetic-only markdown table reformatting, not a content change; harmless)",
+    "control/vla_bridge/policy_server.ipynb (untracked, appears to be a local Colab notebook sync artifact from this session; not reviewed for commit-worthiness, not blocking)"
   ],
-  "next_action": "All of Task 3's technical prerequisites (follower/leader/camera auto-discovery, safe identity checking, correct stereo camera capture) are now fixed and verified against real hardware, repeatedly, across multiple replug cycles -- device_map.json resolves correctly every time. Nothing further to fix in code. Next action is entirely on the user: (1) measure/place the red cube, (2) start the Colab PolicyServer notebook and get the ngrok host:port, (3) confirm the checkpoint id, (4) run run_vla_episode.py for the live episode while physically present, (5) report the outcome so Task 3's checkpoint can be marked approved and Task 4 (FINDINGS.md write-up) can start.",
-  "context_notes": "This is a clean, non-blocked pause -- not an interrupted investigation. All 3 real bugs found this session in control/detect_devices.py and control/vla_bridge/stereo_camera.py (unsafe write-based identity check, cv2 AVFoundation resolution bug, dead leader auto-discovery) are fixed, tested (70 tests passing in the worktree), and verified against real hardware multiple times including fresh replug/power-cycle. All work so far lives in the phase-11 worktree at .claude/worktrees/agent-afe9e290a91f86d2e (branch worktree-agent-afe9e290a91f86d2e, commits fa99468 -> 6ca93fe -> eb85f22 -> 0541458 -> e8519f8), NOT yet merged to master. device_map.json itself is gitignored (machine-local state), currently populated correctly with both arms + both cameras. Task 3 itself (the live VLA-driven episode) has not been attempted yet this session -- it is explicitly a blocking checkpoint:human-verify task in 11-05-PLAN.md requiring the user's physical presence and judgment, which is outside what I can do autonomously."
+  "next_action": "Start a fresh Colab session (PolicyServer + ngrok tunnel per control/vla_bridge/policy_server_launch.md -- previous session's tunnel/server were torn down). Re-run run_vla_episode.py's live episode against the now-fixed bridge code. Watch episode.jsonl's model_version field per step: if the first real action's obs_age_s lands under STALE_ACTION_S=3.0s, it should execute and cause real motion -- watch the physical robot closely at that point. If the robot still doesn't move after ~2-3 real (non-stale) actions have been logged, the observation-similarity deadlock has recurred despite the fixes and needs deeper investigation (check the server's DEBUG-level logs for 'too similar to last obs predicted' skip messages -- may need to raise Colab notebook's logging verbosity to DEBUG first, e.g. logging.basicConfig(level=logging.DEBUG) before serve(config)).",
+  "context_notes": "This was a long, hands-on live-debugging session walking the user step-by-step through Colab setup, ngrok auth/TCP-tunnel gating (needed a card added for TCP endpoints on ngrok's free tier), and three rounds of real-hardware live episode attempts. Two real, confirmed, tested, committed bugs were found and fixed in this project's own control/vla_bridge/ code. A third, deeper issue was identified with high confidence (exact matching upstream GitHub issues + direct confirmation by reading the installed library's source) but not yet fixed or worked around, and not yet re-tested live. The user explicitly asked for deep web research on Colab+ngrok patterns before pausing -- that research is summarized in the decisions/blockers above and was already relayed to the user in chat this session, not just stored here. Colab's PolicyServer + ngrok tunnel from this session were torn down (Step 6) before pausing -- next session starts from a cold Colab runtime again, likely re-incurring the ~30-45s cold-start latency for the first inference call."
 }
