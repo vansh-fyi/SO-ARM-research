@@ -27,6 +27,7 @@ import grpc
 
 from lerobot.async_inference.configs import RobotClientConfig
 from lerobot.async_inference.robot_client import RobotClient
+from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 
 from vla_bridge import safety_validator
 from vla_bridge.stereo_camera import StereoSplitCamera
@@ -40,7 +41,8 @@ def connect_bridge(
     actions_per_chunk: int = 50,
     chunk_size_threshold: float = 0.5,
     policy_device: str = "cuda",
-    stereo_camera_index: int = 1,
+    stereo_camera_index: int | str = 1,
+    wrist_camera_index: int | None = None,
 ):
     """Connect to a Colab-hosted `PolicyServer` bridge.
 
@@ -54,10 +56,48 @@ def connect_bridge(
     mapping, `policy_server_launch.md`) into the returned client's
     observation-building step -- see `_wire_stereo_split_cameras()`.
 
+    `wrist_camera_index`, when given, wires a real `camera1` (wrist) entry
+    into `robot_config.cameras` via lerobot's own `OpenCVCameraConfig` --
+    the standard camera-config route (`SOFollower.__init__` calls
+    `make_cameras_from_configs(config.cameras)`, and `RobotClient.__init__`'s
+    own `self.robot.connect()` then opens every configured camera, including
+    this one) -- BEFORE `RobotClient(config)` is constructed below, since
+    `RobotClient.__init__` connects the robot as a side effect. This closes
+    a real gap found live this session: `camera1` was never wired into the
+    observation dict at all (only `camera2`/`camera3`, the AR0144 split),
+    which would have silently starved the VLA checkpoint of its wrist view.
+
+    This is a genuinely SEPARATE `cv2.VideoCapture` open from
+    `run_vla_episode.py`'s own local wrist capture (used for its IOLogger
+    recording path), not a shared handle. Reading the installed lerobot
+    camera-config source (`lerobot/cameras/camera.py`,
+    `configuration_opencv.py`) found no built-in mechanism for two
+    independently-registered camera configs to share one physical device
+    instance the way `StereoSplitCamera` shares the AR0144's single open for
+    camera2/camera3 -- sharing would require deeper surgery (monkey-patching
+    the wrist `Camera` object's own `connect()`/`read()`, mirroring
+    `_wire_stereo_split_cameras()`'s approach but for a single-camera
+    config rather than a get_observation() patch). Whether a standard USB
+    webcam driver tolerates two independent opens of the same index (unlike
+    the AR0144 stereo pair, which does not, per `stereo_camera.py`'s own
+    docstring) could NOT be verified empirically in this session -- no real
+    hardware was available in this coding environment -- so the simpler
+    independent-open path was chosen, per this task's own documented
+    fallback. This MUST be re-verified against the real camera before a
+    live episode: a second open failing would surface as an exception
+    inside `RobotClient.__init__` (raised by the wrist `Camera.connect()`
+    call), before the bridge handshake even starts.
+
+    When `wrist_camera_index` is `None` (default), `robot_config.cameras`
+    is left untouched -- unchanged prior behavior.
+
     Returns the connected, handshaken `RobotClient` on success, or `None`
     (never an exception) if the bridge handshake fails -- calling `.stop()`
     on the half-connected client first, for cleanup.
     """
+    if wrist_camera_index is not None:
+        robot_config.cameras["camera1"] = OpenCVCameraConfig(index_or_path=wrist_camera_index)
+
     config = RobotClientConfig(
         policy_type="smolvla",
         pretrained_name_or_path=checkpoint,
@@ -78,7 +118,7 @@ def connect_bridge(
     return client
 
 
-def _wire_stereo_split_cameras(client, stereo_camera_index: int = 1, stereo_camera=None) -> None:
+def _wire_stereo_split_cameras(client, stereo_camera_index: int | str = 1, stereo_camera=None) -> None:
     """Make every observation this client's `control_loop_observation()`
     sends include real `camera2`/`camera3` split-stereo feeds, sourced from
     a single shared `StereoSplitCamera` -- not two independent

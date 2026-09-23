@@ -10,9 +10,26 @@ one physical read (so the stereo pair never desyncs by reading two different
 physical frames for what should be the same instant), while the NEXT call to
 either method (after both halves of the current tick have been consumed)
 triggers a fresh physical read.
+
+Capture backend: `ffmpeg` subprocess, NOT `cv2.VideoCapture`. Found live
+during 11-05 Task 3 prep: `cv2.VideoCapture`'s AVFoundation backend cannot be
+made to report this camera's true 2560x720 frame on macOS -- it silently
+serves whatever lower resolution (1920x1080, or 1280x720 once an explicit
+size is requested) the backend happens to default to, regardless of
+`CAP_PROP_FRAME_WIDTH`/`HEIGHT`/`FOURCC` requests. This is a known unfixed
+OpenCV bug (opencv/opencv#23368), not a hardware or cable problem --
+AVFoundation itself confirms 2560x720 is a genuinely supported mode for this
+device (via `ffmpeg -video_size 9999x9999 ...`'s "Supported modes" error
+listing). `ffmpeg -f avfoundation -pixel_format uyvy422 -video_size
+2560x720` reliably captures the real frame where cv2 cannot, so this module
+shells out to it instead. Feeding the VLA a silently-wrong-resolution/cropped
+frame during a live episode (instead of failing loudly) would be a genuine
+safety risk -- the model would act on corrupted visual input while still
+commanding real robot motion.
 """
 
-import cv2
+import subprocess
+
 import numpy as np
 
 # AR0144 native side-by-side stereo resolution and the column split point,
@@ -21,14 +38,83 @@ STEREO_WIDTH = 2560
 STEREO_HEIGHT = 720
 SPLIT_COL = 1280
 
+_FRAME_BYTES = STEREO_WIDTH * STEREO_HEIGHT * 3  # raw bgr24
+
+
+class _FFmpegAVFoundationCapture:
+    """Minimal `cv2.VideoCapture`-shaped wrapper (`isOpened()`/`read()`/
+    `release()`) around an `ffmpeg` subprocess that streams the AR0144's real
+    2560x720 `uyvy422` frame, converted to raw `bgr24`, over stdout."""
+
+    def __init__(self, index: int | str, framerate: int = 30):
+        """`index` is the ffmpeg avfoundation `-i` target -- prefer the
+        device's AVFoundation NAME (e.g. `"CCB Camera"`) over a numeric
+        index, since that numbering has been confirmed to drift between
+        process launches on macOS (see this module's docstring)."""
+        self._index = index
+        cmd = [
+            "ffmpeg", "-loglevel", "error",
+            "-f", "avfoundation",
+            "-pixel_format", "uyvy422",
+            "-video_size", f"{STEREO_WIDTH}x{STEREO_HEIGHT}",
+            "-framerate", str(framerate),
+            "-i", str(index),
+            "-f", "rawvideo", "-pix_fmt", "bgr24",
+            "-",
+        ]
+        try:
+            self._proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=_FRAME_BYTES * 2
+            )
+        except OSError as e:
+            print(f"WARNING: _FFmpegAVFoundationCapture: failed to start ffmpeg for index {index}: {e}")
+            self._proc = None
+
+    def isOpened(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    def read(self):
+        if not self.isOpened():
+            return False, None
+        raw = self._read_exact(_FRAME_BYTES)
+        if raw is None:
+            return False, None
+        frame = np.frombuffer(raw, dtype=np.uint8).reshape((STEREO_HEIGHT, STEREO_WIDTH, 3))
+        return True, frame
+
+    def _read_exact(self, n: int) -> bytes | None:
+        buf = bytearray()
+        while len(buf) < n:
+            chunk = self._proc.stdout.read(n - len(buf))
+            if not chunk:
+                return None
+            buf.extend(chunk)
+        return bytes(buf)
+
+    def release(self) -> None:
+        if self._proc is None:
+            return
+        self._proc.terminate()
+        try:
+            self._proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+
+
+def _open_stereo_capture(index: int):
+    """Factory seam for `StereoSplitCamera`'s capture backend -- injectable so
+    tests never spawn a real `ffmpeg` subprocess."""
+    return _FFmpegAVFoundationCapture(index)
+
 
 class StereoSplitCamera:
-    """Wraps a single AR0144 `cv2.VideoCapture` device, exposing independent
-    left/right halves of its one physical 2560x720 frame as two feeds."""
+    """Wraps a single AR0144 capture device, exposing independent left/right
+    halves of its one physical 2560x720 frame as two feeds."""
 
-    def __init__(self, index: int = 1, warmup_frames: int = 15):
+    def __init__(self, index: int | str = 1, warmup_frames: int = 15, capture_factory=None):
         self._index = index
-        self._cap = cv2.VideoCapture(index)
+        factory = capture_factory if capture_factory is not None else _open_stereo_capture
+        self._cap = factory(index)
         self._opened = self._cap.isOpened()
 
         if not self._opened:
