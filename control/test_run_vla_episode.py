@@ -298,7 +298,9 @@ def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch,
 
     run_vla_episode.main()
 
-    assert calls["stereo_camera_index"] == 0
+    # --stereo-camera-index is type=str now (accepts a device name, not just a
+    # numeric index) -- an explicit "0" arrives as the string "0", not int 0.
+    assert calls["stereo_camera_index"] == "0"
 
 
 def test_wrist_camera_index_threads_through_from_camera_names(monkeypatch, tmp_path):
@@ -490,6 +492,71 @@ def test_device_map_supplies_port_robot_id_camera_defaults_when_cli_args_omitted
     assert calls["port"] == "/dev/cu.fake999"
     assert calls["robot_id"] == "soarm_follower_02"
     assert calls["stereo_camera_index"] == 4
+
+
+def test_device_map_prefers_stereo_overhead_name_over_numeric_index_when_present(monkeypatch, tmp_path):
+    """The 11-05 Task 3 fix: cameras.stereo_overhead_name (a device NAME
+    string) must win over cameras.stereo_overhead (a numeric cv2 index) when
+    both are present -- the numeric index has been confirmed to drift between
+    process launches on macOS, the name string has not."""
+    device_map_path = tmp_path / "device_map.json"
+    device_map_path.write_text(
+        json.dumps(
+            {
+                "detected_at": "2026-09-22T10:00:00Z",
+                "follower": {"port": "/dev/cu.fake999", "id": "soarm_follower_02"},
+                "leader": None,
+                "cameras": {"wrist": 3, "stereo_overhead": 4, "stereo_overhead_name": "CCB Camera"},
+            }
+        )
+    )
+    monkeypatch.setattr(run_vla_episode, "DEVICE_MAP_PATH", device_map_path)
+
+    calls = {}
+
+    class FakeBridgeClient:
+        def __init__(self):
+            self.robot = object()
+
+        def stop(self):
+            pass
+
+    fake_client = FakeBridgeClient()
+
+    def fake_connect_bridge(
+        server_address,
+        checkpoint,
+        robot_config,
+        task,
+        policy_device="cuda",
+        stereo_camera_index=1,
+        wrist_camera_index=None,
+    ):
+        calls["stereo_camera_index"] = stereo_camera_index
+        calls["wrist_camera_index"] = wrist_camera_index
+        return fake_client
+
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "--out",
+            str(tmp_path / "out"),
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+        ],
+    )
+
+    run_vla_episode.main()
+
+    assert calls["stereo_camera_index"] == "CCB Camera"
     assert calls["wrist_camera_index"] == 3
 
 
@@ -560,7 +627,10 @@ def test_explicit_cli_args_override_device_map_json(monkeypatch, tmp_path):
 
     assert calls["port"] == "/dev/cu.explicit_port"
     assert calls["robot_id"] == "explicit_robot_id"
-    assert calls["stereo_camera_index"] == 1
+    # --stereo-camera-index is type=str now (accepts a device name like "CCB
+    # Camera", not just a numeric index -- see the flag's help text), so an
+    # explicit "1" arrives as the string "1", not int 1.
+    assert calls["stereo_camera_index"] == "1"
 
 
 def test_missing_port_and_device_map_errors_clearly(monkeypatch, tmp_path):

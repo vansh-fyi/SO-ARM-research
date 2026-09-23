@@ -193,7 +193,7 @@ def test_builtin_camera_never_assigned_wrist_or_stereo_even_if_only_extra_candid
 
     result = resolve_cameras(candidates, names_by_index)
 
-    assert result == {"wrist": 1, "stereo_overhead": 0}
+    assert result == {"wrist": 1, "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
     assert result["wrist"] != 2
     assert result["stereo_overhead"] != 2
 
@@ -225,11 +225,13 @@ def test_2560x720_resolution_candidate_always_assigned_stereo_overhead_never_wri
 
 
 def test_no_stereo_resolution_candidate_raises():
+    """Must stub verify_stereo_fn -- otherwise this falls through to the real
+    ffmpeg fallback and touches actual hardware."""
     candidates = [{"index": 0, "width": 1920, "height": 1080}, {"index": 1, "width": 1920, "height": 1080}]
     names_by_index = {0: "CCB Camera", 1: "USB Camera"}
 
     with pytest.raises(DeviceDetectionError):
-        resolve_cameras(candidates, names_by_index)
+        resolve_cameras(candidates, names_by_index, verify_stereo_fn=lambda index: False)
 
 
 def test_ambiguous_wrist_candidates_fall_back_to_interactive_brightness_check(monkeypatch):
@@ -268,7 +270,7 @@ def test_ambiguous_wrist_candidates_fall_back_to_interactive_brightness_check(mo
 
     result = resolve_cameras(candidates, names_by_index, prompt_fn=stub_prompt)
 
-    assert result == {"wrist": 2, "stereo_overhead": 0}
+    assert result == {"wrist": 2, "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
     assert len(prompts) == 1
 
 
@@ -281,6 +283,111 @@ def test_ambiguous_stereo_resolution_candidates_raises():
 
     with pytest.raises(DeviceDetectionError):
         resolve_cameras(candidates, names_by_index)
+
+
+# --- resolve_cameras: ffmpeg fallback (macOS cv2/AVFoundation resolution bug) ------------
+
+
+def test_ffmpeg_fallback_used_when_no_cv2_candidate_matches_stereo_resolution():
+    """The real 11-05 Task 3 scenario: cv2 reports the AR0144 at some OTHER
+    resolution (never 2560x720, a confirmed macOS OpenCV/AVFoundation bug), so
+    resolve_cameras() must fall back to verify_stereo_fn to find it."""
+    candidates = [
+        {"index": 1, "width": 1920, "height": 1080},  # AR0144, cv2 misreports its resolution
+        {"index": 2, "width": 1920, "height": 1080},  # real wrist camera
+    ]
+    names_by_index = {1: "CCB Camera", 2: "USB Camera"}
+
+    def verify_stereo_fn(index):
+        return index == 1
+
+    result = resolve_cameras(candidates, names_by_index, verify_stereo_fn=verify_stereo_fn)
+
+    assert result == {"wrist": 2, "stereo_overhead": 1, "stereo_overhead_name": "CCB Camera"}
+
+
+def test_ffmpeg_fallback_not_consulted_when_cv2_already_found_a_stereo_candidate():
+    """Fast path (cv2 resolution match) must win when it succeeds -- the
+    fallback should never even be called."""
+    candidates = [
+        {"index": 0, "width": STEREO_WIDTH, "height": STEREO_HEIGHT},
+        {"index": 1, "width": 1920, "height": 1080},
+    ]
+    names_by_index = {0: "CCB Camera", 1: "USB Camera"}
+
+    def verify_stereo_fn(index):
+        raise AssertionError("verify_stereo_fn must not be called when the cv2 fast path succeeds")
+
+    result = resolve_cameras(candidates, names_by_index, verify_stereo_fn=verify_stereo_fn)
+
+    assert result == {"wrist": 1, "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
+
+
+def test_ffmpeg_fallback_finding_no_match_raises_same_as_no_stereo_candidate():
+    candidates = [
+        {"index": 1, "width": 1920, "height": 1080},
+        {"index": 2, "width": 1920, "height": 1080},
+    ]
+    names_by_index = {1: "CCB Camera", 2: "USB Camera"}
+
+    def verify_stereo_fn(index):
+        return False
+
+    with pytest.raises(DeviceDetectionError):
+        resolve_cameras(candidates, names_by_index, verify_stereo_fn=verify_stereo_fn)
+
+
+def test_ffmpeg_fallback_finding_multiple_matches_raises_ambiguous():
+    candidates = [
+        {"index": 1, "width": 1920, "height": 1080},
+        {"index": 2, "width": 1920, "height": 1080},
+    ]
+    names_by_index = {1: "CCB Camera", 2: "USB Camera"}
+
+    def verify_stereo_fn(index):
+        return True
+
+    with pytest.raises(DeviceDetectionError):
+        resolve_cameras(candidates, names_by_index, verify_stereo_fn=verify_stereo_fn)
+
+
+def test_verify_stereo_via_ffmpeg_returns_true_on_matching_frame_size(monkeypatch):
+    expected_bytes = STEREO_WIDTH * STEREO_HEIGHT * 3
+
+    def fake_run(cmd, **kwargs):
+        assert "avfoundation" in cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"\x00" * expected_bytes, stderr=b"")
+
+    monkeypatch.setattr(detect_devices.subprocess, "run", fake_run)
+
+    assert detect_devices._verify_stereo_via_ffmpeg(1) is True
+
+
+def test_verify_stereo_via_ffmpeg_returns_false_on_nonzero_exit(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, stdout=b"", stderr=b"error")
+
+    monkeypatch.setattr(detect_devices.subprocess, "run", fake_run)
+
+    assert detect_devices._verify_stereo_via_ffmpeg(1) is False
+
+
+def test_verify_stereo_via_ffmpeg_returns_false_on_wrong_byte_count(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"\x00" * 100, stderr=b"")
+
+    monkeypatch.setattr(detect_devices.subprocess, "run", fake_run)
+
+    assert detect_devices._verify_stereo_via_ffmpeg(1) is False
+
+
+def test_verify_stereo_via_ffmpeg_returns_false_never_raises_on_subprocess_error(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        raise OSError("ffmpeg not found")
+
+    monkeypatch.setattr(detect_devices.subprocess, "run", fake_run)
+
+    assert detect_devices._verify_stereo_via_ffmpeg(1) is False
 
 
 # --- resolve_port_identity ---------------------------------------------------------------
@@ -432,7 +539,7 @@ def test_detect_devices_resolves_follower_leader_and_cameras(monkeypatch):
 
     assert result["follower"] == {"port": "/dev/cu.follower_port", "id": "soarm_follower_02"}
     assert result["leader"] == {"port": "/dev/cu.leader_port", "id": "soarm_leader_01"}
-    assert result["cameras"] == {"wrist": 1, "stereo_overhead": 0}
+    assert result["cameras"] == {"wrist": 1, "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
     assert "detected_at" in result
 
 

@@ -35,6 +35,11 @@ Two independent detection problems, solved differently:
    candidate remains ambiguous after that, this script falls back to an interactive
    cover-the-lens brightness check -- the same manual technique used live this
    session -- rather than guessing. See `resolve_cameras()`.
+   (Found live during 11-05 Task 3 prep: `cv2.VideoCapture`'s reported resolution
+   for the AR0144 is UNRELIABLE on macOS -- a known unfixed OpenCV AVFoundation-
+   backend bug, opencv/opencv#23368 -- so when no cv2-probed candidate matches
+   2560x720, `resolve_cameras()` falls back to a real `ffmpeg`-based capture
+   check per candidate. See `_verify_stereo_via_ffmpeg()`.)
 
 Usage:
     python detect_devices.py [--out device_map.json] [--max-camera-index 6]
@@ -272,18 +277,80 @@ def _disambiguate_by_brightness(candidates: list[dict], prompt_fn=input) -> int:
     return wrist_idx
 
 
+def _verify_stereo_via_ffmpeg(index: int, timeout_s: float = 8.0) -> bool:
+    """Confirms `index` is genuinely the AR0144 stereo camera via a real `ffmpeg`
+    capture attempt at its native 2560x720 `uyvy422` mode.
+
+    Needed as a fallback because `cv2.VideoCapture`'s reported resolution for
+    this camera is UNRELIABLE on macOS: confirmed live during 11-05 Task 3 prep
+    that cv2's AVFoundation backend serves 1920x1080 or 1280x720 for this device
+    regardless of `CAP_PROP_FRAME_WIDTH`/`HEIGHT`/`FOURCC` requests -- a known
+    unfixed OpenCV bug (opencv/opencv#23368), not a hardware or cable problem.
+    AVFoundation itself confirms 2560x720 IS a genuinely supported mode for this
+    device (verified via `ffmpeg -video_size 9999x9999 ...`'s "Supported modes"
+    error listing), and `ffmpeg -f avfoundation -pixel_format uyvy422
+    -video_size 2560x720` reliably captures the real frame where cv2 cannot.
+
+    Never raises; returns False on any failure (wrong camera, ffmpeg missing,
+    timeout, non-stereo device that can't produce this frame shape).
+    """
+    expected_bytes = STEREO_WIDTH * STEREO_HEIGHT * 3
+    cmd = [
+        "ffmpeg", "-loglevel", "error",
+        "-f", "avfoundation",
+        "-pixel_format", "uyvy422",
+        "-video_size", f"{STEREO_WIDTH}x{STEREO_HEIGHT}",
+        "-framerate", "30",
+        "-i", str(index),
+        "-frames:v", "1",
+        "-f", "rawvideo", "-pix_fmt", "bgr24",
+        "-",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=timeout_s, check=False)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"WARNING: ffmpeg stereo verification failed for index {index}: {e}")
+        return False
+    return result.returncode == 0 and len(result.stdout) == expected_bytes
+
+
 def resolve_cameras(
     candidates: list[dict],
     names_by_index: dict[int, str | None],
     prompt_fn=input,
+    verify_stereo_fn=None,
 ) -> dict[str, int]:
-    """Resolves `{"wrist": <idx>, "stereo_overhead": <idx>}` from probed camera
-    `candidates`, excluding any built-in-named device first, then splitting the
-    remainder by the AR0144's distinctive 2560x720 resolution."""
+    """Resolves `{"wrist": <idx>, "stereo_overhead": <idx>, "stereo_overhead_name":
+    <name-or-idx>}` from probed camera `candidates`, excluding any built-in-named
+    device first, then splitting the remainder by the AR0144's distinctive
+    2560x720 resolution. `stereo_overhead_name` is the identifier
+    `StereoSplitCamera`'s ffmpeg backend should actually be opened with -- see
+    the inline comment above its construction for why the numeric index isn't
+    safe to persist across process launches.
+
+    `verify_stereo_fn(index) -> bool` is injectable (defaults to
+    `_verify_stereo_via_ffmpeg`) so tests never spawn a real ffmpeg subprocess.
+    It's only consulted as a FALLBACK when no candidate's cv2-reported
+    resolution matches 2560x720 -- see `_verify_stereo_via_ffmpeg`'s docstring
+    for why cv2's reported resolution can't always be trusted for this camera.
+    """
     non_builtin = [c for c in candidates if not _is_builtin_name(names_by_index.get(c["index"]))]
 
     stereo_candidates = [c for c in non_builtin if (c["width"], c["height"]) == (STEREO_WIDTH, STEREO_HEIGHT)]
     stereo_indices = {c["index"] for c in stereo_candidates}
+
+    if not stereo_candidates:
+        verify = verify_stereo_fn if verify_stereo_fn is not None else _verify_stereo_via_ffmpeg
+        verified = [c for c in non_builtin if verify(c["index"])]
+        if len(verified) == 1:
+            stereo_candidates = verified
+            stereo_indices = {verified[0]["index"]}
+        elif len(verified) > 1:
+            raise DeviceDetectionError(
+                f"Ambiguous: {len(verified)} candidates verified as the AR0144 stereo camera "
+                f"via the ffmpeg fallback check: {verified}"
+            )
+
     other_candidates = [c for c in non_builtin if c["index"] not in stereo_indices]
 
     if len(stereo_candidates) == 0:
@@ -307,7 +374,24 @@ def resolve_cameras(
     else:
         wrist_idx = _disambiguate_by_brightness(other_candidates, prompt_fn=prompt_fn)
 
-    return {"wrist": wrist_idx, "stereo_overhead": stereo_idx}
+    # `stereo_overhead` (cv2 index) is kept for backward compat / the IOLogger's
+    # own cv2-based recording caps in run_vla_episode.py. `stereo_overhead_name`
+    # is the AUTHORITATIVE identifier for StereoSplitCamera's ffmpeg capture
+    # backend: found live during 11-05 Task 3 prep that BOTH cv2's AND ffmpeg's
+    # own AVFoundation device index numbering can drift between process
+    # launches on macOS (confirmed: the same physical AR0144 camera showed up
+    # at ffmpeg index 2 in one process and index 0 moments later in another) --
+    # a persisted numeric index is not safe to reuse across process
+    # boundaries. Addressing the device by its AVFoundation NAME string
+    # (`ffmpeg -i "CCB Camera"`) sidesteps the instability entirely. Falls
+    # back to the numeric index only if no name could be correlated for it
+    # (best-effort correlation, see `_correlate_names()`).
+    stereo_name = names_by_index.get(stereo_idx)
+    return {
+        "wrist": wrist_idx,
+        "stereo_overhead": stereo_idx,
+        "stereo_overhead_name": stereo_name if stereo_name is not None else stereo_idx,
+    }
 
 
 # --- Top-level detection -------------------------------------------------------------
@@ -319,6 +403,7 @@ def detect_devices(
     make_follower=None,
     make_leader=None,
     prompt_fn=input,
+    verify_stereo_fn=None,
 ) -> dict:
     """Runs both detection problems and returns the full `device_map.json`-shaped
     dict (not yet written to disk -- see `main()`)."""
@@ -348,7 +433,7 @@ def detect_devices(
     candidates = probe_camera_candidates(max_camera_index)
     names = get_camera_names()
     names_by_index = _correlate_names(candidates, names)
-    cameras = resolve_cameras(candidates, names_by_index, prompt_fn=prompt_fn)
+    cameras = resolve_cameras(candidates, names_by_index, prompt_fn=prompt_fn, verify_stereo_fn=verify_stereo_fn)
 
     return {
         "detected_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

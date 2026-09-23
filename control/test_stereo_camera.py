@@ -1,7 +1,9 @@
-"""Tests for `vla_bridge.stereo_camera.StereoSplitCamera` (Plan 11-04, Task 3).
+"""Tests for `vla_bridge.stereo_camera.StereoSplitCamera` (Plan 11-04, Task 3;
+capture backend switched from `cv2.VideoCapture` to an `ffmpeg` subprocess in
+Plan 11-05, Task 3 -- see `stereo_camera.py`'s module docstring for why).
 
-Mocks `cv2.VideoCapture` throughout -- no real AR0144 device is ever opened
-during these tests.
+Mocks the `_open_stereo_capture` factory seam throughout -- no real ffmpeg
+subprocess or AR0144 device is ever spawned/opened during these tests.
 """
 
 import numpy as np
@@ -21,8 +23,10 @@ def _synthetic_stereo_frame() -> np.ndarray:
 
 
 class FakeCapture:
-    """Stand-in for `cv2.VideoCapture` -- tracks open/read call counts so
-    tests can assert the single-open/single-read-per-tick behaviors."""
+    """Stand-in for the `_open_stereo_capture` factory's return value (an
+    `_FFmpegAVFoundationCapture`-shaped object) -- tracks open/read call
+    counts so tests can assert the single-open/single-read-per-tick
+    behaviors, without spawning a real ffmpeg subprocess."""
 
     instances_created = 0
 
@@ -55,7 +59,7 @@ def _install_fake_capture(monkeypatch, **kwargs):
         created["cap"] = cap
         return cap
 
-    monkeypatch.setattr(stereo_camera.cv2, "VideoCapture", factory)
+    monkeypatch.setattr(stereo_camera, "_open_stereo_capture", factory)
     return created
 
 

@@ -287,15 +287,18 @@ def main():
     )
     parser.add_argument(
         "--stereo-camera-index",
-        type=int,
+        type=str,
         default=None,
-        help="cv2 index of the AR0144 stereo camera for the --server-address bridge path's "
-        "camera2/camera3 split (vla_bridge.robot_client.connect_bridge's stereo_camera_index). "
-        "Independent of --camera (which only controls this script's own IOLogger recording "
-        "caps) -- verify which physical index is actually the AR0144 before a live run; it has "
-        "been observed to shift (Plan 11-05 Task 1). If omitted, read from "
-        "control/device_map.json's cameras.stereo_overhead (falls back to 1 if "
-        "device_map.json is unavailable).",
+        help="Identifier for the AR0144 stereo camera used by the --server-address bridge "
+        "path's camera2/camera3 split (vla_bridge.robot_client.connect_bridge's "
+        "stereo_camera_index), passed straight through to StereoSplitCamera's ffmpeg capture. "
+        "Prefer the device's AVFoundation NAME (e.g. 'CCB Camera') over a numeric cv2/ffmpeg "
+        "index -- confirmed live (11-05 Task 3) that BOTH cv2's and ffmpeg's own AVFoundation "
+        "device index numbering can drift between separate process launches on macOS, making a "
+        "persisted numeric index unsafe to reuse. Independent of --camera (which only controls "
+        "this script's own IOLogger recording caps, still cv2-index-based). If omitted, read "
+        "from control/device_map.json's cameras.stereo_overhead_name (falling back to "
+        "cameras.stereo_overhead, then to 1, if device_map.json or that field is unavailable).",
     )
     args = parser.parse_args()
 
@@ -333,8 +336,9 @@ def main():
 
     if args.stereo_camera_index is None:
         if device_map is not None and "cameras" in device_map:
-            args.stereo_camera_index = device_map["cameras"]["stereo_overhead"]
-            print(f"Using stereo-camera-index from device_map.json: {args.stereo_camera_index}")
+            cameras = device_map["cameras"]
+            args.stereo_camera_index = cameras.get("stereo_overhead_name", cameras["stereo_overhead"])
+            print(f"Using stereo-camera-index from device_map.json: {args.stereo_camera_index!r}")
         else:
             args.stereo_camera_index = 1
             print("Using default --stereo-camera-index=1 (device_map.json unavailable)")

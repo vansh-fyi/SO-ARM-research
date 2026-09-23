@@ -41,7 +41,7 @@ def connect_bridge(
     actions_per_chunk: int = 50,
     chunk_size_threshold: float = 0.5,
     policy_device: str = "cuda",
-    stereo_camera_index: int = 1,
+    stereo_camera_index: int | str = 1,
     wrist_camera_index: int | None = None,
 ):
     """Connect to a Colab-hosted `PolicyServer` bridge.
@@ -118,7 +118,7 @@ def connect_bridge(
     return client
 
 
-def _wire_stereo_split_cameras(client, stereo_camera_index: int = 1, stereo_camera=None) -> None:
+def _wire_stereo_split_cameras(client, stereo_camera_index: int | str = 1, stereo_camera=None) -> None:
     """Make every observation this client's `control_loop_observation()`
     sends include real `camera2`/`camera3` split-stereo feeds, sourced from
     a single shared `StereoSplitCamera` -- not two independent
