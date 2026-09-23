@@ -1,42 +1,65 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-23T06:22:29.475Z",
+  "timestamp": "2026-09-23T10:06:40.998Z",
   "phase": "11",
   "phase_name": "VLA Hardware Connection",
   "phase_dir": ".planning/phases/11-vla-hardware-connection",
   "plan": "11-05",
   "task": 3,
   "total_tasks": 4,
-  "status": "blocked",
+  "status": "paused",
   "completed_tasks": [
     {"id": 1, "name": "E-stop hardware-in-the-loop verification", "status": "done", "commit": "d891f81"},
     {"id": 2, "name": "Device auto-discovery (device_map.json) + bridge camera1 wiring fix", "status": "done", "commit": "fa99468"}
   ],
   "remaining_tasks": [
-    {"id": 3, "name": "Full VLA-driven episode, recorded end-to-end", "status": "blocked_on_safety_finding"},
+    {"id": 3, "name": "Full VLA-driven episode, recorded end-to-end", "status": "not_started", "progress": "All prerequisites resolved and verified against real hardware this session (see decisions/blockers below); the live run itself has not been attempted yet -- it needs the user to start Colab + ngrok and be physically present to judge success/failure per the plan's blocking human-verify design."},
     {"id": 4, "name": "Findings write-up and go/no-go recommendation", "status": "not_started"}
   ],
-  "blockers": [
-    {
-      "description": "detect_devices.py's resolve_port_identity() has a real, confirmed bug: it treats 'connect + write_calibration() completes without an exception' as proof of robot identity. This is NOT reliable — during this session's live run, the FOLLOWER's real physical port (/dev/cu.usbmodem5B8E1139151) was checked against the FOLLOWER id first (failed on motor 5, 'no status packet'), then checked against the LEADER id ('soarm_leader_01') and that check SUCCEEDED (no exception raised) even though this is physically the follower arm, not the leader. Evidence: resolve_port_identity() only prints on failure; the transcript shows a follower-id failure on that port immediately followed by silence (no leader-id failure printed) and then the top-level 'no port resolved to follower' error — the only way that sequence happens is if the leader-id check on that port returned True. Because resolve_port_identity() calls write_calibration() (Homing_Offset, Min_Position_Limit, Max_Position_Limit) as part of its 'test', this means the LEADER's saved calibration values were likely WRITTEN onto the FOLLOWER's real servos, believing it was the leader. Follower and leader are physically different builds (30kg-cm servos vs. the leader's original 7.4V servos per this project's own hardware history) so their calibration ranges are not interchangeable.",
-      "type": "technical",
-      "workaround": "NONE YET — do not send any further motion commands to the follower (no e-stop retest, no live episode) until its actual on-servo calibration (Homing_Offset/Min_Position_Limit/Max_Position_Limit) is read back and verified/restored against its own true calibration file, not the leader's. device_map.json was NOT written to disk (main() raises SystemExit before the write on DeviceDetectionError), so this is contained to the servos' own EEPROM, not a committed config file."
-    }
-  ],
+  "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [
     {
-      "action": "Do not power-cycle or move the follower arm until its calibration is checked",
-      "context": "Preserves the current (possibly-wrong) on-servo state so it can be read back and diagnosed, rather than risking further drift.",
+      "action": "Measure the red cube (must be <=78mm, the real measured collision-proxy gripper aperture per STATE.md, not the original 84mm design cap) and place it within the arm's ~0.45m reach, off the base's forward centerline.",
+      "context": "Task 3's how-to-verify step 1 -- a precondition for the live episode, not yet done this session.",
+      "blocking": true
+    },
+    {
+      "action": "Start the Colab notebook per control/vla_bridge/policy_server_launch.md and note the printed ngrok TCP host:port.",
+      "context": "Task 3's how-to-verify step 3 -- run_vla_episode.py's --server-address needs this; no Colab session exists yet this session.",
+      "blocking": true
+    },
+    {
+      "action": "Confirm the checkpoint id from control/vla_bridge/checkpoint_candidates.md (Plan 11-03's selection) to pass as --checkpoint.",
+      "context": "Task 3's how-to-verify step 4.",
+      "blocking": true
+    },
+    {
+      "action": "Run run_vla_episode.py with --server-address/--checkpoint/--instruction, physically present and ready to Ctrl+C, then judge and report success/failure, termination reason, and whether lerobot#2210 reproduced.",
+      "context": "Task 3 is a blocking checkpoint:human-verify task per 11-05-PLAN.md -- requires human judgment of physical robot behavior that cannot be automated or delegated.",
       "blocking": true
     }
   ],
   "decisions": [
-    {"decision": "PAUSED before verifying/restoring the follower's real calibration", "rationale": "User asked to 'check the follower's calibration now from lerobot's library' — this requires locating lerobot's calibration file storage path and reading both the follower's and leader's saved calibration JSON, then comparing against the LIVE values currently on the follower's servos (via a real, read-only connect — no writes). This investigation was interrupted mid-command (a grep/find call was rejected) by the user invoking /gsd-pause-work. Not yet started: locating calibration file paths, comparing follower-file vs leader-file vs live-servo values.", "phase": "11"}
+    {
+      "decision": "Fixed resolve_port_identity() in control/detect_devices.py to use a genuine read-only calibration comparison (bus.read_calibration() vs the id's saved file) instead of a write_calibration()-based no-op-succeeds test.",
+      "rationale": "Live testing before this session found the original write-based test could silently 'confirm' a wrong robot id with zero real signal, when the id/class combination resolves to no saved calibration file (write_calibration({}) is a no-op that never raises). Verified no hardware corruption occurred by that bug (follower's live servo values still matched its saved file exactly) before applying the fix. Commit eb85f22 in the phase-11 worktree (worktree-agent-afe9e290a91f86d2e).",
+      "phase": "11"
+    },
+    {
+      "decision": "Switched StereoSplitCamera's AR0144 capture backend from cv2.VideoCapture to an ffmpeg subprocess, and switched device_map.json's stereo camera identifier from a numeric cv2/ffmpeg index to the AVFoundation device NAME string ('CCB Camera').",
+      "rationale": "cv2.VideoCapture's AVFoundation backend cannot be made to report the AR0144's true 2560x720 frame on macOS (confirmed unfixed OpenCV bug, opencv/opencv#23368) -- it silently serves a lower resolution regardless of explicit CAP_PROP requests. ffmpeg with explicit -pixel_format uyvy422 -video_size 2560x720 captures the real frame reliably. Separately found that ffmpeg's OWN AVFoundation device index numbering is not stable between process launches (same physical camera showed up at a different index moments apart), so device_map.json now persists cameras.stereo_overhead_name (the device name) as the authoritative identifier for the ffmpeg path, keeping the numeric cameras.stereo_overhead only for the unrelated, non-safety-critical IOLogger cv2 recording caps. Commit 0541458.",
+      "phase": "11"
+    },
+    {
+      "decision": "Fixed detect_devices() to default the leader identity check to _make_leader_robot (SOLeader) instead of silently falling back to _make_follower_robot.",
+      "rationale": "main() never passed make_leader through to detect_devices(), so the leader check always constructed an SO101Follower even for the leader id -- whose calibration_fpath resolves under robots/so_follower/, where the leader's real saved calibration never lives (it's under teleoperators/so_leader/). Leader auto-discovery was dead on arrival since Task 2 landed; only surfaced now because this session re-tested with the leader physically connected and powered. Commit e8519f8.",
+      "phase": "11"
+    }
   ],
   "uncommitted_files": [
     ".planning/phases/11-vla-hardware-connection/11-PATTERNS.md (untracked, pre-existing since discuss-phase; harmless, not blocking)"
   ],
-  "next_action": "Resume the calibration investigation the user requested: (1) find where installed lerobot stores calibration JSON files (likely under a lerobot cache dir, or check SOFollowerRobotConfig/SOLeaderTeleopConfig source for the calibration_fpath resolution logic) (2) read both soarm_follower_02's and soarm_leader_01's saved calibration files and diff their Homing_Offset/Min_Position_Limit/Max_Position_Limit per motor (3) do a READ-ONLY connect to the follower's real port (/dev/cu.usbmodem5B8E1139151, verify with `ls /dev/cu.usbmodem*` first as it may have changed) and read back the LIVE values currently stored on its servos (no writes, no motion) (4) compare live values against both calibration files to confirm whether the leader's values actually got written, and by how much they differ from the follower's true values (5) present findings to the user and do NOT proceed to Task 3 (or re-run detect_devices.py) until this is resolved and resolve_port_identity()'s identity test is hardened so this can't recur silently.",
-  "context_notes": "This pause is NOT a normal 'waiting on the user' pause — it's a mid-investigation pause after finding a real, live hardware safety issue during Task 3 prep. The phase's centerpiece live episode (Task 3) is on hold until the follower's calibration is confirmed correct. The device auto-discovery script built in Task 2 (control/detect_devices.py, commit fa99468) has a design flaw: its per-port identity test (resolve_port_identity in the worktree's control/detect_devices.py) considers 'no exception during connect+write_calibration' as proof of identity, which is not actually a valid identity signal since both arms' motor IDs/ranges overlap enough that a wrong calibration file can write successfully. This needs a real fix (e.g. read something uniquely identifying — serial number, or compare read-back values against expected ranges before trusting a write cycle) before detect_devices.py is trusted again. The open worktree (.claude/worktrees/agent-afe9e290a91f86d2e, branch worktree-agent-afe9e290a91f86d2e, HEAD 6ca93fe) still holds Tasks 1-2's work, unmerged to master, same as before."
+  "next_action": "All of Task 3's technical prerequisites (follower/leader/camera auto-discovery, safe identity checking, correct stereo camera capture) are now fixed and verified against real hardware, repeatedly, across multiple replug cycles -- device_map.json resolves correctly every time. Nothing further to fix in code. Next action is entirely on the user: (1) measure/place the red cube, (2) start the Colab PolicyServer notebook and get the ngrok host:port, (3) confirm the checkpoint id, (4) run run_vla_episode.py for the live episode while physically present, (5) report the outcome so Task 3's checkpoint can be marked approved and Task 4 (FINDINGS.md write-up) can start.",
+  "context_notes": "This is a clean, non-blocked pause -- not an interrupted investigation. All 3 real bugs found this session in control/detect_devices.py and control/vla_bridge/stereo_camera.py (unsafe write-based identity check, cv2 AVFoundation resolution bug, dead leader auto-discovery) are fixed, tested (70 tests passing in the worktree), and verified against real hardware multiple times including fresh replug/power-cycle. All work so far lives in the phase-11 worktree at .claude/worktrees/agent-afe9e290a91f86d2e (branch worktree-agent-afe9e290a91f86d2e, commits fa99468 -> 6ca93fe -> eb85f22 -> 0541458 -> e8519f8), NOT yet merged to master. device_map.json itself is gitignored (machine-local state), currently populated correctly with both arms + both cameras. Task 3 itself (the live VLA-driven episode) has not been attempted yet this session -- it is explicitly a blocking checkpoint:human-verify task in 11-05-PLAN.md requiring the user's physical presence and judgment, which is outside what I can do autonomously."
 }
