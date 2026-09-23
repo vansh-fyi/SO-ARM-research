@@ -17,9 +17,25 @@ call in the caller's hands (`run_vla_episode.py`'s control loop), strictly
 after `pop_validated_action()` has run the candidate through
 `safety_validator.validate_action()`. The validation gate and the execution
 gate are visibly separate in this code, on purpose (T-11-09).
+
+`receive_actions()` (the library's background thread that pulls action
+chunks off the gRPC stream and fills `client.action_queue`) is started
+explicitly here, in its own daemon thread. It does NOT call
+`robot.send_action()` -- only `control_loop_action()`/`control_loop()` do
+that -- so running it does not reintroduce the T-11-09 bypass this module
+otherwise avoids. Without this thread, `action_queue` is never populated
+and every `pop_validated_action()` call silently falls back to "hold
+current position" forever (found live: an episode ran to completion with
+the robot never moving, `action_queue` permanently empty). Because
+`receive_actions()` calls `self.start_barrier.wait()` expecting a second
+thread (the library's own `control_loop()`, which this module deliberately
+never runs), `client.start_barrier` is replaced with a 1-party barrier
+before starting the thread so it doesn't block forever waiting for a
+partner that will never arrive.
 """
 
 import queue
+import threading
 import time
 from typing import Any
 
@@ -114,6 +130,11 @@ def connect_bridge(
     if not client.start():
         client.stop()
         return None
+
+    client.start_barrier = threading.Barrier(1)
+    action_thread = threading.Thread(target=client.receive_actions, daemon=True)
+    action_thread.start()
+    client._action_receiver_thread = action_thread
 
     return client
 
@@ -229,7 +250,7 @@ class BridgeActionSource:
             return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
 
         try:
-            validated_action, _flags, _raw_action, _obs_age_s = pop_validated_action(
+            validated_action, flags, _raw_action, _obs_age_s = pop_validated_action(
                 self.client,
                 safety_validator.validate_action,
                 self.joint_limits_deg,
@@ -241,6 +262,8 @@ class BridgeActionSource:
             return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
 
         self._last_action = validated_action
+        if flags:
+            return validated_action, f"{self.checkpoint}@{'+'.join(flags)}"
         return validated_action, f"{self.checkpoint}@unknown"
 
 

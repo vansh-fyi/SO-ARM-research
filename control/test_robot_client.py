@@ -133,12 +133,17 @@ class FakeRobotClientHandshakeFails:
         self.config = config
         self.stopped = False
         self.robot = FakeRobotWithObservation()
+        self.start_barrier = threading.Barrier(2)
+        self.receive_actions_called = threading.Event()
 
     def start(self) -> bool:
         return False
 
     def stop(self) -> None:
         self.stopped = True
+
+    def receive_actions(self, verbose: bool = False) -> None:
+        self.receive_actions_called.set()
 
 
 def test_connect_bridge_returns_none_and_cleans_up_when_start_fails(monkeypatch):
@@ -186,6 +191,26 @@ def test_connect_bridge_returns_connected_client_on_success(monkeypatch):
     obs = result.robot.get_observation()
     assert obs["camera2"] == "fake-left-frame"
     assert obs["camera3"] == "fake-right-frame"
+
+
+def test_connect_bridge_starts_receive_actions_thread_on_success(monkeypatch):
+    """The bug found live this session: without a running receive_actions()
+    thread, action_queue is never populated and the robot never moves --
+    connect_bridge() must start it as a background daemon thread, and must
+    downsize start_barrier to 1 party first so receive_actions() (which waits
+    on that barrier for a control_loop() partner this module never runs)
+    doesn't block forever."""
+    monkeypatch.setattr(robot_client, "RobotClient", FakeRobotClientHandshakeSucceeds)
+    monkeypatch.setattr(robot_client, "StereoSplitCamera", FakeStereoSplitCamera)
+
+    result = robot_client.connect_bridge(
+        server_address="0.tcp.ngrok.io:12345",
+        checkpoint="victorvanhalst/smolvla_so101_cube",
+        robot_config=object(),
+        task="Pick the red cube and place it in the bowl",
+    )
+
+    assert result.receive_actions_called.wait(timeout=2.0)
 
 
 class FakeRobotConfigWithCameras:
