@@ -185,6 +185,7 @@ def pop_validated_action(
     current_state: dict[str, float],
     prev_action: dict[str, float] | None,
     dt_s: float,
+    stale_threshold_s: float = safety_validator.STALE_ACTION_S,
 ) -> tuple[dict[str, float], list[str], dict[str, float], float]:
     """Pop one candidate action from the bridge client's queue and validate it.
 
@@ -195,6 +196,14 @@ def pop_validated_action(
     Returns `(validated_action, flags, raw_action, obs_age_s)`. On an empty
     queue, returns `(dict(current_state), ["no action available, holding
     position"], {}, 0.0)` rather than raising.
+
+    Defaults `stale_threshold_s` to `STALE_ACTION_S` (network round-trip
+    staleness), not `STALE_OBSERVATION_S` (synchronous-loop staleness,
+    `validate_action()`'s own default) -- found live this session:
+    every bridge-returned action was being checked against the 1.0s
+    synchronous threshold, which a real cloud round-trip (tens of seconds,
+    worse on a cold-started policy server) can never meet, permanently
+    holding position regardless of whether real actions were arriving.
     """
     with client.action_queue_lock:
         try:
@@ -214,6 +223,7 @@ def pop_validated_action(
         obs_age_s=obs_age_s,
         prev_action=prev_action,
         dt_s=dt_s,
+        stale_threshold_s=stale_threshold_s,
     )
     return validated_action, flags, raw_action, obs_age_s
 

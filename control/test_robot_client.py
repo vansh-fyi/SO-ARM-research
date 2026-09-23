@@ -79,6 +79,36 @@ def test_pop_validated_action_returns_validated_action_and_never_calls_send_acti
     assert not hasattr(client, "send_action")
 
 
+def test_pop_validated_action_uses_stale_action_threshold_not_stale_observation(
+    mock_calibration_file,
+):
+    """The bug found live this session: a real bridge-returned action 2s old
+    was being rejected as stale because pop_validated_action() checked it
+    against STALE_OBSERVATION_S (1.0s, meant for a synchronous local loop)
+    instead of STALE_ACTION_S (3.0s, defined specifically for this bridge
+    path) -- every genuine network round-trip action was held regardless of
+    whether the queue actually had real data."""
+    client = FakeBridgeClient()
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    two_seconds_ago = time.time() - 2.0
+    client.action_queue.put(FakeTimedAction(raw_action, timestamp=two_seconds_ago))
+
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    current_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    validated_action, flags, raw_out, obs_age_s = robot_client.pop_validated_action(
+        client,
+        safety_validator.validate_action,
+        joint_limits_deg,
+        current_state,
+        prev_action=None,
+        dt_s=1.0,
+    )
+
+    assert not any("stale" in f for f in flags)
+    assert validated_action == raw_action
+
+
 def test_pop_validated_action_empty_queue_holds_position(mock_calibration_file):
     client = FakeBridgeClient()  # empty action_queue
     joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)

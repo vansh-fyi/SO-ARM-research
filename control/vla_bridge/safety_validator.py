@@ -62,6 +62,7 @@ def validate_action(
     obs_age_s: float = 0.0,
     prev_action: dict[str, float] | None = None,
     dt_s: float = 1.0,
+    stale_threshold_s: float = STALE_OBSERVATION_S,
 ) -> tuple[dict[str, float], list[str]]:
     """Validate a candidate action before it can reach the servo bus.
 
@@ -123,9 +124,9 @@ def validate_action(
 
     # After the per-joint loop: stale observation overrides everything,
     # discarding all per-joint results computed above.
-    if obs_age_s > STALE_OBSERVATION_S:
+    if obs_age_s > stale_threshold_s:
         return dict(current_state), [
-            f"stale observation ({obs_age_s}s > {STALE_OBSERVATION_S}s), holding all joints"
+            f"stale observation ({obs_age_s}s > {stale_threshold_s}s), holding all joints"
         ]
 
     return safe_action, flags
