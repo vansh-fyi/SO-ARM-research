@@ -584,6 +584,58 @@ def test_detect_devices_raises_when_no_port_resolves_to_follower(monkeypatch):
         )
 
 
+def test_detect_devices_default_leader_constructor_is_soleader_not_sofollower(monkeypatch):
+    """Regression test for the bug found live re-testing the leader this
+    session: main() never passed make_leader through detect_devices(), so
+    the leader identity check silently defaulted to constructing an
+    SO101Follower (resolve_port_identity()'s own generic fallback) even for
+    the leader id -- whose calibration_fpath always resolves under
+    robots/so_follower/, where the leader's real saved calibration never
+    lives (it's under teleoperators/so_leader/). Leader auto-discovery was
+    dead on arrival since Task 2 landed. detect_devices() must now default
+    make_leader to the real _make_leader_robot (SOLeader) itself, not rely
+    on every caller to remember to pass it."""
+
+    def make_follower(port, robot_id):
+        raise ConnectionError("not the follower port")
+
+    calls = []
+
+    def fake_make_leader_robot(port, robot_id):
+        calls.append((port, robot_id))
+        return FakeConnectableRobot(calibration=_SAMPLE_CALIBRATION, live_calibration=_SAMPLE_CALIBRATION)
+
+    monkeypatch.setattr(detect_devices, "_make_leader_robot", fake_make_leader_robot)
+    monkeypatch.setattr(
+        detect_devices,
+        "probe_camera_candidates",
+        lambda max_index: [
+            {"index": 0, "width": STEREO_WIDTH, "height": STEREO_HEIGHT},
+            {"index": 1, "width": 1920, "height": 1080},
+        ],
+    )
+    monkeypatch.setattr(detect_devices, "get_camera_names", lambda: ["CCB Camera", "USB Camera"])
+
+    # make_follower always fails here, so the follower loop iteration falls
+    # through to the leader check -- but detect_devices() requires SOME
+    # follower to resolve or it raises, so give it a second port where
+    # make_follower succeeds (via the real default _make_follower_robot,
+    # left untouched) after the leader port has already been tried.
+    def make_follower_second_port(port, robot_id):
+        if port == "/dev/cu.follower_port":
+            return FakeConnectableRobot(calibration=_SAMPLE_CALIBRATION, live_calibration=_SAMPLE_CALIBRATION)
+        raise ConnectionError("not the follower port")
+
+    result = run_detect_devices(
+        ports=["/dev/cu.leader_port", "/dev/cu.follower_port"],
+        make_follower=make_follower_second_port,
+        prompt_fn=_no_op_prompt,
+    )
+
+    assert calls == [("/dev/cu.leader_port", "soarm_leader_01")]
+    assert result["leader"] == {"port": "/dev/cu.leader_port", "id": "soarm_leader_01"}
+
+
 # --- main() CLI (writes device_map.json) --------------------------------------------------
 
 

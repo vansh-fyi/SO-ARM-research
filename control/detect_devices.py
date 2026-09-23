@@ -410,13 +410,26 @@ def detect_devices(
     if ports is None:
         ports = list_serial_ports()
 
+    # Role-appropriate defaults resolved HERE, not left to resolve_port_identity()'s
+    # own generic default -- found live during this session's leader re-test:
+    # main() never passed make_leader through, so the leader identity check was
+    # silently constructing an SO101Follower (resolve_port_identity()'s own
+    # fallback) even for the leader id. An SO101Follower's calibration_fpath
+    # always resolves under robots/so_follower/, but the leader's real saved
+    # calibration lives under teleoperators/so_leader/ -- so the leader check
+    # could never find a saved file and (correctly, post-fix) always failed
+    # closed with "no saved calibration file for this id". Leader auto-discovery
+    # was effectively dead on arrival since Task 2 landed.
+    effective_make_follower = make_follower if make_follower is not None else _make_follower_robot
+    effective_make_leader = make_leader if make_leader is not None else _make_leader_robot
+
     follower = None
     leader = None
     for port in ports:
-        if follower is None and resolve_port_identity(port, FOLLOWER_ROBOT_ID, make_robot=make_follower):
+        if follower is None and resolve_port_identity(port, FOLLOWER_ROBOT_ID, make_robot=effective_make_follower):
             follower = {"port": port, "id": FOLLOWER_ROBOT_ID}
             continue
-        if leader is None and resolve_port_identity(port, LEADER_ROBOT_ID, make_robot=make_leader):
+        if leader is None and resolve_port_identity(port, LEADER_ROBOT_ID, make_robot=effective_make_leader):
             leader = {"port": port, "id": LEADER_ROBOT_ID}
             continue
         print(
