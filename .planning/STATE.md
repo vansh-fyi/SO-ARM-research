@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Real-Hardware MLLM Manipulation Benchmark
-current_phase: 11
-status: milestone_complete
-stopped_at: Milestone v2.0 complete (Phase 10 + Phase 11 both done) -- ready for /gsd-complete-milestone
-last_updated: "2026-09-24T07:35:33.690Z"
+milestone: v2.1
+milestone_name: MLLM Raw-Autonomy Benchmark
+status: planning
+last_updated: "2026-09-24T12:10:50.676Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 11 complete -- milestone v2.0 is now 100% complete
 progress:
-  total_phases: 11
-  completed_phases: 9
-  total_plans: 38
-  completed_plans: 38
-  percent: 82
-current_phase_name: VLA Hardware Connection
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -24,14 +20,14 @@ current_phase_name: VLA Hardware Connection
 See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** A researcher types a task prompt and watches SOARM execute it in a LIBERO simulation — the loop from language to embodied action.
-**Current focus:** Milestone v2.0 complete -- next milestone scope not yet decided (candidates: tick-latency fix from FINDINGS.md, deep-reasoning MLLM comparison, raw-autonomy design)
+**Current focus:** Milestone v2.1 (MLLM Raw-Autonomy Benchmark) -- defining requirements. Scope: bridge tick-latency fix, then an MLLM raw-JSON control loop (no movement primitives) compared against the Phase 11 SmolVLA baseline on Pen Transfer, plus v2.0 tech-debt cleanup.
 
 ## Current Position
 
-Phase: 11 (last phase of milestone v2.0)
-Plan: 5/5 complete
-Status: Milestone v2.0 complete, awaiting /gsd-complete-milestone
-Last activity: 2026-09-24 — Phase 11 complete, milestone v2.0 100% complete
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-09-24 — Milestone v2.1 started
 
 ## Performance Metrics
 
