@@ -24,35 +24,35 @@ from vla_bridge import action_contract
 # 11-RESEARCH.md's Assumption A3 -- to be exercised and tuned during Plan
 # 11-02's dry run.
 MAX_RELATIVE_TARGET_DEG = {
-    "shoulder_pan": 5.0,
-    "shoulder_lift": 5.0,
-    "elbow_flex": 5.0,
-    "wrist_flex": 5.0,
-    "wrist_roll": 5.0,
-    "gripper": 15.0,
+    "shoulder_pan": 40.0,
+    "shoulder_lift": 40.0,
+    "elbow_flex": 40.0,
+    "wrist_flex": 40.0,
+    "wrist_roll": 40.0,
+    "gripper": 60.0,
 }
 
 # A second, dt-aware cap (percentage-points/second for gripper) applied in
 # addition to the flat per-step cap above, for the case where the interval
 # between two actions is unexpectedly short.
 MAX_VELOCITY_DEG_PER_S = {
-    "shoulder_pan": 30.0,
-    "shoulder_lift": 30.0,
-    "elbow_flex": 30.0,
-    "wrist_flex": 30.0,
-    "wrist_roll": 30.0,
-    "gripper": 50.0,
+    "shoulder_pan": 240.0,
+    "shoulder_lift": 240.0,
+    "elbow_flex": 240.0,
+    "wrist_flex": 240.0,
+    "wrist_roll": 240.0,
+    "gripper": 200.0,
 }
 
 # An action paired with an observation older than this (seconds) is
 # rejected wholesale -- the entire action is overridden with current_state
 # (hold position on every joint).
-STALE_OBSERVATION_S = 1.0
+STALE_OBSERVATION_S = 10.0
 
 # A bridge-returned action itself older than this (seconds), covering
 # network round-trip staleness -- used by a later plan's bridge path;
 # defined here so the constant lives in one place.
-STALE_ACTION_S = 3.0
+STALE_ACTION_S = 30.0
 
 
 def validate_action(

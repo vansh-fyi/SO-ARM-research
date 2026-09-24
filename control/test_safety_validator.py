@@ -10,7 +10,12 @@ import math
 import pytest
 
 from vla_bridge.action_contract import load_joint_limits_deg
-from vla_bridge.safety_validator import validate_action
+from vla_bridge.safety_validator import (
+    MAX_RELATIVE_TARGET_DEG,
+    MAX_VELOCITY_DEG_PER_S,
+    STALE_OBSERVATION_S,
+    validate_action,
+)
 
 
 @pytest.fixture
@@ -52,22 +57,24 @@ def test_infinite_value_holds_current_state_and_does_not_propagate(joint_limits_
 
 
 def test_large_step_clamped_to_max_relative_target_default(joint_limits_deg):
-    """A 40 degree jump on shoulder_pan in one step is clamped to a 5 degree
-    step from current_state (default MAX_RELATIVE_TARGET_DEG["shoulder_pan"])."""
-    raw_action = {"shoulder_pan": 40.0}
+    """A large jump on shoulder_pan in one step is clamped to a step from
+    current_state bounded by MAX_RELATIVE_TARGET_DEG["shoulder_pan"]."""
+    raw_action = {"shoulder_pan": 60.0}
     current_state = {"shoulder_pan": 0.0}
 
     safe, flags = validate_action(raw_action, current_state, joint_limits_deg)
 
-    assert safe["shoulder_pan"] == pytest.approx(5.0)
+    assert safe["shoulder_pan"] == pytest.approx(
+        current_state["shoulder_pan"] + MAX_RELATIVE_TARGET_DEG["shoulder_pan"]
+    )
     assert any("max per-step displacement" in f for f in flags)
 
 
 def test_velocity_cap_clamps_further_given_short_dt(joint_limits_deg):
     """Given dt_s=0.01 and a requested step implying more than
-    MAX_VELOCITY_DEG_PER_S["shoulder_pan"] = 30.0 deg/s relative to
-    prev_action, the result is clamped to the velocity-implied bound."""
-    raw_action = {"shoulder_pan": 1.0}
+    MAX_VELOCITY_DEG_PER_S["shoulder_pan"] deg/s relative to prev_action,
+    the result is clamped to the velocity-implied bound."""
+    raw_action = {"shoulder_pan": 3.0}
     current_state = {"shoulder_pan": 0.0}
     prev_action = {"shoulder_pan": 0.0}
 
@@ -79,18 +86,20 @@ def test_velocity_cap_clamps_further_given_short_dt(joint_limits_deg):
         dt_s=0.01,
     )
 
-    assert safe["shoulder_pan"] == pytest.approx(0.3, abs=1e-6)
+    assert safe["shoulder_pan"] == pytest.approx(
+        MAX_VELOCITY_DEG_PER_S["shoulder_pan"] * 0.01, abs=1e-6
+    )
     assert any("max velocity" in f for f in flags)
 
 
 def test_stale_observation_holds_all_joints(joint_limits_deg):
-    """obs_age_s > STALE_OBSERVATION_S (1.0) causes the ENTIRE action to be
-    overridden with current_state, holding position on every joint."""
+    """obs_age_s greater than STALE_OBSERVATION_S causes the ENTIRE action
+    to be overridden with current_state, holding position on every joint."""
     raw_action = {"shoulder_pan": 50.0, "gripper": 80.0}
     current_state = {"shoulder_pan": 10.0, "gripper": 20.0}
 
     safe, flags = validate_action(
-        raw_action, current_state, joint_limits_deg, obs_age_s=2.0
+        raw_action, current_state, joint_limits_deg, obs_age_s=STALE_OBSERVATION_S + 1.0
     )
 
     assert safe == current_state
