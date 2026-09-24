@@ -50,6 +50,7 @@ import glob
 import json
 import re
 import subprocess
+import time
 from datetime import datetime, timezone
 from itertools import zip_longest
 from pathlib import Path
@@ -86,10 +87,31 @@ class DeviceDetectionError(RuntimeError):
 # --- Serial port -> robot identity ------------------------------------------------
 
 
-def list_serial_ports() -> list[str]:
+def list_serial_ports(polls: int = 5, poll_interval_s: float = 0.3) -> list[str]:
     """`/dev/cu.usbmodem*` ports, sorted for deterministic iteration order --
-    reuses `control/COMMANDS.md`'s own `ls`-based discovery convention."""
-    return sorted(glob.glob("/dev/cu.usbmodem*"))
+    reuses `control/COMMANDS.md`'s own `ls`-based discovery convention.
+
+    Polls `glob()` up to `polls` times (`poll_interval_s` apart) and returns
+    the UNION of every port seen across all attempts, rather than a single
+    snapshot. Found live (11-05 retry session, 2026-09-24): on a marginal USB
+    hub connection, a real, physically-connected port can intermittently
+    vanish from a single `glob()` call for a fraction of a second at a time
+    -- confirmed by running `glob.glob('/dev/cu.usbmodem*')` repeatedly by
+    hand and seeing the follower's port flicker in and out between calls
+    less than a second apart, even though direct `pyserial` opens against it
+    succeeded throughout. A single-snapshot glob has no way to tell "this
+    port doesn't exist" apart from "this port exists but the OS hadn't
+    finished a micro re-enumeration blip yet" -- polling and unioning treats
+    any port seen at least once as real and worth attempting to resolve
+    (`resolve_port_identity()` already handles a port that's flaky AT
+    resolve-time by returning False, so over-including here is safe; under-
+    including silently drops a real robot from detection, which is not)."""
+    seen: set[str] = set()
+    for attempt in range(polls):
+        seen.update(glob.glob("/dev/cu.usbmodem*"))
+        if attempt < polls - 1:
+            time.sleep(poll_interval_s)
+    return sorted(seen)
 
 
 def _make_follower_robot(port: str, robot_id: str):
