@@ -85,19 +85,19 @@ coverage:
 
 duration: ~1.5hr (Task 3: live hardware session diagnosing/fixing 3 bridge bugs + re-running to a complete episode; Task 4: findings write-up grounded in that episode's real data)
 completed: 2026-09-24
-status: incomplete
+status: complete
 ---
 
 # Phase 11 Plan 05: Hardware-in-the-Loop E-Stop, Device Auto-Discovery, Live Episode, and Findings Summary
 
-**Device auto-discovery (`detect_devices.py` -> `device_map.json`) now supersedes hardcoded port/camera tables, the bridge's previously-missing `camera1` (wrist) observation is wired in, a full real-hardware VLA episode ran end-to-end (1/60 steps executed a real action -- see FINDINGS.md), and a go/no-go findings write-up is drafted pending human review.**
+**Device auto-discovery (`detect_devices.py` -> `device_map.json`) now supersedes hardcoded port/camera tables, the bridge's previously-missing `camera1` (wrist) observation is wired in, a full real-hardware VLA episode ran end-to-end (1/60 steps executed a real action -- see FINDINGS.md), and the go/no-go findings write-up is approved.**
 
 ## Performance
 
-- **Duration:** 0 min automated work for Task 1 (human-verification only); Task 2 implemented and tested in a prior session; Task 3 was a live hardware session this session diagnosing and fixing 3 bridge bugs before a complete episode ran; Task 4 (`FINDINGS.md`) drafted this session
+- **Duration:** 0 min automated work for Task 1 (human-verification only); Task 2 implemented and tested in a prior session; Task 3 was a live hardware session this session diagnosing and fixing 3 bridge bugs before a complete episode ran; Task 4 (`FINDINGS.md`) drafted and approved this session
 - **Started:** 2026-09-21 (Task 1 checkpoint first presented)
-- **Completed:** N/A -- Task 4 still awaits human "approved" (this plan's final checkpoint)
-- **Tasks:** 4/4 executed (Task 1 approved prior session; Task 2 implemented+committed prior session; Task 3 approved this session with real episode data recorded; Task 4 drafted this session, `checkpoint:human-verify` pending review)
+- **Completed:** 2026-09-24 -- Task 4 approved by human, with an explicit caveat: the recommendation's proposed fix (stop resending observations per-tick while draining a chunk / tune control_hz) was called "incomplete" -- the human wants the actual fix design brainstormed properly before implementation, not treated as fully scoped by FINDINGS.md's framing. Plan closes; the tick-latency fix is carried forward as open follow-up work, not as a settled design.
+- **Tasks:** 4/4 complete (Task 1 approved prior session; Task 2 implemented+committed prior session; Task 3 approved this session with real episode data recorded; Task 4 drafted and approved this session, with the above caveat)
 - **Files modified/created this session:** 1 (`control/vla_bridge/FINDINGS.md`, new)
 
 ## Accomplishments
