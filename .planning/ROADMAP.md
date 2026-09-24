@@ -21,7 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Execution Order (v1 / v1.1):** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
 **Execution Order (v2.0):** (10 ∥ 11) — independent, parallel-capable
-**Execution Order (v2.1):** 12 → 13 → 14 → (15 ∥ 16) → 17
+**Execution Order (v2.1):** 12 → 14 → (15 ∥ 16) → 17 → 13 (safety-cap re-tightening deliberately moved last, 2026-09-24 — see Phase 13)
 
 - [x] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (4 plans) (closed 2026-07-10 — UAT 4/4 PASS after ENV-03 dependency fixes baked into notebook)
 - [x] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks (completed 2026-07-18)
@@ -35,11 +35,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Digital-Twin Fidelity** - Rebuild the URDF and MuJoCo XML as a correct, complete, 1:1 kinematic match to the real SO-ARM101 (gripper properly chained, wrist_roll + gripper joints restored, correct directions/limits, in-repo mesh paths) (completed 2026-09-19)
 - [x] **Phase 11: VLA Hardware Connection** - Connect an SO-101-native joint-action VLA (SmolVLA) to the real SO-ARM101 over the existing LeRobot bridge with a safety validator and complete per-step I/O logging, and record at least one full observed run (completed 2026-09-24)
 - [ ] **Phase 12: Bridge Tick-Latency Fix** - Fix the observation-resend-per-tick root cause so the bridge only requests fresh inference when the local action queue is empty/near-empty, with real measured latency logging and an in-flight-request guard; sweep 2 small pre-existing tech-debt items alongside it
-- [ ] **Phase 13: Safety-Validator Cap Re-Tightening** - Incrementally restore `safety_validator.py`'s caps toward their conservative defaults, live-verified at each step, and pin `WRIST_ROLL_LIMIT_DEG` to its Phase 10 source of truth
 - [ ] **Phase 14: Camera Device Resolution Unification** - Unify the model's inference-input and `IOLogger` recording camera paths behind one shared, name-based resolution helper, and log client-side frame provenance
 - [ ] **Phase 15: VLA-Style Pipeline & Backends** - Build the shared VLA-style `ActionSource` pattern and onboard 4 new native-action VLA backends (Gemini Robotics, π0/π0.5, Wall-X, ACT) driving the real SO-ARM101
 - [ ] **Phase 16: MLLM-Style Pipeline & Backends** - Build the shared MLLM-style `ActionSource` pattern (prompt construction, schema, reasoning-trace capture) and onboard 3 raw-JSON MLLM backends (HF reasoning model, Claude, GPT) with no movement primitives
 - [ ] **Phase 17: Cross-Backend Pen Transfer Benchmark** - Run all 8 backends on one live Pen Transfer episode each and directly compare them using Yu & Qiu 2026's failure taxonomy
+- [ ] **Phase 13: Safety-Validator Cap Re-Tightening** - Deliberately last (resequenced 2026-09-24 per user decision): incrementally restore `safety_validator.py`'s soft-margin caps toward their conservative defaults now that all 8 backends' episodes are observed, live-verified at each step, and pin `WRIST_ROLL_LIMIT_DEG` to its Phase 10 source of truth. Hard limits (absolute joint clamping, NaN/inf rejection, e-stop) stay active unmodified throughout Phases 12-17 regardless.
 
 ## Phase Details
 
@@ -388,32 +388,11 @@ Plans:
 
 **Plans**: TBD
 
-### Phase 13: Safety-Validator Cap Re-Tightening
-
-**Goal**: `safety_validator.py`'s caps, loosened ~8-10x for Phase 11's one-off live test, are incrementally restored toward their original conservative defaults with each step confirmed via a live-hardware re-verification episode — not assumed safe as a blind revert — and the cross-phase `WRIST_ROLL_LIMIT_DEG` constant is pinned to its Phase 10 source of truth.
-**Mode:** mvp
-**Depends on**: Phase 12 (re-tightening is sequenced immediately after the latency fix so the "why loosened / why now safe" causal chain stays auditable)
-**Requirements**: SAFETY-01, DEBT-01
-**Context/Notes**:
-
-- Mechanical, well-understood config change; the required discipline (live-hardware re-verification at each step) is already fully specified in `FINDINGS.md` and `research/SUMMARY.md` — a standard pattern, not a design task.
-- Core rejection logic (absolute joint-limit clamping, NaN/inf rejection) was never loosened in Phase 11 and must stay untouched throughout this phase.
-- DEBT-01 fits here because `WRIST_ROLL_LIMIT_DEG` in `action_contract.py` is itself a safety-relevant constant consumed by this same validator.
-
-**Success Criteria** (what must be TRUE):
-
-  1. `MAX_RELATIVE_TARGET_DEG`, `MAX_VELOCITY_DEG_PER_S`, `STALE_OBSERVATION_S`, and `STALE_ACTION_S` are incrementally tightened toward their pre-Phase-11 conservative defaults, with each step confirmed via a live re-verification episode
-  2. Absolute joint-limit clamping and NaN/inf rejection are confirmed intact and unmodified after every re-tightening step
-  3. A final live episode with fully re-tightened caps still produces at least one genuine (non-rejected, non-stale) executed action
-  4. `action_contract.py`'s `WRIST_ROLL_LIMIT_DEG` is pinned to Phase 10's `robot.xml` wrist_roll value via an automated test (or SHA-pinned comment), so a future re-derivation can't silently desync it
-
-**Plans**: TBD
-
 ### Phase 14: Camera Device Resolution Unification
 
 **Goal**: A single shared, name-based camera-resolution helper is used by both the model's inference-input path and the `IOLogger` recording path (one `StereoSplitCamera` instance, not two independent opens), so `camera_overhead` recordings reliably show the robot workspace instead of the laptop webcam, and the bridge logs client-side provenance of what it actually sent to Colab per step.
 **Mode:** mvp
-**Depends on**: Phase 13 (sequenced per milestone ordering; technically independent of Phases 12-13's control-loop/safety work — touches only camera-opening code)
+**Depends on**: Phase 12 (technically independent of Phase 12's control-loop work — touches only camera-opening code — but sequenced directly after it since Phase 13's cap re-tightening has been moved to the end of this milestone; see Phase 13 below)
 **Requirements**: CAMFIX-01, CAMFIX-02, CAMFIX-03
 **Context/Notes**:
 
@@ -496,11 +475,33 @@ Plans:
 
 **Plans**: TBD
 
+### Phase 13: Safety-Validator Cap Re-Tightening
+
+**Goal**: `safety_validator.py`'s soft-margin caps (`MAX_RELATIVE_TARGET_DEG`, `MAX_VELOCITY_DEG_PER_S`, `STALE_OBSERVATION_S`, `STALE_ACTION_S`), loosened ~8-10x for Phase 11's one-off live test, are incrementally restored toward their original conservative defaults now that all 8 backends' Pen Transfer episodes have been observed — deliberately sequenced last, not right after the latency fix, so the loosened margins don't clip or discard real actions during the experiment phases and mask what each model actually does. The cross-phase `WRIST_ROLL_LIMIT_DEG` constant is pinned to its Phase 10 source of truth in the same phase.
+**Mode:** mvp
+**Depends on**: Phase 17 (deliberately last — resequenced 2026-09-24 per explicit user decision: keep soft margins loose through the entire 8-backend experiment so they don't interfere with observing genuine model behavior, then tighten once results are in)
+**Requirements**: SAFETY-01, DEBT-01
+**Context/Notes**:
+
+- **Resequencing decision (2026-09-24):** originally planned immediately after Phase 12 (the latency fix); user explicitly requested the soft-margin caps stay loose through Phases 14-17 because tight per-step/velocity/staleness caps can clip or discard actions in ways that mask what a model under test is actually trying to do — particularly relevant for the MLLM backends (Phase 16), where observing genuine (if imperfect) raw-autonomy behavior is the point of the experiment.
+- **Hard limits are NOT part of this loosening and were never in scope for it**: absolute joint-limit clamping, NaN/inf/malformed-action rejection, and e-stop stay active and unmodified for every episode across all 8 backends, throughout Phases 12-17 — these protect the physical servos/mechanics, not the experiment's behavior, and loosening them was explicitly declined.
+- Mechanical, well-understood config change; the required discipline (live-hardware re-verification at each step) is already fully specified in `FINDINGS.md` and `research/SUMMARY.md` — a standard pattern, not a design task.
+- DEBT-01 fits here because `WRIST_ROLL_LIMIT_DEG` in `action_contract.py` is itself a safety-relevant constant consumed by this same validator.
+
+**Success Criteria** (what must be TRUE):
+
+  1. `MAX_RELATIVE_TARGET_DEG`, `MAX_VELOCITY_DEG_PER_S`, `STALE_OBSERVATION_S`, and `STALE_ACTION_S` are incrementally tightened toward their pre-Phase-11 conservative defaults, with each step confirmed via a live re-verification episode
+  2. Absolute joint-limit clamping and NaN/inf rejection are confirmed intact and unmodified throughout Phases 12-17 and after every re-tightening step in this phase
+  3. A final live episode with fully re-tightened caps still produces at least one genuine (non-rejected, non-stale) executed action
+  4. `action_contract.py`'s `WRIST_ROLL_LIMIT_DEG` is pinned to Phase 10's `robot.xml` wrist_roll value via an automated test (or SHA-pinned comment), so a future re-derivation can't silently desync it
+
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order (v1 / v1.1):** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
 **Execution Order (v2.0):** (10 ∥ 11) — independent, parallel-capable
-**Execution Order (v2.1):** 12 → 13 → 14 → (15 ∥ 16) → 17
+**Execution Order (v2.1):** 12 → 14 → (15 ∥ 16) → 17 → 13 (safety-cap re-tightening deliberately moved last, 2026-09-24 — see Phase 13)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
