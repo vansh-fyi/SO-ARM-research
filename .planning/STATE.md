@@ -8,7 +8,7 @@ status: executing
 stopped_at: Phase 11 context gathered
 last_updated: "2026-09-20T21:45:39.473Z"
 last_activity: 2026-09-24
-last_activity_desc: Completed quick task 260924-e3d: Loosen safety_validator.py caps for visible real-hardware motion
+last_activity_desc: Completed quick task 260924-gih: Fix .pos-suffixed key mismatch dropping every real VLA action
 progress:
   total_phases: 11
   completed_phases: 8
@@ -120,6 +120,7 @@ Begin Phase 11 with the accepted Phase 10 model preserved. See
 | 260911-h5h | Create a 3D-printable STL mount bracket for the Waveshare AR0144 Stereo USB Camera module | 2026-09-11 | 47c8691 | [260911-h5h-create-a-3d-printable-stl-mount-bracket-](./quick/260911-h5h-create-a-3d-printable-stl-mount-bracket-/) |
 | 260919-h8v | Fix Phase 10 TWIN-07 gap: flip gripper_left/gripper_right axis polarity in soarm_gripper.xml, regenerate URDF, update test expectations (hardware re-test still required) | 2026-09-19 | 5fa8e62 | [260919-h8v-fix-phase-10-twin-07-gap-flip-gripper-le](./quick/260919-h8v-fix-phase-10-twin-07-gap-flip-gripper-le/) |
 | 260924-e3d | Loosen safety_validator.py caps (per-step 5→40deg, velocity 30→240deg/s, staleness 1s/3s→10s/30s) so the real 11-05 VLA episode can produce visible motion despite Colab round-trip latency -- user explicitly deprioritized safety margin in the empty test environment | 2026-09-24 | 9d664b7 | [260924-e3d-loosen-safety-validator-py-caps-displace](./quick/260924-e3d-loosen-safety-validator-py-caps-displace/) |
+| 260924-gih | Fix pop_validated_action() silently dropping every real bridge action to `{}` -- lerobot's `.pos`-suffixed action_features keys never matched safety_validator's plain JOINT_ORDER names, crashing the first live 11-05 episode via lerobot's own `ensure_safe_goal_position` ValueError once real (non-holding) actions started arriving | 2026-09-24 | 41b6a0e | [260924-gih-fix-pop-validated-action-dropping-every-](./quick/260924-gih-fix-pop-validated-action-dropping-every-/) |
 
 ## Deferred Items
 
