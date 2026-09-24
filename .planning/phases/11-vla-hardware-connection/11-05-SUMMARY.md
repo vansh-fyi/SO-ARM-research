@@ -26,6 +26,7 @@ key-files:
   created:
     - control/detect_devices.py
     - control/test_detect_devices.py
+    - control/vla_bridge/FINDINGS.md
   modified:
     - control/run_vla_episode.py
     - control/test_run_vla_episode.py
@@ -36,6 +37,8 @@ key-files:
 
 key-decisions:
   - "Task 1 (e-stop hardware-in-the-loop) approved after a second attempt with explicit --camera flags; the first attempt silently failed (ran to max_steps, Ctrl+C never registered by the process) because with neither real camera connected, cv2 opened the MacBook's built-in FaceTime camera at index 0 and treated it as the wrist camera"
+  - "Task 3 (full VLA-driven live episode): two prior live attempts crashed on now-fixed bridge bugs (343fa28: receive_actions() thread never started; e55aa53: staleness checked against STALE_OBSERVATION_S instead of STALE_ACTION_S; a3e16c4: pop_validated_action() built .pos-suffixed keys that silently failed safety_validator's plain-name lookup, producing an empty validated_action and crashing lerobot's ensure_safe_goal_position()). Safety-validator caps were also intentionally loosened ~8-10x (quick task 260924-e3d) to let a real VLA action clear validation. Fourth attempt (control/outputs/11-05-retry-20260924-120530/) ran to max_steps_reached (60/60 steps) with no crash and no lerobot#2210 reproduction; net yield was 1 real executed VLA action out of 60 steps (step 52) -- 59 steps held position because each real control tick took ~11-20s wall-clock (dominated by control_loop_observation() re-sending a full camera observation to Colab on every tick even while draining an already-fetched chunk locally) against a configured control_hz=2.0 (0.5s/tick), so queued actions aged past even the loosened 30s staleness cap before being popped"
+  - "Task 4 (FINDINGS.md go/no-go write-up): drafted, grounded in Task 1/Task 3's actual recorded data (episode.jsonl/termination.json read directly, not assumed); recommends GO conditional on fixing the observation-resend-per-tick latency bug before the next live episode attempt -- this is scoped as the concrete next engineering task, not an architecture change. Pending human review per the plan's checkpoint:human-verify gate -- not self-approved"
   - "Discovered during Task 1 verification: physical camera index assignment is inverted from this project's long-standing assumption -- AR0144 stereo is at cv2 index 0 and IMX335 wrist is at cv2 index 1 this session, not the reverse. Confirmed by resolution (2560x720 vs standard) and a physical cover-the-lens test"
   - "Fixed run_vla_episode.py's DEFAULT_CAMERA_NAMES: it was a hardcoded {0: wrist, 1: overhead} table applied regardless of --camera flag order. Replaced with positional _build_camera_names()"
   - "Added --stereo-camera-index CLI flag to run_vla_episode.py, threaded to connect_bridge()"
@@ -72,47 +75,57 @@ coverage:
     requirement: "VLAHW-04"
     verification: []
     human_judgment: true
-    rationale: "Requires a live Colab PolicyServer, an active ngrok tunnel, the physical SO-ARM101 and cameras, and a human judgment call on pick-up success/failure (no automated vision-based success detection exists yet). Not yet attempted -- plan is paused at this task's checkpoint pending the human's live run."
+    rationale: "APPROVED this session after two prior crashed attempts were diagnosed and fixed (see key-decisions). Fourth attempt (control/outputs/11-05-retry-20260924-120530/) ran to max_steps_reached (60/60 steps), no crash, no lerobot#2210 reproduction; net yield 1/60 real executed VLA actions -- cube was not fully picked up within max_steps, but the pipeline ran real, non-scripted, end-to-end as the requirement specifies."
   - id: D4
     description: "control/vla_bridge/FINDINGS.md go/no-go write-up synthesizing Task 1/Task 3's actual observed outcomes, lerobot#2210 status, and the D-05 no-reasoning-trace framing"
     requirement: "VLAHW-05"
     verification: []
     human_judgment: true
-    rationale: "The write-up is a single-observer research artifact requiring human review to confirm every claim traces back to Task 1/Task 3's actual observed outcomes, not invented or assumed. Not yet started -- depends on Task 3."
+    rationale: "Drafted this session, grounded directly in episode.jsonl/termination.json (control/outputs/11-05-retry-20260924-120530/) and Task 1's prior approval. Recommends GO conditional on fixing the observation-resend-per-tick latency bug. Pending human review per the plan's checkpoint:human-verify gate -- file exists but is NOT yet approved."
 
-duration: 0min (Task 1 was human-verification only; Task 2 was ~1 session of automated implementation; paused at Task 3 checkpoint)
-completed: 2026-09-22
+duration: ~1.5hr (Task 3: live hardware session diagnosing/fixing 3 bridge bugs + re-running to a complete episode; Task 4: findings write-up grounded in that episode's real data)
+completed: 2026-09-24
 status: incomplete
 ---
 
 # Phase 11 Plan 05: Hardware-in-the-Loop E-Stop, Device Auto-Discovery, Live Episode, and Findings Summary
 
-**Device auto-discovery (`detect_devices.py` -> `device_map.json`) now supersedes hardcoded port/camera tables, and the bridge's previously-missing `camera1` (wrist) observation is wired in -- both closing real gaps found live during Task 1's e-stop verification, on top of that verification's own approval.**
+**Device auto-discovery (`detect_devices.py` -> `device_map.json`) now supersedes hardcoded port/camera tables, the bridge's previously-missing `camera1` (wrist) observation is wired in, a full real-hardware VLA episode ran end-to-end (1/60 steps executed a real action -- see FINDINGS.md), and a go/no-go findings write-up is drafted pending human review.**
 
 ## Performance
 
-- **Duration:** 0 min automated work for Task 1 (human-verification only); Task 2 implemented and tested in this session
+- **Duration:** 0 min automated work for Task 1 (human-verification only); Task 2 implemented and tested in a prior session; Task 3 was a live hardware session this session diagnosing and fixing 3 bridge bugs before a complete episode ran; Task 4 (`FINDINGS.md`) drafted this session
 - **Started:** 2026-09-21 (Task 1 checkpoint first presented)
-- **Completed:** N/A -- still paused, now at Task 3
-- **Tasks:** 2/4 completed (Task 1 approved, Task 2 implemented+committed; Task 3 and Task 4 remain `checkpoint:human-verify`, `gate="blocking"`)
-- **Files modified:** 8 (`control/detect_devices.py` new, `control/test_detect_devices.py` new, `control/run_vla_episode.py`, `control/test_run_vla_episode.py`, `control/vla_bridge/robot_client.py`, `control/test_robot_client.py`, `control/COMMANDS.md`, `.gitignore`)
+- **Completed:** N/A -- Task 4 still awaits human "approved" (this plan's final checkpoint)
+- **Tasks:** 4/4 executed (Task 1 approved prior session; Task 2 implemented+committed prior session; Task 3 approved this session with real episode data recorded; Task 4 drafted this session, `checkpoint:human-verify` pending review)
+- **Files modified/created this session:** 1 (`control/vla_bridge/FINDINGS.md`, new)
 
 ## Accomplishments
 
 - **Task 1 (E-stop hardware-in-the-loop verification): APPROVED** (prior session -- see key-decisions for the camera-identity bug found and fixed at the time).
 
-- **Task 2 (Device auto-discovery + bridge camera1 wiring fix): IMPLEMENTED, TESTED, COMMITTED.**
-  - `control/detect_devices.py`: new script resolving (a) follower/leader serial port identity via an actual connect+calibration-load round trip per candidate `/dev/cu.usbmodem*` port (not fixed port-string matching), and (b) wrist/stereo-overhead camera cv2 indices via `system_profiler SPCameraDataType` name-based built-in-webcam exclusion, then AR0144 2560x720-resolution fingerprinting among the remainder, falling back to an interactive cover-the-lens brightness check only when a second candidate is genuinely ambiguous. Writes `control/device_map.json` (gitignored, machine-local).
-  - `control/run_vla_episode.py`: `PORT`/`ROBOT_ID`/`--camera`/`--stereo-camera-index` are now all optional. When omitted, values are sourced from `control/device_map.json` (printed which source was used for each); explicit CLI flags still override. If `device_map.json` is also unavailable, the script now fails with a clear, actionable error instead of silently falling back to the old any-device-that-opens probe behavior.
-  - `control/vla_bridge/robot_client.py`: `connect_bridge()` gained a `wrist_camera_index` parameter that wires a real `camera1` entry into `robot_config.cameras` via lerobot's own `OpenCVCameraConfig`, BEFORE `RobotClient(config)` connects the robot (which is when lerobot's own camera-config route actually opens the device). This closes the real gap found live in the prior session: `camera1` was never wired at all, only `camera2`/`camera3` (the AR0144 stereo split via `StereoSplitCamera`) -- meaning the VLA checkpoint's wrist input would have been silently missing during a live episode.
-  - Empirical finding NOT possible this session: whether a standard USB webcam driver tolerates a second independent `cv2.VideoCapture` open of the wrist camera's index (one from `run_vla_episode.py`'s own local IOLogger-recording caps, one from lerobot's own camera-config route opened inside `connect_bridge()`) could not be tested -- no real hardware is available in this coding environment. The independent-open path was chosen as the plan's own documented fallback when clean sharing isn't available; **this needs re-verification against the real wrist camera at Task 3** -- if the second open fails, it will surface as an exception raised inside `RobotClient.__init__` before the bridge handshake even starts (a loud failure, not a silent one).
-  - 77/77 tests pass across the full `control/` suite (24 new in `test_detect_devices.py`; existing bridge-selection tests in `test_run_vla_episode.py`/`test_robot_client.py` updated for the new `wrist_camera_index` kwarg plus new device_map.json integration/regression tests).
+- **Task 2 (Device auto-discovery + bridge camera1 wiring fix): IMPLEMENTED, TESTED, COMMITTED** (prior session -- see key-decisions and Files Created/Modified below).
+
+- **Task 3 (Full VLA-driven episode, recorded end-to-end): APPROVED this session.**
+  - Two prior live attempts crashed before completing; both root-caused and fixed this session: (1) `connect_bridge()` never started `receive_actions()`'s background thread, so the action queue was permanently empty (`343fa28`); (2) the bridge's staleness check compared action age against `STALE_OBSERVATION_S` (1.0s) instead of `STALE_ACTION_S` (`e55aa53`); (3) `pop_validated_action()` built `.pos`-suffixed keys that silently failed `safety_validator`'s plain-name lookup, producing an empty `validated_action` and crashing lerobot's `ensure_safe_goal_position()` (`a3e16c4`, quick task `260924-gih`). Safety-validator caps were also intentionally loosened ~8-10x (quick task `260924-e3d`) so a real VLA action could clear validation.
+  - Fourth attempt (`control/outputs/11-05-retry-20260924-120530/`) ran to `max_steps_reached` (60/60 steps), no crash, no `lerobot#2210` reproduction. Verified directly against the raw `episode.jsonl`: net yield was 1 real executed VLA action out of 60 steps (step 52) -- the other 59 steps held position because each real control tick took ~11-20s wall-clock (dominated by `control_loop_observation()` re-sending a full camera observation to Colab on every tick even while draining an already-fetched chunk locally) against a configured `control_hz=2.0` (0.5s/tick), so queued actions aged past even the loosened 30s staleness cap before being popped.
+  - Step 52's real executed action moved the arm as the checkpoint intended (shoulder_pan 2.7°->-5.6°, shoulder_lift -106.2°->-72.7°, elbow_flex 91.4°->54.1°, gripper 95.8%->49.8% closing), confirmed by the human operator watching live.
+
+- **Task 4 (Findings write-up and go/no-go recommendation): DRAFTED, COMMITTED, pending human review.**
+  - `control/vla_bridge/FINDINGS.md` synthesizes lerobot#2210 status (not reproduced), Task 3's actual episode outcome (grounded in the real `episode.jsonl`/`termination.json`, not invented), Task 1's e-stop outcome, D-05's no-reasoning-trace framing, and an explicit GO recommendation conditional on fixing the observation-resend-per-tick latency bug identified in Task 3.
+  - This is a `checkpoint:human-verify` task -- NOT self-approved. The file exists and is ready for human review; the plan's own resume-signal ("approved" or corrections) happens in a separate turn.
 
 ## Task Commits
 
 1. **Task 1: E-stop hardware-in-the-loop verification** -- no code commit (human-verification only); approved a prior session based on live evidence described in key-decisions.
 2. **[Deviation, prior session] Fixed camera-index CLI plumbing** -- `b4513dc` (fix)
 3. **Task 2: Device auto-discovery (device_map.json) + bridge camera1 wiring fix** -- `fa99468` (feat)
+4. **[Deviation, this session] Fixed receive_actions() thread never starting** -- `343fa28` (fix)
+5. **[Deviation, this session] Fixed staleness check using wrong constant** -- `e55aa53` (fix)
+6. **[Deviation, prior quick task 260924-gih] Fixed .pos-suffixed key mismatch dropping every real VLA action** -- `a3e16c4`/`8e2060a` (fix/test)
+7. **[Deviation, prior quick task 260924-e3d] Loosened safety-validator caps for real-VLA-action testing** -- `d8c2785`/`8e2060a` (fix)
+8. **Task 3: Full VLA-driven episode** -- no separate code commit (live hardware run producing gitignored runtime output at `control/outputs/11-05-retry-20260924-120530/`); approved this session based on the recorded episode data.
+9. **Task 4: Findings write-up and go/no-go recommendation** -- `434b01a` (docs), pending human review
 
 **Plan metadata:** pending (this SUMMARY's own commit)
 
@@ -126,6 +139,8 @@ status: incomplete
 - `control/test_robot_client.py` -- added `test_connect_bridge_wires_camera1_wrist_when_wrist_camera_index_given`, `test_connect_bridge_leaves_cameras_untouched_when_wrist_camera_index_omitted`.
 - `control/COMMANDS.md` -- documents `detect_devices.py` as the preferred device-resolution path ahead of the (now explicitly flagged stale) hardcoded port table.
 - `.gitignore` -- added `control/device_map.json` (machine-local state, not committed) and `control/.venv` (bare symlink form, in addition to the existing `control/.venv/` directory pattern -- this worktree's own `.venv` is a symlink to the main repo's real venv, which the trailing-slash pattern alone does not match).
+- `control/vla_bridge/FINDINGS.md` (new, this session) -- go/no-go findings write-up grounded in Task 1/Task 3's real recorded data (`control/outputs/11-05-retry-20260924-120530/episode.jsonl`/`termination.json`), covering lerobot#2210 status, Task 3's step-by-step episode outcome, Task 1's e-stop outcome, D-05's no-reasoning-trace restatement, and a scoped GO recommendation.
+- `control/vla_bridge/robot_client.py`, `control/vla_bridge/policy_server_launch.md` (this session, prior deviation commits) -- receive_actions() background thread start fix and staleness-constant fix (see Task Commits #4-5).
 
 ## Decisions Made
 
@@ -141,22 +156,20 @@ None beyond what Task 2 itself specifies -- implemented per the plan's `<action>
 
 ## User Setup Required
 
-Task 3 requires the human to:
-1. Run `python detect_devices.py` first (if any USB device has been unplugged/replugged since Task 1) to produce a fresh `device_map.json`.
-2. Measure the red cube per the plan's Task 3 `<how-to-verify>` step 1 (≤78mm graspable width, off the base's forward centerline).
-3. Start the Colab notebook per `control/vla_bridge/policy_server_launch.md`.
-4. Run `run_vla_episode.py` against the real robot and Colab bridge -- PORT/ROBOT_ID/`--camera` can now be omitted (device_map.json supplies them); pass them explicitly only if `device_map.json` is stale or missing.
-5. Report the episode's outcome (success/failure, termination reason, lerobot#2210 status) per the plan's resume-signal.
+Task 4 requires the human to:
+1. Read `control/vla_bridge/FINDINGS.md` end to end.
+2. Confirm every claim traces back to something actually observed in Task 1 or Task 3 (not invented or assumed), and that the go/no-go recommendation is justified by that evidence.
+3. Type "approved", or provide corrections to fold into `FINDINGS.md` before this phase closes.
 
 ## Next Phase Readiness
 
-- Not ready -- this plan is now paused at Task 3 of 4 (Task 1 approved, Task 2 complete this session). Task 3 (full VLA-driven episode) has not yet been attempted; its checkpoint is being returned to the human now.
-- Task 4 (`FINDINGS.md` write-up) depends on both Task 1 and Task 3's real, human-reported outcomes, and cannot be drafted yet.
-- This SUMMARY will be superseded by a complete version once Task 3 and Task 4 are both approved and `control/vla_bridge/FINDINGS.md` exists.
+- Not ready -- this plan is now paused at Task 4 of 4 (Tasks 1-3 approved/complete; Task 4 drafted this session, awaiting human review). `control/vla_bridge/FINDINGS.md` exists and is ready to read, but its `checkpoint:human-verify` gate requires an explicit human "approved" (or corrections) before Phase 11 closes.
+- Once Task 4 is approved, this SUMMARY should be updated to `status: complete` and the phase can close per the plan's `<verification>`/`<success_criteria>`.
+- FINDINGS.md's own go/no-go recommendation (GO, conditional on fixing the observation-resend-per-tick latency bug) is the concrete input for scoping the next milestone phase's first engineering task.
 
 ---
 *Phase: 11-vla-hardware-connection*
-*Completed: N/A (paused at Task 3 checkpoint, 2026-09-22)*
+*Completed: N/A (paused at Task 4 checkpoint, pending human review, 2026-09-24)*
 
 ## Self-Check: PASSED
 
@@ -164,5 +177,9 @@ Task 3 requires the human to:
 - FOUND: control/test_detect_devices.py
 - FOUND: control/run_vla_episode.py
 - FOUND: control/vla_bridge/robot_client.py
+- FOUND: control/vla_bridge/FINDINGS.md
+- FOUND: control/outputs/11-05-retry-20260924-120530/episode.jsonl
+- FOUND: control/outputs/11-05-retry-20260924-120530/termination.json
 - FOUND: .planning/phases/11-vla-hardware-connection/11-05-SUMMARY.md
 - FOUND: fa99468 (Task 2 commit) in git log
+- FOUND: 434b01a (Task 4 FINDINGS.md commit) in git log
