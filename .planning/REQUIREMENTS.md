@@ -118,11 +118,11 @@ Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.
 
 ### VLA Hardware Connection
 
-- [ ] **VLAHW-01**: An SO-101-native joint-action VLA (SmolVLA — matches the benchmark paper's tested architecture and avoids the Cartesian/IK detour the sim OpenVLA-OFT path would require) is loaded and produces valid 6D joint-position actions when called with real wrist-camera + overhead-camera + joint-state observations; the action contract (joint order, units — degrees vs. normalized, gripper scale, absolute vs. relative) is explicitly documented before first use
-- [ ] **VLAHW-02**: VLA output actions pass a safety validator (joint limits, max per-step displacement, max velocity, gripper bounds, stale observation/response rejection, malformed/NaN/infinite action rejection, e-stop, servo comms-failure handling) before being sent to the real robot via the existing `control/` LeRobot `SO101Follower` interface (not hand-written raw serial code); the pre-existing `use_degrees` vs. normalized-value ambiguity in the LeRobot config path is resolved and documented first
-- [ ] **VLAHW-03**: Every inference step's complete I/O is captured to a durable log — raw camera frames (with per-camera timestamps, not sequential reads that can drift out of sync), joint state, task instruction, raw model output, validated action, executed action, latency, model version/checkpoint — not just the final executed action (VLAs like SmolVLA map observations directly to actions; there is no natural-language reasoning trace to capture the way there would be for an LLM)
-- [ ] **VLAHW-04**: At least one full episode (VLA driving the robot from a task prompt to termination) is recorded end-to-end — synchronized video plus the full per-step I/O log from VLAHW-03, plus termination reason and success/failure outcome
-- [ ] **VLAHW-05**: Findings from the observed run(s) — including whether the known upstream SmolVLA/SO-101 issue ([lerobot#2210](https://github.com/huggingface/lerobot/issues/2210)) reproduces — are written up to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design)
+- [x] **VLAHW-01**: An SO-101-native joint-action VLA (SmolVLA — matches the benchmark paper's tested architecture and avoids the Cartesian/IK detour the sim OpenVLA-OFT path would require) is loaded and produces valid 6D joint-position actions when called with real wrist-camera + overhead-camera + joint-state observations; the action contract (joint order, units — degrees vs. normalized, gripper scale, absolute vs. relative) is explicitly documented before first use
+- [x] **VLAHW-02**: VLA output actions pass a safety validator (joint limits, max per-step displacement, max velocity, gripper bounds, stale observation/response rejection, malformed/NaN/infinite action rejection, e-stop, servo comms-failure handling) before being sent to the real robot via the existing `control/` LeRobot `SO101Follower` interface (not hand-written raw serial code); the pre-existing `use_degrees` vs. normalized-value ambiguity in the LeRobot config path is resolved and documented first
+- [x] **VLAHW-03**: Every inference step's complete I/O is captured to a durable log — raw camera frames (with per-camera timestamps, not sequential reads that can drift out of sync), joint state, task instruction, raw model output, validated action, executed action, latency, model version/checkpoint — not just the final executed action (VLAs like SmolVLA map observations directly to actions; there is no natural-language reasoning trace to capture the way there would be for an LLM)
+- [x] **VLAHW-04**: At least one full episode (VLA driving the robot from a task prompt to termination) is recorded end-to-end — synchronized video plus the full per-step I/O log from VLAHW-03, plus termination reason and success/failure outcome
+- [x] **VLAHW-05**: Findings from the observed run(s) — including whether the known upstream SmolVLA/SO-101 issue ([lerobot#2210](https://github.com/huggingface/lerobot/issues/2210)) reproduces — are written up to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design)
 
 ### Future Requirements (deferred pending v2.0's early results)
 
@@ -136,6 +136,60 @@ Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.
 - Failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) + semantic/execution aggregation + Recovery Rate metric; episode termination modeled on the paper (goal-met / timeout / irreversible-failure / unrecoverable-stagnation), human-judged initially (no automated vision-based detection yet)
 - Cross-episode memory ablation (paper-faithful baseline uses independent episodes; memory-as-variable is a later, separate experiment)
 
+## v2.1 Requirements
+
+Requirements for milestone v2.1 (MLLM Raw-Autonomy Benchmark). Builds on v2.0's real-hardware VLA connection (Phase 11). Fixes a diagnosed bridge tick-latency bug and a camera device-resolution bug found during v2.1 scoping, then builds two consistent action-source pipelines — VLA-style (native trained action-output) and MLLM-style (raw-JSON reasoning prompt, no movement primitives) — and runs all backends against Pen Transfer (Yu & Qiu 2026, arXiv:2606.08881) for a cross-backend comparison.
+
+### Bridge Latency Fix
+
+- [ ] **LATENCY-01**: The bridge only requests fresh Colab inference when the local action queue is empty/near-empty (wiring up `lerobot`'s existing, currently-unused `_ready_to_send_observation()`/`chunk_size_threshold` gate), instead of resending a full camera observation to Colab on every control tick
+- [ ] **LATENCY-02**: `pop_validated_action()` updates `client.latest_action` so the vendored library's own staleness dedup logic functions as designed
+- [ ] **LATENCY-03**: `io_logger.py`'s `latency_ms` field records real measured latency (via `time.monotonic()` deltas) instead of always `{0,0}`
+- [ ] **LATENCY-04**: An in-flight-request guard prevents duplicate/overlapping observation requests when Colab responds slowly
+
+### Safety Validator
+
+- [ ] **SAFETY-01**: `safety_validator.py`'s caps (`MAX_RELATIVE_TARGET_DEG`, `MAX_VELOCITY_DEG_PER_S`, `STALE_OBSERVATION_S`, `STALE_ACTION_S`) are incrementally re-tightened toward their original conservative defaults, with each step confirmed via a live-hardware re-verification episode (not assumed safe as a blind revert)
+
+### Camera Device Resolution
+
+- [ ] **CAMFIX-01**: A single shared, name-based camera-resolution helper is used by both the model's inference-input path and the `IOLogger` recording path (reusing one `StereoSplitCamera` instance, not two independent camera opens)
+- [ ] **CAMFIX-02**: `camera_overhead` recordings are visually confirmed by a human to show the robot workspace (not the laptop webcam) on a live re-verification episode
+- [ ] **CAMFIX-03**: The bridge logs a hash/thumbnail of the frame it actually sent to Colab per step, explicitly disclosed as client-side-only provenance (not proof of what Colab received/used)
+
+### Pipeline Architecture
+
+- [ ] **PIPE-01**: A consistent VLA-style `ActionSource` pattern (native trained action-output, one adapter per backend) exists, that the already-working SmolVLA integration fits and new VLA backends plug into without changing the shared control loop/safety/logging path
+- [ ] **PIPE-02**: A consistent MLLM-style `ActionSource` pattern exists (shared prompt construction, output JSON schema, and reasoning-trace capture) that all MLLM backends plug into without changing the shared control loop/safety/logging path
+
+### VLA Backends (native action-output, paper-matched)
+
+- [ ] **VLA-01**: Gemini Robotics is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLA-02**: π0/π0.5 is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLA-03**: Wall-X is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLA-04**: ACT is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+
+### MLLM Backends (raw-JSON reasoning prompt, no movement primitives)
+
+- [ ] **MLLM-01**: A free/cheap HuggingFace-hosted reasoning model is integrated as the first MLLM-style backend
+- [ ] **MLLM-02**: Claude (paid tier) is integrated as an MLLM-style backend
+- [ ] **MLLM-03**: GPT is integrated as an MLLM-style backend
+- [ ] **MLLM-04**: Each MLLM backend's action-chunk JSON schema is generated programmatically from `action_contract.py`'s constants (`JOINT_ORDER`, units) and validated through the unmodified `safety_validator.py`
+- [ ] **MLLM-05**: Action-chunk size for MLLM backends is derived from Phase 1's real measured latency/timing data, not guessed
+- [ ] **MLLM-06**: Each MLLM backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured alongside its action chunk, per step
+- [ ] **MLLM-07**: A malformed/parse-failing action within a chunk holds the robot's current position rather than zero-filling or crashing the episode
+
+### Cross-Backend Benchmark
+
+- [ ] **EVAL-01**: One live Pen Transfer episode is run and recorded end-to-end (I/O log + camera footage + termination reason) for each of the 8 backends (SmolVLA baseline + Gemini Robotics + π0/π0.5 + Wall-X + ACT + HF reasoning model + Claude + GPT)
+- [ ] **EVAL-02**: All 8 episodes are directly compared, human-judged, using Yu & Qiu 2026's 4-category failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) where applicable
+
+### Tech Debt (from v2.0 audit)
+
+- [ ] **DEBT-01**: `action_contract.py`'s `WRIST_ROLL_LIMIT_DEG` is pinned to Phase 10's `robot.xml` wrist_roll value with an automated test (or SHA-pinned comment)
+- [ ] **DEBT-02**: `soarm_gripper.py`'s `format_action` docstring is corrected (currently mislabels OPEN/CLOSE direction post-polarity-fix)
+- [ ] **DEBT-03**: The untracked `So-101/` and `coppelia/` mesh asset directories are added to git so the URDF's relative mesh references resolve on a fresh clone
+
 ## Out of Scope
 
 | Feature | Reason |
@@ -147,7 +201,10 @@ Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.
 | Free Colab T4 for OpenVLA-7B inference | T4 = 15GB; OpenVLA-7B needs ~16GB+; requires Colab Pro A100 |
 | New microcontroller/embedded hardware (ESP32) for the v2.0 control path | Existing USB-serial LeRobot bridge already covers arm control; ESP32 remains a possible future physical kill-switch, not a control-path component |
 | Fine-tuning any policy on v2.0-collected data | This milestone evaluates VLA/MLLM behavior via inference/prompting, not training |
-| Arbitrary code-as-policy execution without a sandboxing/safety design | Relevant once "raw autonomy" work resumes (Future Requirements), not before |
+| Arbitrary code-as-policy execution without a sandboxing/safety design | Superseded (2026-09-24): MLLM backends emit validated JSON through the unmodified `safety_validator.py`, never execute code, so no sandboxing design is needed |
+| Provider-agnostic MLLM router beyond the 3 v2.1 backends (OpenAI/Anthropic/HF only) | Deferred; v2.1 proves out the MLLM-style pattern with 3 concrete backends before generalizing to a full router |
+| Full 4-task suite beyond Pen Transfer (Selective Color Sorting, Multi-Object Packing, Precision Pen Placement) | Deferred to a later milestone once the 8-backend Pen Transfer comparison validates both pipelines |
+| Recovery Rate metric automation / automated vision-based success detection | Deferred; v2.1 uses human-judged outcomes per the paper's own first-version approach |
 
 ## Traceability
 
@@ -199,11 +256,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TWIN-05 | Phase 10 | Complete |
 | TWIN-06 | Phase 10 | Complete |
 | TWIN-07 | Phase 10 | Complete |
-| VLAHW-01 | Phase 11 | Pending |
-| VLAHW-02 | Phase 11 | Pending |
-| VLAHW-03 | Phase 11 | Pending |
-| VLAHW-04 | Phase 11 | Pending |
-| VLAHW-05 | Phase 11 | Pending |
+| VLAHW-01 | Phase 11 | Complete |
+| VLAHW-02 | Phase 11 | Complete |
+| VLAHW-03 | Phase 11 | Complete |
+| VLAHW-04 | Phase 11 | Complete |
+| VLAHW-05 | Phase 11 | Complete |
 
 **Coverage:**
 
