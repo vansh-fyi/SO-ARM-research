@@ -8,6 +8,8 @@ Milestone v1.1 (Phases 7-9) fixes a UAT-surfaced benchmark flaw from Phase 6 (3 
 
 Milestone v2.0 (Phases 10-11) shifts focus from sim/VLA fine-tuning to real-hardware MLLM manipulation, narrowed 2026-09-17 to two concrete workstreams after a general-MLLM-prompting experiment failed. Phase 10 rebuilds the digital twin (URDF + MuJoCo XML) as a correct 1:1 kinematic match to the real SO-ARM101 — this is sim-side-only work, fixing the CoppeliaSim-exported URDF's floating-gripper bug and the mirrored-gripper-gears bug so any future sim-side verification is trustworthy. Phase 11 connects an open-source HuggingFace-hosted VLA to the *real* physical robot over the already-working `control/` LeRobot USB-serial bridge, builds a harness to capture its full reasoning trace, and records at least one full observed run to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design). **Phases 10 and 11 are independent and parallel-capable, not a sequential chain**: Phase 11's VLA experiment runs entirely on real hardware via `control/`'s existing LeRobot bridge and does not consume Phase 10's sim-twin outputs — the digital-twin fix only matters for future sim-side verification/re-training, not for driving the real robot. They are numbered sequentially here (10 then 11) purely by roadmap convention, not by dependency; either can be planned/executed first, or both in parallel, per user preference.
 
+Milestone v2.1 (Phases 12-17) extends Phase 11's proven VLA-bridge infrastructure rather than replacing it. Three small, mechanical fix phases land first: Phase 12 closes the tick-latency bug diagnosed but deliberately left unfixed in `FINDINGS.md` (the bridge resends a full camera observation to Colab on every control tick even while draining an already-fetched action chunk, yielding only 1/60 real actions in Phase 11's episode), and sweeps two small unrelated tech-debt items along with it. Phase 13 re-tightens `safety_validator.py`'s caps — loosened ~8-10x for Phase 11's one-off test — back toward their conservative defaults, live-verified at each step, and pins the cross-phase `WRIST_ROLL_LIMIT_DEG` constant to its Phase 10 source of truth. Phase 14 unifies two divergent camera-resolution code paths so recorded footage reliably shows the robot workspace, not the laptop webcam. With that infrastructure trustworthy, Phases 15 and 16 build out two independent, parallel-capable `ActionSource` pipeline patterns and their backends: Phase 15 is VLA-style (native trained action-output — Gemini Robotics, π0/π0.5, Wall-X, ACT, alongside the already-working SmolVLA), Phase 16 is MLLM-style (raw-JSON reasoning prompt, no movement primitives — a free HF-hosted reasoning model, Claude, and GPT). Phase 17 closes the milestone by running all 8 backends on one live Pen Transfer episode each and comparing them directly using Yu & Qiu 2026's failure taxonomy — the milestone's core research question.
+
 ## Phases
 
 **Phase Numbering:**
@@ -18,7 +20,8 @@ Milestone v2.0 (Phases 10-11) shifts focus from sim/VLA fine-tuning to real-hard
 Decimal phases appear between their surrounding integers in numeric order.
 
 **Execution Order (v1 / v1.1):** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
-**Execution Order (v2.0):** (10 ∥ 11) — independent, parallel-capable (see Overview)
+**Execution Order (v2.0):** (10 ∥ 11) — independent, parallel-capable
+**Execution Order (v2.1):** 12 → 13 → 14 → (15 ∥ 16) → 17
 
 - [x] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (4 plans) (closed 2026-07-10 — UAT 4/4 PASS after ENV-03 dependency fixes baked into notebook)
 - [x] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks (completed 2026-07-18)
@@ -30,7 +33,13 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 8: Checkpoint Benchmark Suite** ⏸ PAUSED (2026-09-15, v1.1 paused for v2.0 — see PROJECT.md) - Survey/author a SOARM-compatible object pool and a new ~8-15 task checkpoint-scored benchmark suite, retiring the 3 spawn-trivial spatial tasks from success metrics
 - [ ] **Phase 9: Benchmark Data Collection & Re-Fine-Tuning** ⏸ PAUSED (2026-09-15, v1.1 paused for v2.0 — see PROJECT.md) - Collect demonstrations for the new benchmark suite and re-fine-tune/re-evaluate OpenVLA-OFT with before/after results in WandB
 - [x] **Phase 10: Digital-Twin Fidelity** - Rebuild the URDF and MuJoCo XML as a correct, complete, 1:1 kinematic match to the real SO-ARM101 (gripper properly chained, wrist_roll + gripper joints restored, correct directions/limits, in-repo mesh paths) (completed 2026-09-19)
-- [ ] **Phase 11: VLA Hardware Connection** - Connect an SO-101-native joint-action VLA (SmolVLA) to the real SO-ARM101 over the existing LeRobot bridge with a safety validator and complete per-step I/O logging, and record at least one full observed run
+- [x] **Phase 11: VLA Hardware Connection** - Connect an SO-101-native joint-action VLA (SmolVLA) to the real SO-ARM101 over the existing LeRobot bridge with a safety validator and complete per-step I/O logging, and record at least one full observed run (completed 2026-09-24)
+- [ ] **Phase 12: Bridge Tick-Latency Fix** - Fix the observation-resend-per-tick root cause so the bridge only requests fresh inference when the local action queue is empty/near-empty, with real measured latency logging and an in-flight-request guard; sweep 2 small pre-existing tech-debt items alongside it
+- [ ] **Phase 13: Safety-Validator Cap Re-Tightening** - Incrementally restore `safety_validator.py`'s caps toward their conservative defaults, live-verified at each step, and pin `WRIST_ROLL_LIMIT_DEG` to its Phase 10 source of truth
+- [ ] **Phase 14: Camera Device Resolution Unification** - Unify the model's inference-input and `IOLogger` recording camera paths behind one shared, name-based resolution helper, and log client-side frame provenance
+- [ ] **Phase 15: VLA-Style Pipeline & Backends** - Build the shared VLA-style `ActionSource` pattern and onboard 4 new native-action VLA backends (Gemini Robotics, π0/π0.5, Wall-X, ACT) driving the real SO-ARM101
+- [ ] **Phase 16: MLLM-Style Pipeline & Backends** - Build the shared MLLM-style `ActionSource` pattern (prompt construction, schema, reasoning-trace capture) and onboard 3 raw-JSON MLLM backends (HF reasoning model, Claude, GPT) with no movement primitives
+- [ ] **Phase 17: Cross-Backend Pen Transfer Benchmark** - Run all 8 backends on one live Pen Transfer episode each and directly compare them using Yu & Qiu 2026's failure taxonomy
 
 ## Phase Details
 
@@ -354,12 +363,144 @@ Plans:
 
 **Wave 4 — final phase gate** *(blocked on 11-04)*
 
-- [ ] 11-05-PLAN.md — E-stop + full episode hardware-in-the-loop checkpoints, findings write-up (VLAHW-02, VLAHW-04, VLAHW-05)
+- [x] 11-05-PLAN.md — E-stop + full episode hardware-in-the-loop checkpoints, findings write-up (VLAHW-02, VLAHW-04, VLAHW-05)
+
+### Phase 12: Bridge Tick-Latency Fix
+
+**Goal**: The VLA bridge only requests fresh Colab inference when its local action queue is empty/near-empty instead of resending a full camera observation on every control tick, real latency is now measured instead of always logged as zero, and duplicate in-flight requests are guarded against — closing the root cause that limited Phase 11's live episode to 1/60 real (non-stale) actions. Two small pre-existing tech-debt items (a stale gripper-direction docstring and untracked mesh asset directories) are also cleared out.
+**Mode:** mvp
+**Depends on**: Phase 11 (reuses `control/vla_bridge` infrastructure unchanged)
+**Requirements**: LATENCY-01, LATENCY-02, LATENCY-03, LATENCY-04, DEBT-02, DEBT-03
+**Context/Notes**:
+
+- Root cause and fix mechanism are already fully diagnosed at the source level per `control/vla_bridge/FINDINGS.md` §5 and `research/SUMMARY.md`: the vendored `lerobot` library's own `_ready_to_send_observation()`/`chunk_size_threshold` gate already exists and is already configured, just never consulted by `BridgeActionSource.get_action()`.
+- Pick a concrete numeric round-trip latency target before implementing, and measure observation-to-execution wall-clock latency directly (not just discard-rate) — a wider `STALE_ACTION_S` can look like a fix while just legalizing stale actions (research Pitfall 1).
+- The in-flight-request guard (LATENCY-04) is required specifically to avoid a new race condition (research Pitfall 2): firing duplicate/overlapping observation requests when Colab responds slowly.
+- This is a location-and-wire-up task, not a design task — research flags it as a standard pattern (skip a dedicated research sub-phase).
+
+**Success Criteria** (what must be TRUE):
+
+  1. `control_loop_observation()` only fires when the local action queue is empty/near-empty (via `lerobot`'s `_ready_to_send_observation()` gate), not unconditionally every tick
+  2. `pop_validated_action()` updates `client.latest_action` so `lerobot`'s own staleness dedup logic functions as designed
+  3. `io_logger.py`'s `latency_ms` field records real measured latency (`time.monotonic()` deltas) instead of always `{0,0}`, confirmed on a live re-verification episode
+  4. A live-hardware episode shows a measurably higher real (non-stale) action yield than Phase 11's 1/60 baseline, with an in-flight-request guard confirmed to prevent duplicate observation requests
+  5. `soarm_gripper.py`'s `format_action` docstring correctly describes OPEN/CLOSE direction, and the `So-101/` and `coppelia/` mesh asset directories are tracked in git so a fresh clone resolves the URDF's relative mesh references
+
+**Plans**: TBD
+
+### Phase 13: Safety-Validator Cap Re-Tightening
+
+**Goal**: `safety_validator.py`'s caps, loosened ~8-10x for Phase 11's one-off live test, are incrementally restored toward their original conservative defaults with each step confirmed via a live-hardware re-verification episode — not assumed safe as a blind revert — and the cross-phase `WRIST_ROLL_LIMIT_DEG` constant is pinned to its Phase 10 source of truth.
+**Mode:** mvp
+**Depends on**: Phase 12 (re-tightening is sequenced immediately after the latency fix so the "why loosened / why now safe" causal chain stays auditable)
+**Requirements**: SAFETY-01, DEBT-01
+**Context/Notes**:
+
+- Mechanical, well-understood config change; the required discipline (live-hardware re-verification at each step) is already fully specified in `FINDINGS.md` and `research/SUMMARY.md` — a standard pattern, not a design task.
+- Core rejection logic (absolute joint-limit clamping, NaN/inf rejection) was never loosened in Phase 11 and must stay untouched throughout this phase.
+- DEBT-01 fits here because `WRIST_ROLL_LIMIT_DEG` in `action_contract.py` is itself a safety-relevant constant consumed by this same validator.
+
+**Success Criteria** (what must be TRUE):
+
+  1. `MAX_RELATIVE_TARGET_DEG`, `MAX_VELOCITY_DEG_PER_S`, `STALE_OBSERVATION_S`, and `STALE_ACTION_S` are incrementally tightened toward their pre-Phase-11 conservative defaults, with each step confirmed via a live re-verification episode
+  2. Absolute joint-limit clamping and NaN/inf rejection are confirmed intact and unmodified after every re-tightening step
+  3. A final live episode with fully re-tightened caps still produces at least one genuine (non-rejected, non-stale) executed action
+  4. `action_contract.py`'s `WRIST_ROLL_LIMIT_DEG` is pinned to Phase 10's `robot.xml` wrist_roll value via an automated test (or SHA-pinned comment), so a future re-derivation can't silently desync it
+
+**Plans**: TBD
+
+### Phase 14: Camera Device Resolution Unification
+
+**Goal**: A single shared, name-based camera-resolution helper is used by both the model's inference-input path and the `IOLogger` recording path (one `StereoSplitCamera` instance, not two independent opens), so `camera_overhead` recordings reliably show the robot workspace instead of the laptop webcam, and the bridge logs client-side provenance of what it actually sent to Colab per step.
+**Mode:** mvp
+**Depends on**: Phase 13 (sequenced per milestone ordering; technically independent of Phases 12-13's control-loop/safety work — touches only camera-opening code)
+**Requirements**: CAMFIX-01, CAMFIX-02, CAMFIX-03
+**Context/Notes**:
+
+- Root cause and fix pattern are already fully diagnosed: the inference-input path already resolves the AR0144 by device name (`"CCB Camera"`) via `StereoSplitCamera`/ffmpeg-AVFoundation; the recording path still opens a bare numeric `cv2.VideoCapture(idx)` from `device_map.json`'s plain-int field. Confirmed live: both `vla_episode_001` and the Phase 11 go/no-go episode's saved `camera_overhead/*.png` frames are the laptop's built-in webcam, not the robot workspace.
+- Fix the shared pattern, not just the one reported call site (research Pitfall 5) — `device_map.json`'s raw numeric field must not remain available for a third path to reintroduce the same failure later.
+- The frame hash/thumbnail log (CAMFIX-03) is explicitly client-side-only provenance — it does not prove what the Colab PolicyServer received or used (research Pitfall 7 / Gap).
+- Root cause and fix pattern are already fully diagnosed — implementation is mechanical, not a design task.
+
+**Success Criteria** (what must be TRUE):
+
+  1. Both the inference-input path and the `IOLogger` recording path resolve the overhead camera through one shared, name-based helper reusing a single `StereoSplitCamera` instance
+  2. A live re-verification episode's saved `camera_overhead/*.png` frames are visually confirmed by a human to show the robot workspace, not the laptop webcam
+  3. The bridge logs a hash/thumbnail of the frame it actually sent to Colab per step, with an explicit disclosure that this is client-side-only provenance, not proof of what Colab received/used
+
+**Plans**: TBD
+
+### Phase 15: VLA-Style Pipeline & Backends
+
+**Goal**: A consistent VLA-style `ActionSource` pattern exists that the already-working SmolVLA integration fits without modification, and four new native-action VLA backends — Gemini Robotics, π0/π0.5, Wall-X, and ACT — each drive the real SO-ARM101 through it, reusing the shared control loop, safety validator, and I/O logger unchanged.
+**Mode:** mvp
+**Depends on**: Phase 14 (needs the corrected camera pipeline and re-tightened safety caps as trustworthy infrastructure before onboarding new backends)
+**Requirements**: PIPE-01, VLAB-01, VLAB-02, VLAB-03, VLAB-04
+**Context/Notes**:
+
+- Phase 11 already proved the `ActionSource` Protocol seam by swapping `ScriptedActionSource` → `BridgeActionSource` with zero control-loop changes; this phase applies the same pattern to 4 more backends, not new infrastructure.
+- Each backend integration is independently live-hardware-verifiable (at least one observed action per backend) — do not batch all 4 behind a single end-to-end test; verify incrementally as each lands.
+- No backend-specific safety or logging code paths — every new backend must flow through the unmodified `safety_validator.py`/`io_logger.py`/`action_contract.py` trio, same as SmolVLA.
+- Parallel-capable with Phase 16 (independent pipeline pattern, different backend set) once Phase 14 lands.
+
+**Success Criteria** (what must be TRUE):
+
+  1. The VLA-style `ActionSource` pattern exists and the existing SmolVLA integration fits it with no control-loop/safety/logging changes required
+  2. Gemini Robotics, π0/π0.5, Wall-X, and ACT each drive the real SO-ARM101 through this pattern for at least one live observed action per backend
+  3. All four new backends reuse `safety_validator.py` and `io_logger.py` unchanged — no backend-specific safety or logging code paths
+  4. Switching between any of the 5 VLA-style backends (SmolVLA + 4 new) requires no changes to `run_vla_episode.py`'s shared control loop
+
+**Plans**: TBD
+
+### Phase 16: MLLM-Style Pipeline & Backends
+
+**Goal**: A consistent MLLM-style `ActionSource` pattern (shared prompt construction, output JSON schema generated from `action_contract.py`, staged reasoning-trace capture) exists, and three raw-JSON-reasoning MLLM backends — a free/cheap HuggingFace-hosted reasoning model, Claude, and GPT — each drive the real SO-ARM101 through it with no pre-built movement primitives.
+**Mode:** mvp
+**Depends on**: Phase 12 (action-chunk sizing needs Phase 12's real measured latency/timing data) and Phase 14 (needs the corrected camera pipeline for trustworthy vision input)
+**Requirements**: PIPE-02, MLLM-01, MLLM-02, MLLM-03, MLLM-04, MLLM-05, MLLM-06, MLLM-07
+**Context/Notes**:
+
+- Sparse direct precedent: Yu & Qiu 2026 (arXiv:2606.08881) fine-tunes/evaluates VLA policies, not general MLLM prompting — the prompt/schema design, and the prior "failed badly" general-MLLM-prompting attempt's undocumented root cause, both need scoping-time investigation before implementation (research flag: this phase needs deeper research at planning time, unlike Phases 12-14).
+- Use structured output (an explicit JSON schema), not tool-use/function-calling — tool-use would reintroduce the pre-built-primitive abstraction this milestone explicitly rules out.
+- Explicit anti-features per research: no movement-primitive helper functions, no multi-agent decomposition, no few-shot in-context examples, no code-generation-as-policy, no per-tick MLLM calls, no fine-tuning the MLLM.
+- A malformed/parse-failing action within a chunk must hold the robot's current position, never zero-fill or crash the episode (MLLM-07) — with no primitives, every value in a chunk is a fresh parse-failure opportunity.
+- Parallel-capable with Phase 15 (independent pipeline pattern, different backend set) once Phases 12 and 14 land.
+
+**Success Criteria** (what must be TRUE):
+
+  1. The MLLM-style `ActionSource` pattern (shared prompt construction, JSON schema, reasoning-trace capture) exists and is reused unchanged across all 3 backends
+  2. The HF reasoning model, Claude, and GPT each produce a schema-valid action chunk from raw task instruction + calibration data + current joint state + camera frames, with no pre-built movement-primitive functions in their prompt or code path
+  3. Each backend's JSON schema is generated programmatically from `action_contract.py`'s `JOINT_ORDER`/units (not hand-duplicated), and a malformed action within a chunk holds position instead of crashing or zero-filling
+  4. Each backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured in `io_logger.py` alongside its action chunk, per step
+  5. The action-chunk size used by all 3 backends is derived from Phase 12's measured real latency data, documented as such rather than guessed
+
+**Plans**: TBD
+
+### Phase 17: Cross-Backend Pen Transfer Benchmark
+
+**Goal**: All 8 action-source backends (SmolVLA baseline + Gemini Robotics + π0/π0.5 + Wall-X + ACT + HF reasoning model + Claude + GPT) are run on one live Pen Transfer episode each and directly compared, closing the milestone's core research question of how a general reasoning model performs as a raw-autonomy controller relative to trained VLA policies.
+**Mode:** mvp
+**Depends on**: Phase 15 and Phase 16 (needs both pipeline patterns' backends built and live-verified)
+**Requirements**: EVAL-01, EVAL-02
+**Context/Notes**:
+
+- Pen Transfer is Yu & Qiu 2026's simplest/highest-success task (70-95% across evaluated policies) — the right first comparison point before any future expansion to the paper's other 3 tasks.
+- Human-judged outcomes, matching the paper's own first-version approach — no automated vision-based success/failure detection in this milestone.
+- Compare directly against the Phase 11 SmolVLA episode (`11-05-retry-20260924-120530`) as the existing baseline, run under this milestone's fixed latency/camera/safety infrastructure rather than re-collecting it from scratch unless the comparison demands a re-run.
+
+**Success Criteria** (what must be TRUE):
+
+  1. One live Pen Transfer episode is run and recorded end-to-end (I/O log + camera footage + termination reason) for each of the 8 backends
+  2. All 8 episodes are directly compared, human-judged, using Yu & Qiu 2026's 4-category failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) where applicable
+  3. A written comparison summarizes relative performance and failure modes across VLA-style vs. MLLM-style backends, informing any future milestone's scope decisions
+
+**Plans**: TBD
 
 ## Progress
 
 **Execution Order (v1 / v1.1):** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
 **Execution Order (v2.0):** (10 ∥ 11) — independent, parallel-capable
+**Execution Order (v2.1):** 12 → 13 → 14 → (15 ∥ 16) → 17
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -373,4 +514,10 @@ Plans:
 | 8. Checkpoint Benchmark Suite | 0/TBD | Paused (2026-09-15) | - |
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
 | 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
-| 11. VLA Hardware Connection | 4/5 | In Progress|  |
+| 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
+| 12. Bridge Tick-Latency Fix | 0/TBD | Not started | - |
+| 13. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
+| 14. Camera Device Resolution Unification | 0/TBD | Not started | - |
+| 15. VLA-Style Pipeline & Backends | 0/TBD | Not started | - |
+| 16. MLLM-Style Pipeline & Backends | 0/TBD | Not started | - |
+| 17. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |

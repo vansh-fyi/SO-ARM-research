@@ -104,7 +104,7 @@ Deferred to after physical SOARM deployment milestone (v1-era deferrals; superse
 
 ## v2.0 Requirements
 
-Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.1 (Phases 7-9, sim/VLA) is PAUSED, not cancelled — see PROJECT.md. Narrowed 2026-09-17 to two concrete workstreams after a general-MLLM-prompting experiment (`experiment-design/`) failed; the full raw-autonomy MLLM-benchmark-suite design is captured under Future Requirements below, pending these results.
+Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.1 (Phases 7-9, sim/VLA) is PAUSED, not cancelled — see PROJECT.md. Narrowed 2026-09-17 to two concrete workstreams after a general-MLLM-prompting experiment failed; the full raw-autonomy MLLM-benchmark-suite design is captured under Future Requirements below, pending these results.
 
 ### Digital-Twin Fidelity
 
@@ -140,6 +140,8 @@ Requirements for milestone v2.0 (Real-Hardware MLLM Manipulation Benchmark). v1.
 
 Requirements for milestone v2.1 (MLLM Raw-Autonomy Benchmark). Builds on v2.0's real-hardware VLA connection (Phase 11). Fixes a diagnosed bridge tick-latency bug and a camera device-resolution bug found during v2.1 scoping, then builds two consistent action-source pipelines — VLA-style (native trained action-output) and MLLM-style (raw-JSON reasoning prompt, no movement primitives) — and runs all backends against Pen Transfer (Yu & Qiu 2026, arXiv:2606.08881) for a cross-backend comparison.
 
+> **Note:** This section's VLA Backends requirements were renamed to `VLAB-01`..`VLAB-04` (2026-09-24) to avoid an ID collision with the v1 section's `VLA-01`..`VLA-04` (VLA Inference Pipeline, Phase 3, above) — both sets are semantically distinct (v1 = OpenVLA-OFT sim inference loop; v2.1 = 4 new real-hardware VLA backends).
+
 ### Bridge Latency Fix
 
 - [ ] **LATENCY-01**: The bridge only requests fresh Colab inference when the local action queue is empty/near-empty (wiring up `lerobot`'s existing, currently-unused `_ready_to_send_observation()`/`chunk_size_threshold` gate), instead of resending a full camera observation to Colab on every control tick
@@ -164,10 +166,10 @@ Requirements for milestone v2.1 (MLLM Raw-Autonomy Benchmark). Builds on v2.0's 
 
 ### VLA Backends (native action-output, paper-matched)
 
-- [ ] **VLA-01**: Gemini Robotics is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
-- [ ] **VLA-02**: π0/π0.5 is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
-- [ ] **VLA-03**: Wall-X is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
-- [ ] **VLA-04**: ACT is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-01**: Gemini Robotics is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-02**: π0/π0.5 is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-03**: Wall-X is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-04**: ACT is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
 
 ### MLLM Backends (raw-JSON reasoning prompt, no movement primitives)
 
@@ -261,15 +263,42 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VLAHW-03 | Phase 11 | Complete |
 | VLAHW-04 | Phase 11 | Complete |
 | VLAHW-05 | Phase 11 | Complete |
+| LATENCY-01 | Phase 12 | Pending |
+| LATENCY-02 | Phase 12 | Pending |
+| LATENCY-03 | Phase 12 | Pending |
+| LATENCY-04 | Phase 12 | Pending |
+| DEBT-02 | Phase 12 | Pending |
+| DEBT-03 | Phase 12 | Pending |
+| SAFETY-01 | Phase 13 | Pending |
+| DEBT-01 | Phase 13 | Pending |
+| CAMFIX-01 | Phase 14 | Pending |
+| CAMFIX-02 | Phase 14 | Pending |
+| CAMFIX-03 | Phase 14 | Pending |
+| PIPE-01 | Phase 15 | Pending |
+| VLAB-01 | Phase 15 | Pending |
+| VLAB-02 | Phase 15 | Pending |
+| VLAB-03 | Phase 15 | Pending |
+| VLAB-04 | Phase 15 | Pending |
+| PIPE-02 | Phase 16 | Pending |
+| MLLM-01 | Phase 16 | Pending |
+| MLLM-02 | Phase 16 | Pending |
+| MLLM-03 | Phase 16 | Pending |
+| MLLM-04 | Phase 16 | Pending |
+| MLLM-05 | Phase 16 | Pending |
+| MLLM-06 | Phase 16 | Pending |
+| MLLM-07 | Phase 16 | Pending |
+| EVAL-01 | Phase 17 | Pending |
+| EVAL-02 | Phase 17 | Pending |
 
 **Coverage:**
 
 - v1 requirements: 24 total
 - v1.1 requirements: 13 total (paused, unmapped to active phases pending resume)
 - v2.0 requirements: 12 total (TWIN ×7, VLAHW ×5)
-- Mapped to phases: 24 (v1) + 13 (v1.1) + 12 (v2.0) = 49
-- Unmapped: 0 (v1) ✓ / 0 (v1.1) ✓ / 0 (v2.0) ✓
+- v2.1 requirements: 26 total (LATENCY ×4, SAFETY ×1, CAMFIX ×3, PIPE ×2, VLA ×4, MLLM ×7, EVAL ×2, DEBT ×3)
+- Mapped to phases: 24 (v1) + 13 (v1.1) + 12 (v2.0) + 26 (v2.1) = 75
+- Unmapped: 0 (v1) ✓ / 0 (v1.1) ✓ / 0 (v2.0) ✓ / 0 (v2.1) ✓
 
 ---
 *Requirements defined: 2026-07-07*
-*Last updated: 2026-09-18 — mapped v2.0 requirements (TWIN-01..07 → Phase 10 Digital-Twin Fidelity, VLAHW-01..05 → Phase 11 VLA Hardware Connection) via roadmap creation; Phases 10-11 are independent/parallel-capable, not a sequential chain — see ROADMAP.md Overview.*
+*Last updated: 2026-09-24 — mapped v2.1 requirements (26 total) to Phases 12-17 via roadmap creation: LATENCY-01..04 + DEBT-02/03 → Phase 12 (Bridge Tick-Latency Fix); SAFETY-01 + DEBT-01 → Phase 13 (Safety-Validator Cap Re-Tightening); CAMFIX-01..03 → Phase 14 (Camera Device Resolution Unification); PIPE-01 + VLAB-01..04 → Phase 15 (VLA-Style Pipeline & Backends); PIPE-02 + MLLM-01..07 → Phase 16 (MLLM-Style Pipeline & Backends); EVAL-01..02 → Phase 17 (Cross-Backend Pen Transfer Benchmark). Phases 12-14 form a strict chain; Phases 15 and 16 are independent/parallel-capable (different pipeline patterns); Phase 17 depends on both. The v2.1 VLA Backends requirements were renamed VLA-01..04 → VLAB-01..04 to remove a collision with v1's pre-existing VLA-01..04 (VLA Inference Pipeline, Phase 3).*
