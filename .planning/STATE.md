@@ -5,10 +5,10 @@ milestone_name: Real-Hardware MLLM Manipulation Benchmark
 current_phase: 11
 current_phase_name: VLA Hardware Connection
 status: executing
-stopped_at: Phase 11 context gathered
-last_updated: "2026-09-20T21:45:39.473Z"
+stopped_at: Phase 11, Plan 11-05, Task 4 drafted (FINDINGS.md) -- awaiting human approval
+last_updated: "2026-09-24T06:55:00.000Z"
 last_activity: 2026-09-24
-last_activity_desc: Completed quick task 260924-gih: Fix .pos-suffixed key mismatch dropping every real VLA action
+last_activity_desc: Task 3 (live VLA episode) approved -- real motion confirmed on physical robot; Task 4 (FINDINGS.md go/no-go) drafted, pending human review
 progress:
   total_phases: 11
   completed_phases: 8
