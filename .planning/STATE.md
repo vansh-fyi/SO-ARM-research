@@ -3,41 +3,41 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Real-Hardware MLLM Manipulation Benchmark
 current_phase: 11
-current_phase_name: VLA Hardware Connection
-status: executing
-stopped_at: Phase 11, Plan 11-05 complete (Task 4 approved with caveat) -- tick-latency fix needs design/brainstorming before next live episode
-last_updated: "2026-09-24T07:05:00.000Z"
+status: milestone_complete
+stopped_at: Milestone v2.0 complete (Phase 10 + Phase 11 both done) -- ready for /gsd-complete-milestone
+last_updated: "2026-09-24T07:35:33.690Z"
 last_activity: 2026-09-24
-last_activity_desc: Plan 11-05 complete -- real VLA action confirmed on physical robot (1/60 steps), FINDINGS.md approved with caveat that the observation-resend-per-tick fix needs proper design, not just the scoped framing FINDINGS.md proposed
+last_activity_desc: Phase 11 complete -- milestone v2.0 is now 100% complete
 progress:
   total_phases: 11
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 38
-  completed_plans: 33
-  percent: 73
+  completed_plans: 38
+  percent: 82
+current_phase_name: VLA Hardware Connection
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-17)
+See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** A researcher types a task prompt and watches SOARM execute it in a LIBERO simulation — the loop from language to embodied action.
-**Current focus:** Phase 11 — VLA Hardware Connection
+**Current focus:** Milestone v2.0 complete -- next milestone scope not yet decided (candidates: tick-latency fix from FINDINGS.md, deep-reasoning MLLM comparison, raw-autonomy design)
 
 ## Current Position
 
-Phase: 11 (VLA Hardware Connection) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 11
-Last activity: 2026-09-20 — Phase 11 execution started
+Phase: 11 (last phase of milestone v2.0)
+Plan: 5/5 complete
+Status: Milestone v2.0 complete, awaiting /gsd-complete-milestone
+Last activity: 2026-09-24 — Phase 11 complete, milestone v2.0 100% complete
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 19
+- Total plans completed: 24
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -49,6 +49,7 @@ Last activity: 2026-09-20 — Phase 11 execution started
 | 04 | 5 | - | - |
 | 05 | 4 | - | - |
 | 10 | 5 | - | - |
+| 11 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -108,7 +109,8 @@ Begin Phase 11 with the accepted Phase 10 model preserved. See
 - 05 PRE-EXISTING TEST DEBT (found 2026-08-10): (1) `test_hdf5_writer.py::test_schema_and_obs_key_naming`'s stale `gripper_states.shape[1] == 1` assertion — FIXED in Phase 7 plan 07-02 (now `== 2`, matching D-07's 84mm 2-DOF gripper). (2) `test_replay.py::test_verify_full_obs_regeneration_passes_on_04_02_output` still fails with a pixel mismatch in `(demo_1, 0, agentview_rgb)` — likely MuJoCo offscreen-render non-determinism, not investigated, still open.
 - 05 LESSON — private-repo sync friction recurred: the outer repo has repeatedly drifted commits-ahead of `origin/main` without being pushed — Colab always clones/pulls from `origin/main`. Check `git status -sb` for an "ahead" count before telling the user to `git pull` on Colab, every session.
 - 07 UNVERIFIED LOCALLY (Phase 7, plan 07-03, 2026-09-12): `rlds_converter.py`'s new legacy-HDF5 skip guard (pre-Phase-7 files lack `agentview_depth`) is implemented in `test_hdf5_to_rlds_against_real_dataset`, but that whole test is gated by `pytest.importorskip("tensorflow_datasets")` — TFDS isn't installed in the local `libero` conda env, so the test (and therefore the new guard) has never actually run, locally or otherwise. Spot-check on Colab (where TFDS is available) before relying on it, ideally before/during Phase 9 (still paused).
-- 10 RISK (flagged 2026-09-18, unverified): [huggingface/lerobot#2210](https://github.com/huggingface/lerobot/issues/2210) reports SmolVLA inference failures on SO-101 — verify early in Phase 11, have a fallback open-source HF VLA candidate ready if it proves unworkable.
+- 10 RISK — RESOLVED (2026-09-24): [huggingface/lerobot#2210](https://github.com/huggingface/lerobot/issues/2210) (SmolVLA inference failures on SO-101) did NOT reproduce in Phase 11's live episode against `victorvanhalst/smolvla_so101_cube` (a fine-tuned checkpoint, not zero-shot). All 3 crashes hit during Phase 11 live testing traced to this project's own bridge code, now fixed — see FINDINGS.md.
+- 11 OPEN (flagged 2026-09-24, unresolved): Phase 11's live episode yielded only 1/60 (1.7%) real executed VLA actions — `control_loop_observation()` resends a full camera observation to Colab on every control tick, even while locally draining an already-fetched action chunk, inflating real tick time to ~11-20s against a configured `control_hz=2.0` (0.5s/tick). Nearly every queued action ages past the staleness cap before being popped. See `control/vla_bridge/FINDINGS.md` for the full diagnosis and proposed (not yet designed/implemented) fix direction. Human explicitly wants this brainstormed properly before implementation, not treated as fully scoped.
 - 10 gap-closure REGRESSION — RESOLVED (2026-09-19): quick task `260919-h8v`'s gripper-axis polarity fix (TWIN-07) left `LIBERO/libero/libero/datasets/collector.py`'s `OPEN_CMD`/`CLOSE_CMD` constants stale, which the phase-10 re-verification caught as an actively-failing test (`test_collector.py::test_run_scripted_episode_reaches_success_within_budget`, 0/50 success). Fixed same-session: swapped `OPEN_CMD`/`CLOSE_CMD` to `1.0`/`-1.0`, and updated `test_collector.py`'s 5 gripper-direction assertions to check `np.sign(action[6]) == np.sign(OPEN_CMD/CLOSE_CMD)` instead of hardcoded literal signs (the literal-sign pattern is what let this drift happen — future gripper polarity changes will now be caught structurally instead of needing a second re-verification pass). Full `LIBERO/libero/libero/envs/ LIBERO/libero/libero/datasets/` suite: 52 passed, 1 pre-existing unrelated failure (`test_replay.py`, Phase 5 debt, see line 96 above), 2 skipped (TFDS-gated).
 
 ### Quick Tasks Completed
@@ -134,10 +136,10 @@ Begin Phase 11 with the accepted Phase 10 model preserved. See
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/11-vla-hardware-connection/11-CONTEXT.md
+**Resume file:** None
 
-Last session: 2026-09-20T17:02:34.787Z
-Stopped at: Phase 11 context gathered
+Last session: 2026-09-24T07:40:00.000Z
+Stopped at: Milestone v2.0 complete (Phase 10 + Phase 11 both done), ready for /gsd-complete-milestone
 
 Phases 1-6 (milestone v1.0) are all complete — their earlier resume-sequence notes
 are historical, not active blockers.
@@ -145,13 +147,30 @@ are historical, not active blockers.
 Phase 7 (milestone v1.1) is complete. Phases 8-9 (v1.1) remain defined in
 ROADMAP.md but PAUSED as of 2026-09-15 — not the current priority, not cancelled.
 
+Phase 10 (digital-twin fidelity) and Phase 11 (VLA hardware connection) are both
+complete — milestone v2.0 is 100% done. See PROJECT.md's Key Decisions and
+Validated sections for the full Phase 11 outcome.
+
+NEW (2026-09-24): control/vla_bridge/FINDINGS.md recommends GO on next milestone
+phases, conditional on a scoped fix for a diagnosed tick-latency issue (the
+bridge client resends a full camera observation to Colab on every control tick,
+even while just draining an already-fetched action chunk locally -- inflates
+real tick time to ~11-20s against a configured 0.5s, so nearly every queued
+action goes stale before it's popped). The human explicitly flagged this
+proposed fix as needing further design/brainstorming, not yet a settled
+implementation plan -- this is open follow-up work, not scoped into a phase yet.
+
 NOTE: 2 pre-existing test failures from Phase 4 (gripper_states.shape assertion,
 a replay-obs pixel-mismatch test) remain open — see Blockers/Concerns above.
 
 NOTE (repo sync): the outer repo has repeatedly drifted commits-ahead of
 `origin/main` without being pushed — before telling the user to `git pull` on
-Colab, always check `git status -sb` for an "ahead" count first.
+Colab, always check `git status -sb` for an "ahead" count first. As of this
+session's end, local master and origin/main are in sync (pushed through
+commit 26d5ccf; a few more docs commits landed after that push locally --
+re-check `git status -sb` next session before assuming sync).
 
-Next: revalidate sim collection/camera framing against the established model,
-or plan Phase 11's independent hardware work. Do not restart the accepted
-Phase 10 geometry reconstruction.
+Next: decide next milestone scope (the tick-latency fix, deep-reasoning MLLM
+comparison, or raw-autonomy design per PROJECT.md's Future Requirements) --
+this is a user decision, not yet planned. Milestone v2.0 itself is ready to
+formally close via /gsd-complete-milestone.
