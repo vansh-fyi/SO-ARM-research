@@ -1,10 +1,10 @@
 # Stack Research
 
-**Domain:** Real-hardware MLLM robot control additions (provider-agnostic router, plan-then-execute loop, reasoning-trace logging, depth-extended episode recorder)
-**Researched:** 2026-09-15
-**Confidence:** MEDIUM-HIGH — HF Inference Providers pricing/model availability verified live (this space changes weekly); library version numbers verified via WebSearch/WebFetch, not training memory. Treat the specific pilot model name as a config value to revisit, not a fixed dependency.
+**Domain:** MLLM raw-autonomy robot control loop + async control-loop latency fix + macOS camera device resolution (v2.1 milestone additions to `control/vla_bridge/`)
+**Researched:** 2026-09-24
+**Confidence:** HIGH
 
-This is a **delta** stack — additions on top of the already-working `control/` Python 3.12 venv (`lerobot[feetech]==0.6.1`, `opencv-python==5.0.0.93`, `pynput==1.8.2`, `ultralytics==8.4.138`; transitively `huggingface_hub==1.29.0`, `torch==2.11.0`, `numpy==2.2.6`, `pillow==12.3.0` — confirmed by inspecting the live venv, not assumed). Nothing below should require touching the pinned `lerobot`/`opencv`/`ultralytics` versions.
+This document covers only the **three new v2.1 capabilities**. It does not re-research the already-working VLA/safety-validator/bridge stack (`lerobot==0.6.1`, `robot_client.py`, `safety_validator.py`, `io_logger.py`, `stereo_camera.py`) — those are treated as fixed integration points the new work plugs into.
 
 ## Recommended Stack
 
@@ -12,109 +12,95 @@ This is a **delta** stack — additions on top of the already-working `control/`
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| `huggingface_hub` (InferenceClient) | `1.29.0` — already installed, zero new dependency | Calls the free/cheap HF-hosted VLM pilot via HF's Inference Providers router | It's already a transitive dependency of `lerobot`, so this costs nothing to add. As of 2026 `InferenceClient.chat.completions.create()` is fully OpenAI-wire-compatible and supports `image_url` content blocks for vision models, plus built-in `provider="auto"` selection/fallback across HF's 17+ routed providers (Cerebras, Groq, Novita, Fireworks, Together, DeepInfra, etc.) — no separate account needed for the pilot. |
-| Hand-rolled thin `MLLMProvider` interface (plain Python ABC/Protocol, no framework) | n/a | Provider-agnostic router across HF-hosted pilot → OpenAI/Anthropic/Gemini later | A ~50-line interface (`plan_subgoal(image, depth, joint_state, task_prompt) -> SubGoalPlan`) with one adapter class per provider is enough for 2-4 providers in a solo research repo. See "What NOT to Use" for why LiteLLM is skipped. |
-| `pydantic` (transitive via `huggingface_hub`/future `openai` SDK, v2.x) | already present transitively | Typed schema for the parsed MLLM sub-goal/action output (`reach`/`grasp`/`lift`/`place`) | Already resolved in the venv — no new install. Gives you `model_validate_json()` for one clean parse-or-retry path instead of hand-rolled dict-key checking. Pin it explicitly in `control/requirements.txt` once you depend on it directly, rather than relying on transitive resolution. |
+| `anthropic` (Python SDK) | `1.8.0` (current on PyPI as of 2026-09-24; verified directly via `pip index versions anthropic`) | Calls the Claude Messages API for the MLLM raw-JSON control loop | Official first-party SDK. Project mandates the Anthropic Python SDK for any Claude/Anthropic integration (per project skill policy) — never raw `requests`/`httpx` calls to `/v1/messages`. `control/` already has `httpx==0.28.1` and Python 3.12 installed, both compatible with `anthropic` 1.x (SDK requires Python ≥3.10, uses `httpx` internally — no version conflict introduced). |
+| `output_config: {"format": {"type": "json_schema", "schema": {...}}}` (Messages API structured-output feature, not a package) | GA, no beta header | Forces Claude's response to validate against an explicit JSON schema for the action-chunk output | This is the mechanism that satisfies the milestone's "no pre-built movement primitives" constraint: **use structured output, not tool-use/function-calling.** Tool-use would reintroduce a `move_to()`/`grasp()`-shaped abstraction (a named tool the model calls); structured output makes the model emit the JSON action chunk directly as its response text, which is what "reasons directly to raw joint-level JSON" requires. `client.messages.parse()` (Pydantic-model variant) is the simplest way to get this with a validated Python object back (`response.parsed_output`); the raw `output_config.format` + `json.loads()` path works identically without a Pydantic dependency. |
+| `claude-opus-5` (model ID) | current | The MLLM "brain" reasoning over instruction + calibration + joint state + camera frames | Anthropic's current most-capable widely-released model for demanding reasoning/vision tasks — appropriate default for a research comparison against a fine-tuned VLA baseline, where reasoning quality (not per-call cost) is the variable under test. `claude-sonnet-5` ($3/$15 per 1M vs. Opus 5's $5/$25) is a reasonable cost-conscious substitution for iterating on the control-loop code itself (schema debugging, chunk-size tuning) before running the real Pen Transfer comparison episode on Opus 5 — swap the model string only, no other code changes required. |
 
 ### Supporting Libraries
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| `openai` (python SDK) | latest 2.x (verify at install time — release cadence is fast; HF router itself is OpenAI-wire-compatible at `https://router.huggingface.co/v1`) | Calls OpenAI directly once you add it as a second provider | Only add when you actually wire in OpenAI (per PROJECT.md's Active item "at least one additional paid MLLM provider"). Don't install it just to reach the HF router — `huggingface_hub` already covers that with less footprint. |
-| `anthropic` | `>=0.116` (verify latest — released Sept 10, 2026 at last check) | Calls Anthropic (Claude) as a provider | Add only when wiring Anthropic; same adapter-per-provider pattern. |
-| `google-genai` | `2.23.0` (current as of Sept 2026) | Calls Gemini as a provider | Add only when wiring Gemini. |
-| `opencv-python` | `5.0.0.93` — already pinned, no change | Save raw depth as lossless 16-bit single-channel PNG per frame (`cv2.imwrite(path, depth_uint16)`) | Depth recording extension to `record_episode.py`. OpenCV 5.x's `imwrite`/`imread` handle `uint16` PNG natively — no depth-specific codec dependency needed, and it matches the still-frame PNG path already used in `record_still()`. |
-| `numpy` | `2.2.6` — already pinned, no change | Depth array manipulation before serialization; `.npz` fallback if sub-mm float precision is needed instead of integer-mm PNG | Use directly; already installed. |
-| stdlib `json` + `pathlib` | n/a | Append-only JSONL reasoning-trace log, one line per MLLM call, per episode | Default logging mechanism — see "What NOT to Use" for why not Langfuse/Opik/MLflow. |
-| stdlib `dataclasses` (or the `pydantic` model above) | n/a | Shared typed structure for a sub-goal plan passed from the MLLM adapter to the local step-executor | Keeps the plan-then-execute boundary explicit and testable without a framework. |
+| `pydantic` | any modern 2.x (not yet in `control/requirements.txt` — add explicitly, `anthropic` does not vendor it) | Defines the action-chunk response schema (`reasoning: str`, `actions: list[JointAction]`) for `client.messages.parse()` | Use if you want a validated Python object back directly (`response.parsed_output`) instead of hand-parsing `json.loads()` on the raw-schema path. Either is fine; Pydantic buys you IDE/type-checking on `JOINT_ORDER`-shaped fields and is the SDK's own "recommended" structured-output path. |
+| `pillow` (already installed, `12.3.0`) | already pinned | Encode `numpy` camera frames (from `StereoSplitCamera.read_left()`/`read_right()` or `cv2.VideoCapture.read()`) to PNG/JPEG bytes before base64-encoding for the `image` content block | No new dependency — already in `control/`'s environment. `cv2.imencode(".png", frame)` (already used by `io_logger.py`) works equally well and avoids adding a BGR→RGB conversion step; either is acceptable, prefer reusing `cv2.imencode` since `io_logger.py` already establishes that convention. |
+| `queue.Queue` / `threading` (Python stdlib) | stdlib | Draining-aware control loop for the tick-latency fix | **No new package needed.** `RobotClient.action_queue` (from the existing `lerobot` bridge) is already a stdlib `queue.Queue` drained via `action_queue.get_nowait()` under `action_queue_lock` (see `robot_client.py::pop_validated_action`). The fix is a control-flow change — check `client.action_queue.qsize()` before deciding whether to call `client.control_loop_observation()` again — not a new async/networking library. |
+| `time.monotonic()` (Python stdlib) | stdlib | Correctly measuring real tick/round-trip latency to populate `io_logger.py`'s currently-always-`{0,0}` `latency_ms` field | Use `monotonic()`, not `time.time()`/wall-clock deltas (which is what `FINDINGS.md`'s ~11-20s/tick numbers were derived from post-hoc, via `timestamp_utc` diffing, because `latency_ms` was never actually populated) — wall-clock is subject to NTP adjustment; monotonic is immune and is the correct primitive for interval timing. |
+| `ffmpeg` (system binary, already a runtime dependency via `stereo_camera.py`) | system-installed (macOS: `brew install ffmpeg`) | Robust name-based AVFoundation camera capture for the `camera_overhead` recording-path fix | **No new library** — `stereo_camera.py`'s `_FFmpegAVFoundationCapture` already solves exactly this problem (`ffmpeg -f avfoundation -i "<device name>"`, not a numeric index) for the *inference-input* path. Reuse it (or its underlying subprocess pattern) for the *IOLogger recording* path instead of `run_vla_episode.py`'s current bare `cv2.VideoCapture(numeric_index)`. |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| None new | — | No test framework, linter, or CI is currently in this repo's conventions (per CLAUDE.md: "no dedicated linter or formatter config detected"). Don't introduce one just for this milestone unless the user asks. |
-
-## Integration Points with Existing `control/`
-
-- **MLLM router module**: add as a new `control/mllm/` package (or a single `control/mllm_client.py` if kept small) — mirrors the existing flat-script convention (`record_episode.py`, `joint_jog.py`) rather than introducing a nested app structure.
-- **Plan-then-execute loop**: the loop calls `MLLMProvider.plan_subgoal(...)` once per checkpoint (reach/grasp/lift/place), then drives the *existing* `SO101Follower` object from `lerobot.robots.so_follower` exactly as `record_episode.py` already does (`robot.get_observation()` / `robot.send_action(...)`) — no new robot-control code path, just a new caller of the existing bridge.
-- **Reasoning-trace logging**: one `reasoning_trace.jsonl` per episode directory, written alongside `joints.csv` and `camera_N.mp4` — same output directory (`--out`) convention `record_episode.py` already uses, one JSON object per MLLM call: `{ts, subgoal, provider, model, prompt_summary, raw_response, parsed_plan, latency_ms, token_usage}`.
-- **Depth extension to `record_episode.py`**: add a `depth_N/` subdirectory of per-frame 16-bit PNGs (`frame_%06d.png`) written on the same timestamp loop that already writes `camera_N.mp4` frames and `joints.csv` rows — same `ts` column ties all three together, no new sync mechanism needed.
-- **Structured output parsing**: prompt the MLLM to return JSON matching the `pydantic` sub-goal schema; on `ValidationError`, do exactly one repair retry (re-prompt with the parse error) before failing the checkpoint — log both attempts to the reasoning trace. Do not reach for `instructor`/`outlines`/`guidance` (see below).
+| `client.messages.count_tokens(...)` (Anthropic SDK method, no new package) | Estimate per-call cost before running a live Pen Transfer episode | Useful given this is a paid-tier API and the milestone explicitly wants a small, analyzable first comparison run — check token cost per multi-image + calibration-data prompt before committing to a full 60-step episode budget. |
+| `ant auth status` / `ant auth login` (Anthropic CLI, optional) | Credential resolution without hardcoding `ANTHROPIC_API_KEY` | Optional convenience; a plain `ANTHROPIC_API_KEY` env var (matching this repo's existing no-`.env`, inline-env-var convention per `CLAUDE.md`) works identically with a bare `anthropic.Anthropic()` client. |
 
 ## Installation
 
 ```bash
-# Already present in control/.venv (no action needed) — confirmed via pip list:
-#   huggingface_hub==1.29.0, torch==2.11.0, numpy==2.2.6, pillow==12.3.0, opencv-python==5.0.0.93
+# In control/'s existing venv (Python 3.12) — add to control/requirements.txt
+pip install anthropic pydantic
 
-# Core addition (only actual new install for the HF-hosted pilot phase):
-pip install pydantic   # explicit pin once router code depends on it directly
+# ffmpeg is a system binary, not a pip package — already required by
+# stereo_camera.py; verify it's present (macOS):
+brew install ffmpeg   # if not already installed
+```
 
-# Add only when wiring each additional provider (not upfront):
-pip install openai              # OpenAI provider
-pip install anthropic           # Anthropic provider
-pip install google-genai        # Gemini provider
-
-# Do NOT install for this milestone:
-#   litellm, mlflow, langfuse, opik, instructor, outlines, guidance
+`control/requirements.txt` addition:
+```
+anthropic==1.8.0
+pydantic>=2.0
 ```
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|--------------------------|
-| Hand-rolled thin `MLLMProvider` interface | `litellm` | If the project later needs 10+ providers, load-balancing/automatic-fallback, or team-wide centralized cost tracking. For 2-4 providers in a solo research repo, LiteLLM's dependency footprint (its own pinned `pydantic`/`httpx` versions, dozens of transitive provider SDKs) risks conflicting with the tightly-pinned `control/` venv, and its abstraction layer makes it harder to see the exact HTTP request/response when debugging a real-hardware failure. |
-| `huggingface_hub.InferenceClient` for the HF pilot | `openai` SDK pointed at `base_url="https://router.huggingface.co/v1"` | Valid and documented by HF itself — use it if you want one SDK class for every OpenAI-wire-compatible provider (HF router + OpenAI). But `huggingface_hub` is already installed with zero marginal dependency cost, and its native `provider="auto"`/`:cheapest`/`:fastest` policy selection isn't in the raw OpenAI SDK. |
-| JSONL for reasoning-trace logging | Langfuse (self-hosted) | If the team grows beyond one researcher and needs a shared web UI, dataset-based evals, or multi-user trace review. Langfuse's own docs note the full-stack self-hosted deployment (the only officially supported path as of mid-2026) starts at ~8GB and multiple containers — unjustified for a single researcher running benchmark episodes next to the robot. |
-| JSONL for reasoning-trace logging | Opik (self-hosted) | Similar reasoning to Langfuse; Opik's self-hosted footprint starts around 16GB and its open-source tier ships without user management — more platform than a solo benchmark needs. |
-| 16-bit PNG per depth frame (`cv2.imwrite`) | HDF5 (`h5py`) per episode | If episode counts grow into the hundreds and you want one file per episode with random access across all modalities — this is the same pattern Phase 4's sim dataset already uses (HDF5, schema-verified via replay round-trip), so it's a reasonable *later* upgrade. Not justified for early Pen Transfer validation runs where per-episode file count is small and PNG needs zero new dependency. |
+| Structured output (`output_config.format` / `messages.parse()`) for the action-chunk JSON | Tool-use (`tools=[...]`, forced `tool_choice`) with a single `emit_action_chunk` tool wrapping the same schema | Only if a future milestone phase reintroduces multi-turn tool-calling (e.g. the model deciding to call a "look closer" camera-zoom tool mid-reasoning). For v2.1's raw-autonomy design, tool-use is explicitly the wrong shape — it's a named-function abstraction, which is exactly what "no pre-built movement primitives" rules out. Structured output is the correct mechanism here, not a stylistic preference. |
+| `client.messages.parse()` (Pydantic) | Raw `output_config: {"format": {"type": "json_schema", ...}}` + `json.loads()` | Use raw schema if you want to avoid adding `pydantic` as a dependency, or need a schema shape Pydantic can't express directly (e.g. deeply dynamic per-joint bounds pulled from `action_contract.JOINT_ORDER` at runtime — trivial to build as a raw JSON-schema dict, slightly more code as a Pydantic model with a variable field set). |
+| `claude-opus-5` for the real comparison episode | `claude-sonnet-5` | Use Sonnet 5 while iterating on the control loop's plumbing (schema shape, chunk-size tuning, prompt structure) to cut cost ~40% per call; switch to Opus 5 for the actual Pen Transfer run being compared against the SmolVLA baseline, since reasoning quality is the variable under test. |
+| Fix `camera_overhead` recording by reusing the existing ffmpeg/AVFoundation name-based capture | A dedicated macOS camera library (e.g. `pyobjc`/`AVFoundation` Python bindings, `imageio-ffmpeg`) | Not needed. `stereo_camera.py` already has a working, tested `_FFmpegAVFoundationCapture` class with a `cv2`-compatible `isOpened()`/`read()`/`release()` shape — the fix is reuse, not a new dependency. Only reach for a dedicated binding if a future need requires querying AVFoundation device metadata (e.g. enumerating available devices by name programmatically) beyond what `ffmpeg -f avfoundation -list_devices true -i ""` already provides via subprocess. |
+| Polling `action_queue.qsize()` to decide when to re-request inference | Rewriting the bridge on `asyncio`/`aiohttp` | Not warranted. The existing `lerobot` `RobotClient` bridge is a synchronous, `threading`+`grpc`-based design (`receive_actions()` runs in a daemon thread, `action_queue` is a stdlib `queue.Queue`). Introducing `asyncio` here would mean rewriting the vendored `lerobot` integration, not scoping a fix — the FINDINGS.md root cause is a control-flow bug (`control_loop_observation()` called unconditionally every tick), fully fixable within the existing threading model. |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|--------------|
-| `litellm` | Adds a large, fast-moving dependency surface (own pinned `httpx`/`pydantic`, 100+ provider SDKs pulled in even if unused) into a `control/` venv that's already carefully pinned (`lerobot[feetech]==0.6.1`); its abstraction also obscures the exact provider request during real-hardware debugging, where "what exactly did we send/receive" matters most. | Hand-rolled `MLLMProvider` interface + one thin adapter class per provider. |
-| `mlflow` / `langfuse` / `opik` for reasoning-trace logging | All three assume a running server (Docker Compose, 8-16GB) designed for team-scale experiment tracking or agent observability — pure overhead for a single-researcher local benchmark. | Plain JSONL file per episode (`reasoning_trace.jsonl`), one line per MLLM call — greppable, diffable, loadable into `pandas` for analysis, and matches the existing `joints.csv` plain-file convention already in `record_episode.py`. |
-| Per-tick MLLM calls (calling the MLLM on every control-loop tick) | Real hosted-API latency (seconds, sometimes 5-15s for a vision-heavy prompt) makes tick-level control impractical and burns through the free-tier credit fast. | Sub-goal-level calls only (reach→grasp→lift→place), per PROJECT.md's already-committed plan-then-execute decision — a fast *local* controller (no MLLM call) executes each checkpoint's low-level joint motion via the existing LeRobot bridge. |
-| `instructor` / `outlines` / `guidance` for structured MLLM output | These add real complexity (constrained decoding or extra wrapper layers) that only pays off at high call volume or when providers lack any native JSON mode. This pilot involves dozens of calls per benchmark run. | Prompt for JSON directly, `json.loads()` + `pydantic` validation, with exactly one repair-retry on failure — log both attempts to the reasoning trace so failures are visible, not hidden inside a framework's retry logic. |
-| New microcontroller/embedded firmware (ESP32, etc.) | Already ruled out in PROJECT.md — the existing LeRobot USB-serial bridge to the Feetech servos already provides full joint-level control (UAT signed off). | Keep using `SO101Follower`/`SOFollowerRobotConfig` exactly as `record_episode.py` and `joint_jog.py` already do. |
-| Relying on the HF **free** tier ($0.10/month credit) for the actual multi-episode benchmark | As of the Aug 2026 HF billing change, free-tier credit is genuinely tiny — enough for smoke-testing the router, not for running the 4-task benchmark suite end-to-end. | Budget for HF **PRO** (`$9/mo`, `$2/mo` compute credit) as the practical "still basically free, definitely not a frontier-API bill" tier once past initial smoke tests — this preserves the "free/cheap HF-hosted pilot before paid frontier providers" intent without stalling on credit exhaustion mid-benchmark. |
+| Tool-use / function-calling (`tools=[{"name": "move_to", ...}]`) for the MLLM's action output | Reintroduces exactly the pre-built-movement-primitive abstraction the milestone explicitly rules out ("no `move_to()`/`grasp()` helpers... reasons directly to raw joint-level JSON") | `output_config.format` (structured JSON output) — the model's entire response *is* the action chunk, not a tool call describing one |
+| `client.messages.create()` with unconstrained free-text output + regex/manual JSON extraction from prose | Fragile — no schema guarantee, and the existing `safety_validator.py` expects a clean `dict[str, float]` per joint; parsing failures would need their own error-handling path that structured output makes unnecessary | `output_config.format` / `client.messages.parse()` — the SDK guarantees the first text block is valid JSON matching your schema |
+| `cv2.VideoCapture(numeric_index)` for the AR0144 stereo/overhead camera, in *any* code path (recording or inference) | Confirmed live twice this session to silently capture the laptop's built-in webcam instead of the robot workspace — macOS AVFoundation numeric indices are known to drift across process launches (already documented in `stereo_camera.py` and `run_vla_episode.py`'s own `--stereo-camera-index` help text) | Device-**name**-keyed capture (`ffmpeg -f avfoundation -i "CCB Camera"`, i.e. `stereo_camera.py`'s existing `_FFmpegAVFoundationCapture`), reading the name from `device_map.json`'s `cameras.stereo_overhead_name` |
+| Opening a second, independent `StereoSplitCamera`/ffmpeg capture of the AR0144 for the IOLogger recording path while `connect_bridge()`'s own `StereoSplitCamera` is already open for inference | `stereo_camera.py`'s own docstring: "most webcam drivers reject a second concurrent open of the same index" — a second independent open of the same physical AVFoundation device is likely to fail or contend, not just be redundant | Reuse the **same** `StereoSplitCamera` instance `connect_bridge()` already created (reachable via `client._stereo_camera`) for both the inference-input path and the recording path — one shared capture, two consumers, same pattern `stereo_camera.py` already uses internally for `read_left()`/`read_right()` |
+| `asyncio`/`aiohttp` rewrite of the control loop to fix tick latency | Existing bridge is synchronous/threaded via vendored `lerobot`; an asyncio rewrite is a disproportionate architecture change for a scoped control-flow bug | Conditional re-request logic (`if client.action_queue.qsize() < N: client.control_loop_observation(...)`) within the existing threading model, and/or tuning `control_hz` to the measured real round-trip |
+| `time.time()` for latency measurement in the fixed `io_logger.py` `latency_ms` field | Wall-clock time is subject to NTP adjustment and was already the (indirect, via `timestamp_utc` diffing) source of FINDINGS.md's imprecise ~11-20s/tick numbers | `time.monotonic()` deltas, captured at the actual request-send and response-receive points, not reconstructed after the fact from log timestamps |
 
 ## Stack Patterns by Variant
 
-**If the HF free/PRO credit runs out mid-benchmark:**
-- Fall back to HF PRO ($9/mo) before reaching for a paid frontier provider (OpenAI/Anthropic/Gemini) — keeps the "free-to-use HF pilot first" constraint intact.
-- Because: the router/adapter interface makes this a config change (model id + provider), not a code change, if built as recommended above.
+**If iterating on the MLLM control-loop code/schema before spending real API budget:**
+- Use `claude-sonnet-5` with a short `--max-steps` test episode (or a scripted/mocked camera+joint-state fixture, no real hardware)
+- Because Sonnet 5 is ~40% cheaper per call and the plumbing (schema validation, `safety_validator.py` handoff, `io_logger.py` reasoning-trace field) is identical between Sonnet 5 and Opus 5 — no code path differs by model choice
 
-**If the specific pilot model gets deprecated or re-routed (this space changes weekly):**
-- Keep the model id as one named config constant, e.g. `MLLM_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct:novita"` (confirmed live via HF's model page + Inference Providers widget as of Sept 2026), not hardcoded through router logic.
-- Because: HF's routed-provider list and per-model hosting changes independently of your code; isolating it to one constant makes swapping trivial.
+**If running the real Pen Transfer comparison episode against the Phase 11 SmolVLA baseline:**
+- Use `claude-opus-5`
+- Because reasoning quality (not cost) is the variable under test in this comparison, and this is a single, deliberately small (per Key Decisions) live-hardware run, not a high-volume workload
 
-**If depth precision needs sub-millimeter float values instead of integer millimeters:**
-- Use `.npz` (compressed `numpy` float32 arrays) instead of 16-bit PNG for the depth stream.
-- Because: 16-bit PNG tops out at integer values 0-65535 (fine for mm-resolution depth up to ~65m); float precision needs a numeric array format instead.
+**If a future phase adds a provider-agnostic router (explicitly deferred, Future Requirements):**
+- Structured output is not uniformly available across providers the same way — re-verify each provider's JSON-schema/structured-output support before assuming this pattern ports unchanged
+- Out of scope for v2.1; noted here only so the router design doesn't silently assume Anthropic-specific `output_config` semantics
 
 ## Version Compatibility
 
 | Package A | Compatible With | Notes |
 |-----------|------------------|-------|
-| `huggingface_hub==1.29.0` | `lerobot[feetech]==0.6.1`, Python 3.12.12 | Already resolved and installed in the live `control/.venv` — confirmed via `pip list`, not assumed. `InferenceClient.chat.completions.create()` with `image_url` content blocks works out of the box, no upgrade needed. |
-| `opencv-python==5.0.0.93` | `cv2.imwrite`/`cv2.imread` for `uint16` single-channel PNG | OpenCV 5.x retains native 16-bit PNG support; no separate codec/plugin dependency required for lossless depth storage. |
-| `pydantic` v2.x (transitive) | Python 3.12, `huggingface_hub`, future `openai`/`anthropic`/`google-genai` SDKs | All target SDKs use pydantic v2 as of 2026; no cross-version pin conflicts expected, but pin explicitly once the router code imports it directly rather than relying on transitive resolution. |
-| `anthropic>=0.116` / `google-genai==2.23.0` / `openai` (2.x/3.x, verify at install) | Python 3.12 | All three current SDK lines support 3.12; each is independent (no shared pinned transitive deps with `lerobot`/`opencv`/`ultralytics`) — install additively, one per provider, only when wiring that provider. |
+| `anthropic==1.8.0` | Python 3.12 (this project's `control/` venv), `httpx==0.28.1` (already installed) | `anthropic` 1.x requires Python ≥3.10 and uses `httpx` internally; both constraints already satisfied by `control/`'s existing environment — no version bump needed elsewhere. |
+| `anthropic==1.8.0` | `grpcio==1.84.0`, `lerobot==0.6.1` (already installed) | No shared dependency conflict — `anthropic`'s HTTP transport (`httpx`) and `lerobot`'s bridge transport (`grpc`) are independent stacks; the MLLM call and the robot bridge call are separate network paths that never share a client object. |
+| Structured output (`output_config.format`) | Extended thinking (`thinking: {"type": "adaptive"}`) | Compatible together — thinking blocks (if `display: "summarized"` is set) appear before the schema-constrained text block in `response.content`; the schema guarantee applies only to the final text block, not to thinking. Not compatible with `citations: {enabled: true}` on document blocks (returns 400) — irrelevant here since no PDF/document input is used. |
+| `pydantic>=2.0` | `anthropic==1.8.0`'s `messages.parse()` | The SDK's structured-output helper is built for Pydantic v2-style `BaseModel`s; do not pin an old Pydantic v1 model anywhere else in `control/` if adding this. |
 
 ## Sources
 
-- [Hugging Face — Inference Providers Pricing and Billing](https://huggingface.co/docs/inference-providers/pricing) — HIGH confidence, official docs, fetched live: confirms $0.10/mo free credit, $2.00/mo PRO credit, HF-routed vs custom-provider-key billing model (Aug 2026 credits system).
-- [Hugging Face — Chat Completion task docs](https://huggingface.co/docs/inference-providers/tasks/chat-completion) — HIGH confidence, official docs: vision/VLM support via `image_url` content blocks, `provider="auto"`/`:cheapest`/`:fastest` policies.
-- [Hugging Face — Run Inference on servers (huggingface_hub guide)](https://huggingface.co/docs/huggingface_hub/en/guides/inference) — HIGH confidence, official docs: `InferenceClient` OpenAI-wire-compatibility, provider list (Cerebras, Groq, Novita, Fireworks, Together, DeepInfra, etc. as of Sept 11, 2026).
-- [Qwen/Qwen3-VL-30B-A3B-Instruct model page](https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Instruct) — MEDIUM confidence (live model-card fetch, Sept 2026): confirms Novita hosts this model via Inference Providers; MoE 30B/3B-active architecture, vision-capable, 256K context.
-- [LiteLLM — Hugging Face provider docs](https://docs.litellm.ai/docs/providers/huggingface) — MEDIUM confidence, official docs: confirms `huggingface/<provider>/<org>/<model>` format and `image_url` support, used to inform the "alternative considered" entry.
-- [LiteLLM PyPI / release notes](https://docs.litellm.ai/release_notes/) — MEDIUM confidence: version churn cadence (`1.100.0` as of late Aug 2026) informing the dependency-risk argument.
-- [Opik vs Langfuse: Self-Hosted LLM Observability in 2026](https://blog.elest.io/opik-vs-langfuse-self-hosted-llm-observability-in-2026/) — MEDIUM confidence, third-party blog: resource footprint (Langfuse ~8GB, Opik ~16GB) used to justify JSONL-over-platform recommendation.
-- Live `pip list` in `control/.venv` (this repo) — HIGH confidence, ground truth: confirmed `huggingface_hub==1.29.0`, `torch==2.11.0`, `numpy==2.2.6`, `pillow==12.3.0`, `opencv-python==5.0.0.93` already installed transitively via `lerobot[feetech]==0.6.1`.
+- Bundled `claude-api` skill (`python/claude-api/README.md`, `python/claude-api/tool-use.md`) — Anthropic-authored reference covering current Messages API shape (`output_config.format`, `messages.parse()`, vision content blocks, model IDs/pricing, thinking/effort). Confidence: HIGH (official-equivalent, cross-checked against the skill's own "verify against `{lang}/` files, not training-prior" instruction).
+- `pip index versions anthropic` / `pip download anthropic` run directly against PyPI (2026-09-24) — confirmed `anthropic` 1.8.0 is current, Python SDK is on the 1.x major line. Confidence: HIGH (direct registry observation, not a cached/provider claim).
+- Direct reads of this repo's own `control/vla_bridge/robot_client.py`, `stereo_camera.py`, `safety_validator.py`, `io_logger.py`, `action_contract.py`, `run_vla_episode.py`, `device_map.json`, `FINDINGS.md`, and `control/requirements.txt` (2026-09-24) — ground truth for integration points, existing dependency versions, and the exact root cause the latency/camera fixes target. Confidence: HIGH (primary source, this project's own code).
+- WebSearch cross-check on `anthropic` PyPI latest version — corroborated the direct pip check but itself returned a stale cached claim (`0.116.0`); **the direct pip index check (1.8.0) is authoritative**, not the search result. Confidence of the WebSearch result alone: LOW — included only to note the discrepancy, not relied upon.
 
 ---
-*Stack research for: SoARM VLA Research v2.0 milestone — MLLM router, plan-then-execute loop, reasoning-trace logging, depth-extended recorder*
-*Researched: 2026-09-15*
+*Stack research for: MLLM raw-autonomy robot control loop, async control-loop latency fix, macOS camera device resolution (SoARM VLA Research v2.1)*
+*Researched: 2026-09-24*

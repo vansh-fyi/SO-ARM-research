@@ -1,169 +1,150 @@
 # Project Research Summary
 
-**Project:** SoARM VLA Research — v2.0 milestone (MLLM-as-robot-controller, real-hardware benchmark replication)
-**Domain:** Real-hardware MLLM-driven robot manipulation control, integrated into an existing LeRobot bridge
-**Researched:** 2026-09-15
-**Confidence:** MEDIUM-HIGH
+**Project:** SoARM VLA Research — v2.1 milestone (MLLM Raw-Autonomy Benchmark)
+**Domain:** Real-hardware robot control loop — adding an MLLM (Claude) raw-JSON control path alongside an existing VLA bridge, fixing an async tick-latency bug, and unifying macOS camera device resolution
+**Researched:** 2026-09-24
+**Confidence:** HIGH (architecture/stack grounded in direct reads of this project's own source and vendored `lerobot` library; pitfalls grounded in three real bugs already hit in this exact codebase; features grounded in a directly-read arXiv paper plus MEDIUM-confidence ecosystem literature)
 
 ## Executive Summary
 
-This milestone bolts a zero/few-shot multimodal-LLM control loop onto an already-working `control/` stack (`lerobot[feetech]==0.6.1` driving a real SO-ARM101 over USB serial). The established pattern across the field (SayCan, VoxPoser, Code as Policies, GPT-4V(ision) for Robotics) is consistent and directly applicable: perceive, then call the MLLM for a structured sub-goal (never raw joint targets or free-form code), translate that sub-goal deterministically into servo motion via a small fixed library of motion primitives, execute, observe, repeat. This is a plan-then-execute loop with MLLM calls only at checkpoint granularity (reach/grasp/lift/place), not per control tick, because real hosted-API latency (seconds) makes tick-level calls infeasible — already a locked PROJECT.md decision, corroborated by every piece of prior art reviewed.
+This milestone adds three tightly-scoped capabilities to an already-working VLA bridge (`control/vla_bridge/`): (1) a new `ClaudeActionSource` that makes Claude reason directly from camera frames + joint state + calibration to raw joint-level JSON action chunks — deliberately with no `move_to()`/`grasp()` primitives, so it's a genuine test of what a general reasoning model does with only floor-level I/O; (2) a fix for a real, already-diagnosed tick-latency bug where `BridgeActionSource.get_action()` calls `control_loop_observation()` unconditionally every tick instead of gating it behind the vendored `lerobot` library's own (already-configured but unused) `_ready_to_send_observation()` queue-low check; and (3) unifying two divergent camera-resolution code paths (name-based for inference, numeric-index-based for recording) that have already twice caused a real episode to silently record the laptop webcam instead of the robot workspace. All three integrate through existing, provider-agnostic seams (`ActionSource` Protocol, `safety_validator.py`, `io_logger.py`, `action_contract.py`) that Phase 11 already proved out — the right move is reuse, not new infrastructure.
 
-The recommended approach layers cleanly on the existing codebase: a new `control/mllm/` subpackage (router, loop, schema, prompts) calling a free HuggingFace-hosted vision model first, a `motion_primitives.py` extracted from the proven `keyboard_joint_control.py` P-control code, an extended `episode_writer.py` recording synced RGB+depth+joints+reasoning-trace+action, and depth computed at decision cadence (not frame rate) via a ported (not imported) version of the already-validated `diagnostics/measure_object_depth.py` SGBM pipeline. Nothing in this design touches the pinned, hardware-validated LeRobot bridge.
+The recommended approach is: fix the latency bug first (using the library's own `_ready_to_send_observation()` gate, not a hand-rolled async rewrite), re-tighten safety caps with live-hardware re-verification, land the camera-resolution fix (via one shared, name-based, `ffmpeg`-backed resolution helper reused by both inference and recording paths — not two independent fixes), then build `ClaudeActionSource` using Anthropic's structured-output mode (`output_config.format`, not tool-use — tool-use would reintroduce the primitive-abstraction the milestone explicitly rules out), with its JSON schema generated programmatically from `action_contract.py`'s constants. Chunk size for the MLLM's action sequences must be derived from the latency fix's real measured round-trip data, not guessed.
 
-The dominant risks are safety and reliability, not novelty: no independent safety envelope between MLLM output and actuators; the free HF tier has no SLA, cold-starts 30-60s, and rate-limits aggressively so the loop needs timeout/backoff/stale-response handling from day one; MLLM structured-output drift must be defensively parsed with a distinct failure bucket; MLLM pixel/relational judgments must never be trusted as final mm-scale coordinates (conversion must go through the calibrated depth pipeline); and zero-shot MLLM results must be reported in a clearly separated table from the paper's fine-tuned-policy baselines with an explicit methodology caveat. All map cleanly onto specific phases below.
+The key risk across all three pieces is the same shape already proven out in this codebase: **silent failure that looks healthy** — three separate bugs in Phase 11 (missing thread, wrong staleness constant, key-mismatch) all ran to completion without crashing while doing the wrong thing, and the camera bug was caught only by a human manually reviewing saved footage. The mitigations converge on one discipline: make every failure mode loud (schema-conformance checks that reject-and-alert rather than silently drop, per-action-within-chunk validation that holds position rather than zero-fills, dual-metric latency verification rather than trusting a reduced discard-rate alone) and verify with real live-hardware episodes, not code review or a single happy-path test.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is a deliberately thin delta on top of the already-pinned `control/` venv. `huggingface_hub`'s `InferenceClient` (already a transitive dependency, OpenAI-wire-compatible, supports `image_url` vision content and `provider="auto"` fallback) covers the free-model pilot at zero marginal dependency cost. A hand-rolled ~50-line `MLLMProvider` interface (plain Python ABC/Protocol, one thin adapter per provider) is recommended over `litellm` for a solo research repo with 2-4 providers, avoiding a large/fast-moving dependency surface and preserving exact request/response visibility for real-hardware debugging (architecture research is milder here, treating litellm as a reasonable alternative implementation of the same pattern — a config-level choice, not an architectural fork). `pydantic` (already transitive) gives typed sub-goal schema validation. Depth is stored as 16-bit PNG (or `.npz` if sub-mm float precision is needed). Reasoning traces are plain append-only JSONL — no MLflow/Langfuse/Opik. Add `openai`/`anthropic`/`google-genai` SDKs additively, only when each provider is actually wired in.
+No new heavy dependencies. Add `anthropic` (official Anthropic Python SDK, `1.8.0` current) and `pydantic>=2.0` to `control/requirements.txt`; everything else (structured JSON output, image content blocks, latency-fix logic, camera-resolution fix) reuses stdlib (`queue`, `threading`, `time.monotonic()`) and already-installed project code (`stereo_camera.py`'s ffmpeg/AVFoundation capture, `pillow`/`cv2.imencode` for frame encoding).
 
 **Core technologies:**
-- `huggingface_hub.InferenceClient` (already installed): free HF-hosted VLM pilot, zero new dependency
-- Hand-rolled `MLLMProvider` interface: provider-agnostic router, avoids heavy abstraction framework
-- `pydantic` (transitive): typed sub-goal/action schema, one repair-retry on validation failure
-- JSONL (stdlib): append-only reasoning-trace log, one line per MLLM call
-- `opencv-python`/`numpy` (already pinned): 16-bit PNG depth frames synced to existing timestamp loop
+- `anthropic` Python SDK (`1.8.0`) — calls the Claude Messages API for the MLLM control loop — official first-party SDK, project policy mandates it over raw HTTP calls
+- Structured output (`output_config: {"format": {"type": "json_schema", ...}}`, GA, no beta header) — forces Claude's response to validate against an explicit schema — this, not tool-use, is what satisfies "no pre-built movement primitives"
+- `claude-opus-5` for the real comparison episode / `claude-sonnet-5` for cheaper iteration on control-loop plumbing — model choice is a one-line swap, no code-path differences
 
 ### Expected Features
 
-**Must have (table stakes, v1 — Pen Transfer end-to-end):**
-- Image(s)+instruction → structured sub-goal JSON, strictly validated with retry
-- Fixed motion-primitive library (reach/grasp/lift/transport/place/retreat)
-- Plan-then-execute loop, one MLLM call per checkpoint
-- Full reasoning-trace logging per MLLM call
-- Extended episode recorder (RGB + joints + reasoning trace + action; depth once camera fix lands)
-- Basic execution-failure detection (timeout, joint-limit, no-progress)
-- Provider-agnostic MLLM router, first backend = free HF model
-- Pen Transfer task scaffolding
+Full detail in FEATURES.md. The cited Yu & Qiu 2026 paper (arXiv:2606.08881) does **not** prompt a general MLLM for raw joint control — it fine-tunes/evaluates π0.5, SmolVLA, Wall-X, and ACT — so it supplies the Pen Transfer task definition, the 4-category failure taxonomy, and the Recovery Rate metric, but not a prompting/schema precedent. The MLLM design itself draws on general zero-shot-trajectory-generation and Embodied Chain-of-Thought literature.
 
-**Should have (differentiators — the research contribution):**
-- Automated failure-taxonomy classification (Grasp Instability / Repetition Loop / State Mismatch / Precision Misalignment)
-- Recovery Rate computation matching the paper's formula, adapted for plan-then-execute granularity
-- Semantic-vs-execution failure aggregation
-- Multi-provider comparison
-- Full 4-task suite
+**Must have (table stakes):**
+- Explicit output JSON schema (structured output, not free-text parsing)
+- Static calibration/geometry + fresh joint-state/camera-frames per call
+- Action-chunking sized from real latency-fix timing data
+- Reasoning text captured before, and separately from, the action JSON, in staged form (restate task → plan → grounded scene claims → action)
+- Safety-validator and episode-logging schema reused unchanged from the VLA path
 
-**Defer (v2+):**
-- Closed-loop mid-primitive vision verification, trace analysis/browsing tooling, real-time interactive steering, any IK/motion-planning stack
-- Rejected outright: arbitrary code-as-policy execution, per-tick MLLM calls, MLLM fine-tuning, new embedded firmware
+**Should have (differentiators):**
+- Reasoning-trace vs. executed-action divergence analysis
+- Failure-taxonomy tagging using Yu & Qiu's 4 categories (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment)
+
+**Defer (v2.x+):**
+- Provider-agnostic MLLM router, full 4-task suite, Recovery Rate automation, automated vision-based success detection, chunk-boundary self-report field
+
+**Explicit anti-features (would invalidate the experiment):** pre-built movement primitives/tool-calling, multi-agent decomposition, few-shot in-context examples, code-generation-as-policy, per-tick MLLM calls, fine-tuning the MLLM.
 
 ### Architecture Approach
 
-A new `control/mllm/` subpackage (router, loop, schema, prompts — the one exception to this repo's flat-script convention) sits above extracted, hardened components: `motion_primitives.py` (pulled from `keyboard_joint_control.py`), `camera_io.py` (pulled from `record_episode.py`), and a new `depth_stereo.py` that ports (never imports across venvs) the SGBM pipeline validated in `diagnostics/measure_object_depth.py`. The loop calls the router once per sub-goal, logs the reasoning trace before execution, resolves the response to joint targets through a local deterministic safety/bounds check, then drives the arm via the unmodified `SO101Follower`. Depth is computed at decision cadence, not frame rate, to avoid reintroducing documented USB/frame-drop flakiness. `record_episode.py` stays untouched; `episode_writer.py` is a separate extended-schema writer.
+`run_episode()` is already provider-agnostic via the `ActionSource` Protocol (`get_action(joint_state, instruction) -> (action, model_version)`) — Phase 11 proved this seam by swapping `ScriptedActionSource` → `BridgeActionSource` with zero changes to the control loop itself. The MLLM integration is the same swap: a new `ClaudeActionSource` implementing the same Protocol, widened by one field to also return a reasoning string, feeding the same unchanged `safety_validator.py`/`io_logger.py`/`action_contract.py` trio. No second safety-check path, no second logger, no second `send_action()` call site.
 
 **Major components:**
-1. `control/mllm/{router,loop,schema,prompts}.py` — provider-agnostic call surface + orchestration + schema + prompts
-2. `control/motion_primitives.py` — deterministic joint-space P-control executor
-3. `control/depth_stereo.py` — decision-cadence stereo depth, backed by `diagnostics/`'s calibration artifact
-4. `control/episode_writer.py` + `control/camera_io.py` — extended synced episode schema
-5. `control/tasks/*.py` — per-task config (data, not code)
-6. `control/metrics/failure_taxonomy.py` — post-hoc pass over collected episodes, built last
+1. `ClaudeActionSource` — new `ActionSource` implementation; synchronous Claude call producing a local action-chunk queue (no thread/lock needed, unlike the VLA bridge's async gRPC queue)
+2. `BridgeActionSource.get_action()` fix — gate `control_loop_observation()` behind the vendored `lerobot` library's own `_ready_to_send_observation()` (already configured via `chunk_size_threshold=0.5`, just never consulted)
+3. Shared camera-resolution helper + `_StereoHalfReader` adapter — one `StereoSplitCamera` instance shared between the inference path and the `IOLogger` recording path, resolved by AVFoundation device **name**, never a numeric index
 
 ### Critical Pitfalls
 
-1. **No safety envelope between MLLM output and actuators** — hard joint/velocity clamps, workspace bounds, watchdog timeout must live in the local controller below the MLLM interface, architected in from the start.
-2. **Free HF tier treated as normal low-latency API** — no SLA, 30-60s cold starts, aggressive rate limits; build timeout/backoff/stale-response rejection into the router from day one.
-3. **MLLM structured-output brittleness** — parse defensively, never guess a default on failure, log as a distinct failure mode.
-4. **Pixel-space MLLM output treated as calibrated mm coordinates** — never trust model-emitted world-frame coordinates; convert deterministically through the calibrated depth pipeline; hard-gated on the depth-camera fix landing first.
-5. **Zero-shot vs. fine-tuned-baseline comparison without caveats** — report in a separated table, adapt Recovery Rate definition explicitly, give infrastructure failures their own bucket.
-6. (Secondary) Blind open-loop execution between MLLM calls risks acting on stale world state; reasoning-trace timestamps must capture request-sent/response-received/execution-complete as distinct events.
+1. **Latency "fix" trades one silent failure for another** — widening `STALE_ACTION_S`/`control_hz` legalizes multi-second-stale actions instead of eliminating the redundant round-trip. Avoid: pick a concrete numeric round-trip target before choosing a fix, measure observation-to-execution wall-clock latency directly, not just discard-rate.
+2. **New race condition from an unguarded queue-low request trigger** — implementing the gate without an in-flight-request guard can fire duplicate/overlapping observation requests under slow Colab responses. Avoid: explicit `request_in_flight` guard, tested under simulated slow-network conditions.
+3. **Reusing `safety_validator.py` unchanged for MLLM output assumes a key/unit/shape contract the MLLM was never forced to honor** — the validator silently drops non-matching keys, exactly the mechanism that caused Phase 11's bug #3 (`.pos`-suffix mismatch emptied every action into `{}`). Avoid: an explicit pre-validator schema-conformance check built from `action_contract.py`'s constants, with a loud (not silent-drop) failure path.
+4. **Per-action-within-chunk parse failures** — with no primitives, every value in a multi-action chunk is a fresh parse-failure opportunity; a malformed mid-chunk action must hold position, never zero-fill/default.
+5. **Numeric-vs-name camera divergence is a class of bug, not one bug** — fixing only the reported `camera_overhead` call site leaves `device_map.json`'s raw numeric field available for a third path to reintroduce the same failure later. Avoid: one shared, enforced, name-based resolution helper for every camera-opening call site.
 
 ## Implications for Roadmap
 
-### Phase 1: Depth Camera Reliability Fix
-**Rationale:** Every downstream MLLM spatial-grounding decision and the pixel→mm conversion pitfall depend on knowing what a reliable depth reading looks like.
-**Delivers:** Validated AR0144 stereo depth, signed-off UAT.
-**Avoids:** Pitfall 4; Anti-Pattern "starting MLLM work before depth is reliable."
+Based on research, suggested phase structure (source order already confirmed correct by architecture-level dependency analysis, not just PROJECT.md's stated sequencing):
 
-### Phase 2: MLLM Router + Plan-Then-Execute Loop Skeleton
-**Rationale:** Can be dry-run (RGB-only, stubbed sub-goals) immediately after/parallel to Phase 1, establishing the load-bearing sub-goal JSON schema before any provider-specific code exists.
-**Delivers:** `control/mllm/{router,schema,prompts,loop}.py`, `control/motion_primitives.py`, safety clamp layer, timeout/backoff handling.
-**Uses:** `huggingface_hub.InferenceClient`, hand-rolled `MLLMProvider` interface, `pydantic`.
-**Avoids:** Pitfalls 1, 2, 3.
+### Phase 1: Bridge Tick-Latency Fix
+**Rationale:** Blocks action-chunk sizing for the MLLM phase; independently testable against the existing SmolVLA baseline with no dependency on anything else in this milestone.
+**Delivers:** `_ready_to_send_observation()` gating in `BridgeActionSource.get_action()`, `pop_validated_action()`/`client.latest_action` bookkeeping fix, `latency_ms` instrumentation fix (from always-`{0,0}` to real `time.monotonic()` deltas), in-flight-request guard against duplicate observation sends.
+**Avoids:** Pitfall 1 (constant-widening masquerading as a fix) and Pitfall 2 (new race condition from the queue-low trigger) — both require the same live-hardware verification discipline (measured latency vs. a stated target, not just reduced discard-rate).
 
-### Phase 3: Recorder Extension
-**Rationale:** Needs Phase 2's real MLLM calls to log and Phase 1's validated depth to wire in correctly.
-**Delivers:** `control/camera_io.py`, `control/episode_writer.py`, `control/depth_stereo.py` at sub-goal cadence, request/response/execution-complete timestamp triad.
-**Avoids:** Pitfall 6 (reasoning-trace/sensor desync).
+### Phase 2: Safety-Validator Cap Re-Tightening
+**Rationale:** Caps were loosened specifically to compensate for the latency bug's staleness; must be re-tightened immediately after Phase 1, not deferred, to keep the causal link auditable — and must be verified live, not assumed safe as a "revert."
+**Delivers:** Incrementally re-tightened `MAX_RELATIVE_TARGET_DEG`/`MAX_VELOCITY_DEG_PER_S`/`STALE_OBSERVATION_S`/`STALE_ACTION_S`, with a live-hardware episode confirming real-action yield at each step.
+**Avoids:** Pitfall 8 (repeating bug #2's untested-constant risk in the opposite direction).
 
-### Phase 4: Pen Transfer End-to-End
-**Rationale:** Validates the entire chain on the paper's simplest task before investing in remaining tasks.
-**Delivers:** Real multi-episode runs on physical arm, hardened parsing against real scenes.
-**Addresses:** All table-stakes features.
+### Phase 3: Camera Device Resolution Unification
+**Rationale:** Fully independent of Phases 1/2 and 4 — touches only `stereo_camera.py`/`run_vla_episode.py`'s camera-opening code. Landing it before the MLLM phase means the next live re-verification run (needed anyway to confirm Phase 1) also produces trustworthy footage, and the MLLM phase's own camera input builds on already-correct plumbing rather than debugging two unfamiliar systems (Claude vision input + a still-broken camera path) at once.
+**Delivers:** One shared, name-based camera-resolution helper; recording path routed through the same `StereoSplitCamera`/ffmpeg-backed capture the inference path already uses (not a second independent `cv2.VideoCapture` open); client-side frame hash/thumbnail logging, explicitly documented as not covering server-side receipt.
+**Avoids:** Pitfall 6 (scoping the fix to one call site instead of the shared pattern) and Pitfall 7 (treating a client-side hash as full provenance).
 
-### Phase 5: Remaining 3 Paper Tasks
-**Rationale:** Should require only new `tasks/*.py` configs if Phases 2-4 were built generically.
-**Delivers:** Selective Color Sorting, Multi-Object Packing, Precision Pen Placement.
+### Phase 4: MLLM Raw-JSON Control Loop
+**Rationale:** Depends on Phase 1 for real chunk-size timing data and benefits from Phase 3 already landed for trustworthy camera input — the entire experiment's point of comparison.
+**Delivers:** `ClaudeActionSource` (structured-output Claude calls, JSON schema generated from `action_contract.JOINT_ORDER`/`ACTION_UNITS`), `ActionSource` Protocol widened to carry a reasoning string, `IOLogger.write_step()` extended with a `reasoning` field, per-action-within-chunk validation that holds position on parse failure, and a documented root-cause note on why the earlier general-MLLM-prompting attempt "failed badly" before building mitigations against it.
+**Addresses:** All P1 features from FEATURES.md (control loop, reasoning-trace capture, chunk sizing, structured reasoning format).
+**Avoids:** Pitfalls 3, 4, 5, and 9 (schema-conformance gap, mid-chunk parse failures, repeating the undiagnosed prior failure, prompt-injection-shaped visual risk).
 
-### Phase 6: Failure Taxonomy + Recovery Rate Metrics
-**Rationale:** Deliberately last — needs a real corpus of successes/failures across tasks.
-**Delivers:** `control/metrics/failure_taxonomy.py`, Recovery Rate computation, semantic-vs-execution aggregation, separated results reporting.
-**Avoids:** Pitfall 5.
-
-### Phase 7: Multi-Provider Comparison
-**Rationale:** The payoff of the Phase 2 router abstraction — should be config-only.
-**Delivers:** Second (paid) provider wired in, cross-provider comparison runs.
+### Phase 5: Pen Transfer Comparison Run
+**Rationale:** Depends on all four above — needs a fixed/trustworthy control loop, correct recorded camera evidence, and the MLLM source to exist.
+**Delivers:** One live episode, human-judged success/termination, directly compared against the Phase 11 SmolVLA baseline episode (`11-05-retry-20260924-120530`).
+**Implements:** MVP definition's full "Launch With" scope from FEATURES.md.
 
 ### Phase Ordering Rationale
 
-- Depth-fix-first is a hard, explicitly locked dependency across PROJECT.md, architecture, and pitfalls research.
-- Router/loop-skeleton before recorder-extension: nail down the load-bearing schema contract before wiring it into the harder synced-recording problem.
-- Pen Transfer validates the full pipeline before investing in 3 more tasks or a second provider.
-- Failure taxonomy/Recovery Rate last: needs episode volume across tasks to be meaningful.
-- Multi-provider last: don't burn paid-API budget until the harness is proven on the free model.
+- Latency fix must precede chunk sizing (a hard data dependency, confirmed at the source-code level, not just asserted in planning docs).
+- Safety-cap re-tightening is sequenced immediately after the latency fix (not deferred) specifically to keep the "why were these loosened / why are they now safe" causal chain auditable in commit history.
+- Camera fix is moved earlier than a literal reading of the milestone's active-item list might suggest — it's independent of the control-loop work and de-risks two unfamiliar systems (camera + MLLM vision input) from being debugged simultaneously.
+- The MLLM phase is deliberately last among the build phases — it is the highest-novelty, highest-uncertainty piece, and every other phase produces infrastructure it depends on (reused unchanged, per the architecture's "provider-agnostic seam" design).
 
 ### Research Flags
 
-Needs deeper research during planning:
-- **Phase 2:** free HF model selection/vision-input support changes weekly — verify the specific pilot model empirically at plan time.
-- **Phase 6:** the target paper's exact per-trial failure-labeling procedure is not public — needs an explicit, documented labeling methodology decision.
+Phases likely needing deeper research during planning:
+- **Phase 4 (MLLM Raw-JSON Control Loop):** Sparse direct precedent (the cited paper doesn't cover MLLM prompting at all); prompt/schema design, chunking behavior under real API latency, and the prior "failed badly" attempt's undocumented root cause all need scoping-time investigation before implementation.
 
-Standard patterns (skip research-phase):
-- **Phase 1:** already in progress with a documented UAT plan.
-- **Phase 3:** extending an existing, proven recorder pattern.
-- **Phase 4-5:** primitive/task-config pattern well-established from architecture research; mostly physical setup.
+Phases with standard patterns (skip research-phase):
+- **Phase 1 (Latency Fix):** Root cause and fix mechanism already fully diagnosed at the source level (`_ready_to_send_observation()` already exists and is already configured, just unused) — this is a location-and-wire-up task, not a design task.
+- **Phase 2 (Cap Re-Tightening):** Mechanical, well-understood config change; the discipline required (live-hardware re-verification) is already fully specified.
+- **Phase 3 (Camera Fix):** Root cause and fix pattern already fully diagnosed (name-based resolution + shared capture instance); implementation is mechanical.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM-HIGH | Versions/pricing verified live against installed venv and current HF docs; pilot model name flagged as fast-changing |
-| Features | MEDIUM | Architecture patterns well-established and cross-checked; paper's exact failure-label procedure not public (LOW on that specific point) |
-| Architecture | HIGH (integration surface) / MEDIUM (MLLM-loop design) | Grounded in installed LeRobot source and existing repo code; no proven reference implementation exists for this exact MLLM-loop shape |
-| Pitfalls | MEDIUM | Cross-checked academic sources on LLM-robot safety and API limits; no single authoritative gotchas doc for this exact stack |
+| Stack | HIGH | Verified directly against PyPI (`pip index versions anthropic`) and this project's own installed environment; no speculative dependency choices |
+| Features | MEDIUM | The one directly-relevant paper was read in full from its own HTML text, but it doesn't cover MLLM prompting at all — general ecosystem patterns (UCL trajectory-generator, ECoT) are MEDIUM-confidence, cross-checked across 2-3 sources each, not HIGH |
+| Architecture | HIGH | Every claim grounded in direct reads of this project's own source and the actual installed `lerobot==0.6.1` library source, with file:line citations throughout — not framework docs or assumption |
+| Pitfalls | MEDIUM-HIGH | Core pitfalls (1-8) are grounded in three real bugs already hit in this exact codebase (HIGH-confidence primary evidence); supporting web sources (async-VLA latency research, OpenCV camera-index issues, structured-output reliability) are MEDIUM-confidence, cross-checked but not primary |
 
-**Overall confidence:** MEDIUM-HIGH
+**Overall confidence:** HIGH — the domain-specific risk (real hardware, real prior bugs, real vendored library internals) is unusually well-grounded for this milestone precisely because Phase 11 already surfaced concrete failure evidence in this same codebase; the one genuinely open area is MLLM-specific prompting/schema design, which has no direct precedent and is correctly flagged for deeper research at planning time.
 
 ### Gaps to Address
 
-- Free HF model choice/availability drift — re-verify at Phase 2 planning time, not locked now.
-- Paper's exact failure-annotation procedure — Phase 6 must define and document its own methodology.
-- litellm vs. hand-rolled router — low-stakes divergence between stack and architecture research; resolve during Phase 2 planning based on provider count.
-- Depth precision format (16-bit PNG vs. `.npz`) — revisit once Phase 1's UAT establishes the achievable noise floor.
+- **Prior "failed badly" general-MLLM-prompting attempt has no documented root cause** in materials available to this research pass (PROJECT.md references it but doesn't detail the failure mode) — must be re-derived (spatial grounding? output format? safety violations?) during Phase 4 planning before implementation starts, per Pitfall 5.
+- **Real Colab/ngrok round-trip latency distribution is not yet measured** (only a single-session ~11-20s/tick anecdote exists) — Phase 1 must produce this measurement before Phase 4's chunk-size can be finalized; treat any chunk-size choice as provisional until Phase 1's real data exists.
+- **Server-side (Colab PolicyServer) frame provenance cannot currently be verified**, only the bridge's outbound send — Phase 3's hash/thumbnail fix should explicitly document this as a known, accepted gap rather than implying full end-to-end verification.
+- **Yu & Qiu 2026's disclosed termination criteria are thinner than PROJECT.md's Future Requirements framing implies** (no explicit timeout-step/irreversible-failure/stagnation thresholds in the accessible paper text) — treat the `goal-met/timeout/irreversible-failure/unrecoverable-stagnation` model as this project's own adaptation, not a verbatim citation, when it's built in a future phase.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- `control/.venv` installed package versions (`pip list`)
-- `control/.venv/.../lerobot/robots/so_follower/so_follower.py` (installed LeRobot 0.6.1 source)
-- `control/record_episode.py`, `control/keyboard_joint_control.py`, `control/joint_jog.py`
-- `diagnostics/UAT/function/depth/UAT.md`, `diagnostics/UAT/function/basic/UAT.md`, `diagnostics/measure_object_depth.py`, `diagnostics/stereo_calibrate.py`
-- [Benchmarking Vision-Language-Action Models on SO-101 (arXiv:2606.08881)](https://arxiv.org/abs/2606.08881)
-- [Hugging Face Inference Providers Pricing/Billing](https://huggingface.co/docs/inference-providers/pricing) and [Chat Completion task docs](https://huggingface.co/docs/inference-providers/tasks/chat-completion)
-- `.planning/PROJECT.md`
+- `control/vla_bridge/robot_client.py`, `safety_validator.py`, `io_logger.py`, `action_contract.py`, `stereo_camera.py`, `run_vla_episode.py`, `device_map.json`, `FINDINGS.md` (this project, read in full) — ground truth for existing infrastructure, all three Phase 11 bugs, and the confirmed-live camera bug
+- `control/.venv/lib/python3.12/site-packages/lerobot/async_inference/{robot_client.py,configs.py}` (installed `lerobot==0.6.1`) — vendored library internals, confirms `_ready_to_send_observation()` and `chunk_size_threshold` already exist and are already configured
+- `.planning/PROJECT.md` — v2.1 milestone scope, Active requirements, Key Decisions
+- `pip index versions anthropic` direct PyPI check (2026-09-24) — confirmed `anthropic` 1.8.0 current
 
 ### Secondary (MEDIUM confidence)
-- [Code as Policies (arXiv 2209.07753)](https://arxiv.org/abs/2209.07753), [SayCan (arXiv 2204.01691)](https://arxiv.org/pdf/2204.01691), [VoxPoser (arXiv 2307.05973)](https://arxiv.org/abs/2307.05973), [GPT-4V(ision) for Robotics (arXiv 2311.12015)](https://arxiv.org/abs/2311.12015), [ReAct (arXiv 2210.03629)](https://arxiv.org/html/2210.03629v3)
-- [On the Vulnerability of LLM/VLM-Controlled Robotics (arXiv 2402.10340)](https://arxiv.org/pdf/2402.10340), [Safety Guardrails for LLM-Enabled Robots (arXiv 2503.07885)](https://arxiv.org/pdf/2503.07885)
-- [LiteLLM GitHub/docs](https://github.com/BerriAI/litellm)
-- HuggingFace free-tier rate-limit/cold-start behavior, synthesized from third-party overviews
+- Yu & Qiu 2026, arXiv:2606.08881, full HTML text (arxiv.org/html/2606.08881v1) — Pen Transfer success rates, 4-category failure taxonomy, Recovery Rate formula (VLA fine-tuning benchmark, not MLLM prompting)
+- "Language Models as Zero-Shot Trajectory Generators," arXiv:2310.11604 — zero-shot no-primitive LLM control pattern, calibration-error as a named failure class
+- "Embodied Chain-of-Thought Reasoning," arXiv:2407.08693 — staged reasoning-trace schema
+- Async VLA inference research, arxiv.org/html/2605.08168 — execution-horizon/prediction-horizon chunking tradeoff underlying the latency-fix pitfall
+- opencv/opencv issues #22901, #26371, #23368 — macOS camera-index instability and AVFoundation resolution-cap bug
 
 ### Tertiary (LOW confidence)
-- Target paper's exact failure-annotation adjudication procedure
-- Specific free HF pilot model name/hosting provider (changes weekly)
+- MALMM multi-agent LLM robotics pattern — referenced only from search-result summary, used solely to support an anti-feature argument
+- Data-provenance-in-robotics sourcing for Pitfall 7 — thin (patent filings, one blog post); the project's own history (camera bug caught only by manual review) is the stronger evidence
 
 ---
-*Research completed: 2026-09-15*
+*Research completed: 2026-09-24*
 *Ready for roadmap: yes*
