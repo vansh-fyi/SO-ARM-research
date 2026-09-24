@@ -109,6 +109,41 @@ def test_pop_validated_action_uses_stale_action_threshold_not_stale_observation(
     assert validated_action == raw_action
 
 
+def test_pop_validated_action_normalizes_pos_suffixed_keys_from_real_bridge(
+    mock_calibration_file,
+):
+    """The bug that crashed the last live episode at step 1: lerobot's real
+    SO101Follower.action_features convention returns `.pos`-suffixed keys
+    (e.g. "shoulder_pan.pos"), but safety_validator.validate_action() looks
+    up plain action_contract.JOINT_ORDER names -- so every joint failed the
+    `if joint not in raw_action: continue` membership check and
+    validated_action silently came back {}, with no exception and no flag.
+    That empty dict then made robot.send_action({f"{j}.pos": v for j, v in
+    validated_action.items()}) send an empty goal_pos, raising
+    `ValueError: max_relative_target keys must match those of
+    goal_present_pos.` from lerobot's ensure_safe_goal_position()."""
+    client = FakeBridgeClient()
+    pos_suffixed_action = {f"{joint}.pos": 12.5 for joint in JOINT_ORDER}
+    client.action_queue.put(FakeTimedAction(pos_suffixed_action, timestamp=time.time()))
+
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    current_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    validated_action, flags, raw_out, obs_age_s = robot_client.pop_validated_action(
+        client,
+        safety_validator.validate_action,
+        joint_limits_deg,
+        current_state,
+        prev_action=None,
+        dt_s=1.0,
+    )
+
+    assert validated_action != {}
+    assert validated_action == dict.fromkeys(JOINT_ORDER, 12.5)
+    assert set(raw_out.keys()) == set(JOINT_ORDER)
+    assert flags == []
+
+
 def test_pop_validated_action_empty_queue_holds_position(mock_calibration_file):
     client = FakeBridgeClient()  # empty action_queue
     joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
