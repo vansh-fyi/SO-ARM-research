@@ -269,26 +269,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LATENCY-04 | Phase 12 | Pending |
 | DEBT-02 | Phase 12 | Pending |
 | DEBT-03 | Phase 12 | Pending |
-| SAFETY-01 | Phase 13 | Pending |
-| DEBT-01 | Phase 13 | Pending |
-| CAMFIX-01 | Phase 14 | Pending |
-| CAMFIX-02 | Phase 14 | Pending |
-| CAMFIX-03 | Phase 14 | Pending |
-| PIPE-01 | Phase 15 | Pending |
-| VLAB-01 | Phase 15 | Pending |
-| VLAB-02 | Phase 15 | Pending |
-| VLAB-03 | Phase 15 | Pending |
-| VLAB-04 | Phase 15 | Pending |
-| PIPE-02 | Phase 16 | Pending |
-| MLLM-01 | Phase 16 | Pending |
-| MLLM-02 | Phase 16 | Pending |
-| MLLM-03 | Phase 16 | Pending |
-| MLLM-04 | Phase 16 | Pending |
-| MLLM-05 | Phase 16 | Pending |
-| MLLM-06 | Phase 16 | Pending |
-| MLLM-07 | Phase 16 | Pending |
-| EVAL-01 | Phase 17 | Pending |
-| EVAL-02 | Phase 17 | Pending |
+| SAFETY-01 | Phase 17 | Pending |
+| DEBT-01 | Phase 17 | Pending |
+| CAMFIX-01 | Phase 13 | Pending |
+| CAMFIX-02 | Phase 13 | Pending |
+| CAMFIX-03 | Phase 13 | Pending |
+| PIPE-01 | Phase 14 | Pending |
+| VLAB-01 | Phase 14 | Pending |
+| VLAB-02 | Phase 14 | Pending |
+| VLAB-03 | Phase 14 | Pending |
+| VLAB-04 | Phase 14 | Pending |
+| PIPE-02 | Phase 15 | Pending |
+| MLLM-01 | Phase 15 | Pending |
+| MLLM-02 | Phase 15 | Pending |
+| MLLM-03 | Phase 15 | Pending |
+| MLLM-04 | Phase 15 | Pending |
+| MLLM-05 | Phase 15 | Pending |
+| MLLM-06 | Phase 15 | Pending |
+| MLLM-07 | Phase 15 | Pending |
+| EVAL-01 | Phase 16 | Pending |
+| EVAL-02 | Phase 16 | Pending |
 
 **Coverage:**
 
@@ -301,4 +301,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-07-07*
-*Last updated: 2026-09-24 — mapped v2.1 requirements (26 total) to Phases 12-17 via roadmap creation: LATENCY-01..04 + DEBT-02/03 → Phase 12 (Bridge Tick-Latency Fix); SAFETY-01 + DEBT-01 → Phase 13 (Safety-Validator Cap Re-Tightening); CAMFIX-01..03 → Phase 14 (Camera Device Resolution Unification); PIPE-01 + VLAB-01..04 → Phase 15 (VLA-Style Pipeline & Backends); PIPE-02 + MLLM-01..07 → Phase 16 (MLLM-Style Pipeline & Backends); EVAL-01..02 → Phase 17 (Cross-Backend Pen Transfer Benchmark). Phases 12-14 form a strict chain; Phases 15 and 16 are independent/parallel-capable (different pipeline patterns); Phase 17 depends on both. The v2.1 VLA Backends requirements were renamed VLA-01..04 → VLAB-01..04 to remove a collision with v1's pre-existing VLA-01..04 (VLA Inference Pipeline, Phase 3).*
+*Last updated: 2026-09-24 — mapped v2.1 requirements (26 total) to Phases 12-17 via roadmap creation: LATENCY-01..04 + DEBT-02/03 → Phase 12 (Bridge Tick-Latency Fix); CAMFIX-01..03 → Phase 13 (Camera Device Resolution Unification); PIPE-01 + VLAB-01..04 → Phase 14 (VLA-Style Pipeline & Backends); PIPE-02 + MLLM-01..07 → Phase 15 (MLLM-Style Pipeline & Backends); EVAL-01..02 → Phase 16 (Cross-Backend Pen Transfer Benchmark); SAFETY-01 + DEBT-01 → Phase 17 (Safety-Validator Cap Re-Tightening). Phases 12-13 form a chain; Phases 14 and 15 are independent/parallel-capable (different pipeline patterns); Phase 16 depends on both. Phase 17 is deliberately sequenced LAST (resequenced 2026-09-24 per user decision) so loosened soft-margin safety caps stay in place through the whole experiment rather than being re-tightened before it. The v2.1 VLA Backends requirements were renamed VLA-01..04 → VLAB-01..04 to remove a collision with v1's pre-existing VLA-01..04 (VLA Inference Pipeline, Phase 3).*

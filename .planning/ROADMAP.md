@@ -8,7 +8,7 @@ Milestone v1.1 (Phases 7-9) fixes a UAT-surfaced benchmark flaw from Phase 6 (3 
 
 Milestone v2.0 (Phases 10-11) shifts focus from sim/VLA fine-tuning to real-hardware MLLM manipulation, narrowed 2026-09-17 to two concrete workstreams after a general-MLLM-prompting experiment failed. Phase 10 rebuilds the digital twin (URDF + MuJoCo XML) as a correct 1:1 kinematic match to the real SO-ARM101 — this is sim-side-only work, fixing the CoppeliaSim-exported URDF's floating-gripper bug and the mirrored-gripper-gears bug so any future sim-side verification is trustworthy. Phase 11 connects an open-source HuggingFace-hosted VLA to the *real* physical robot over the already-working `control/` LeRobot USB-serial bridge, builds a harness to capture its full reasoning trace, and records at least one full observed run to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design). **Phases 10 and 11 are independent and parallel-capable, not a sequential chain**: Phase 11's VLA experiment runs entirely on real hardware via `control/`'s existing LeRobot bridge and does not consume Phase 10's sim-twin outputs — the digital-twin fix only matters for future sim-side verification/re-training, not for driving the real robot. They are numbered sequentially here (10 then 11) purely by roadmap convention, not by dependency; either can be planned/executed first, or both in parallel, per user preference.
 
-Milestone v2.1 (Phases 12-17) extends Phase 11's proven VLA-bridge infrastructure rather than replacing it. Three small, mechanical fix phases land first: Phase 12 closes the tick-latency bug diagnosed but deliberately left unfixed in `FINDINGS.md` (the bridge resends a full camera observation to Colab on every control tick even while draining an already-fetched action chunk, yielding only 1/60 real actions in Phase 11's episode), and sweeps two small unrelated tech-debt items along with it. Phase 13 re-tightens `safety_validator.py`'s caps — loosened ~8-10x for Phase 11's one-off test — back toward their conservative defaults, live-verified at each step, and pins the cross-phase `WRIST_ROLL_LIMIT_DEG` constant to its Phase 10 source of truth. Phase 14 unifies two divergent camera-resolution code paths so recorded footage reliably shows the robot workspace, not the laptop webcam. With that infrastructure trustworthy, Phases 15 and 16 build out two independent, parallel-capable `ActionSource` pipeline patterns and their backends: Phase 15 is VLA-style (native trained action-output — Gemini Robotics, π0/π0.5, Wall-X, ACT, alongside the already-working SmolVLA), Phase 16 is MLLM-style (raw-JSON reasoning prompt, no movement primitives — a free HF-hosted reasoning model, Claude, and GPT). Phase 17 closes the milestone by running all 8 backends on one live Pen Transfer episode each and comparing them directly using Yu & Qiu 2026's failure taxonomy — the milestone's core research question.
+Milestone v2.1 (Phases 12-17) extends Phase 11's proven VLA-bridge infrastructure rather than replacing it. Phase 12 closes the tick-latency bug diagnosed but deliberately left unfixed in `FINDINGS.md` (the bridge resends a full camera observation to Colab on every control tick even while draining an already-fetched action chunk, yielding only 1/60 real actions in Phase 11's episode), and sweeps two small unrelated tech-debt items along with it. Phase 13 unifies two divergent camera-resolution code paths so recorded footage reliably shows the robot workspace, not the laptop webcam. With that infrastructure trustworthy, Phases 14 and 15 build out two independent, parallel-capable `ActionSource` pipeline patterns and their backends: Phase 14 is VLA-style (native trained action-output — Gemini Robotics, π0/π0.5, Wall-X, ACT, alongside the already-working SmolVLA), Phase 15 is MLLM-style (raw-JSON reasoning prompt, no movement primitives — a free HF-hosted reasoning model, Claude, and GPT). Phase 16 runs all 8 backends on one live Pen Transfer episode each and compares them directly using Yu & Qiu 2026's failure taxonomy — the milestone's core research question. Phase 17 closes the milestone by re-tightening `safety_validator.py`'s soft-margin caps — loosened ~8-10x for Phase 11's one-off test — back toward their conservative defaults, live-verified at each step, and pins the cross-phase `WRIST_ROLL_LIMIT_DEG` constant to its Phase 10 source of truth. Phase 17 is deliberately sequenced LAST, not right after the latency fix: per an explicit user decision (2026-09-24), the loosened soft margins stay in place through the entire 8-backend experiment so they don't clip or discard actions in a way that masks what each model under test is actually doing — particularly relevant for observing genuine MLLM raw-autonomy behavior. Hard limits (absolute joint-range clamping, NaN/inf/malformed rejection, e-stop) are never loosened and stay active unmodified throughout all of Phases 12-17.
 
 ## Phases
 
@@ -21,7 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Execution Order (v1 / v1.1):** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
 **Execution Order (v2.0):** (10 ∥ 11) — independent, parallel-capable
-**Execution Order (v2.1):** 12 → 14 → (15 ∥ 16) → 17 → 13 (safety-cap re-tightening deliberately moved last, 2026-09-24 — see Phase 13)
+**Execution Order (v2.1):** 12 → 13 → (14 ∥ 15) → 16 → 17 (safety-cap re-tightening deliberately moved last, 2026-09-24 — see Phase 17)
 
 - [x] **Phase 1: Colab Environment Setup** - Install all dependencies conflict-free, verify EGL headless rendering, and confirm OpenVLA-OFT loads on GPU (4 plans) (closed 2026-07-10 — UAT 4/4 PASS after ENV-03 dependency fixes baked into notebook)
 - [x] **Phase 2: SOARM Robot Integration** - Build and validate SOARM ManipulatorModel and MJCF, register in LIBERO, configure BDDL tasks (completed 2026-07-18)
@@ -35,11 +35,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Digital-Twin Fidelity** - Rebuild the URDF and MuJoCo XML as a correct, complete, 1:1 kinematic match to the real SO-ARM101 (gripper properly chained, wrist_roll + gripper joints restored, correct directions/limits, in-repo mesh paths) (completed 2026-09-19)
 - [x] **Phase 11: VLA Hardware Connection** - Connect an SO-101-native joint-action VLA (SmolVLA) to the real SO-ARM101 over the existing LeRobot bridge with a safety validator and complete per-step I/O logging, and record at least one full observed run (completed 2026-09-24)
 - [ ] **Phase 12: Bridge Tick-Latency Fix** - Fix the observation-resend-per-tick root cause so the bridge only requests fresh inference when the local action queue is empty/near-empty, with real measured latency logging and an in-flight-request guard; sweep 2 small pre-existing tech-debt items alongside it
-- [ ] **Phase 14: Camera Device Resolution Unification** - Unify the model's inference-input and `IOLogger` recording camera paths behind one shared, name-based resolution helper, and log client-side frame provenance
-- [ ] **Phase 15: VLA-Style Pipeline & Backends** - Build the shared VLA-style `ActionSource` pattern and onboard 4 new native-action VLA backends (Gemini Robotics, π0/π0.5, Wall-X, ACT) driving the real SO-ARM101
-- [ ] **Phase 16: MLLM-Style Pipeline & Backends** - Build the shared MLLM-style `ActionSource` pattern (prompt construction, schema, reasoning-trace capture) and onboard 3 raw-JSON MLLM backends (HF reasoning model, Claude, GPT) with no movement primitives
-- [ ] **Phase 17: Cross-Backend Pen Transfer Benchmark** - Run all 8 backends on one live Pen Transfer episode each and directly compare them using Yu & Qiu 2026's failure taxonomy
-- [ ] **Phase 13: Safety-Validator Cap Re-Tightening** - Deliberately last (resequenced 2026-09-24 per user decision): incrementally restore `safety_validator.py`'s soft-margin caps toward their conservative defaults now that all 8 backends' episodes are observed, live-verified at each step, and pin `WRIST_ROLL_LIMIT_DEG` to its Phase 10 source of truth. Hard limits (absolute joint clamping, NaN/inf rejection, e-stop) stay active unmodified throughout Phases 12-17 regardless.
+- [ ] **Phase 13: Camera Device Resolution Unification** - Unify the model's inference-input and `IOLogger` recording camera paths behind one shared, name-based resolution helper, and log client-side frame provenance
+- [ ] **Phase 14: VLA-Style Pipeline & Backends** - Build the shared VLA-style `ActionSource` pattern and onboard 4 new native-action VLA backends (Gemini Robotics, π0/π0.5, Wall-X, ACT) driving the real SO-ARM101
+- [ ] **Phase 15: MLLM-Style Pipeline & Backends** - Build the shared MLLM-style `ActionSource` pattern (prompt construction, schema, reasoning-trace capture) and onboard 3 raw-JSON MLLM backends (HF reasoning model, Claude, GPT) with no movement primitives
+- [ ] **Phase 16: Cross-Backend Pen Transfer Benchmark** - Run all 8 backends on one live Pen Transfer episode each and directly compare them using Yu & Qiu 2026's failure taxonomy
+- [ ] **Phase 17: Safety-Validator Cap Re-Tightening** - Deliberately last (resequenced 2026-09-24 per user decision): incrementally restore `safety_validator.py`'s soft-margin caps toward their conservative defaults now that all 8 backends' episodes are observed, live-verified at each step, and pin `WRIST_ROLL_LIMIT_DEG` to its Phase 10 source of truth. Hard limits (absolute joint clamping, NaN/inf rejection, e-stop) stay active unmodified throughout Phases 12-17 regardless.
 
 ## Phase Details
 
@@ -388,11 +388,11 @@ Plans:
 
 **Plans**: TBD
 
-### Phase 14: Camera Device Resolution Unification
+### Phase 13: Camera Device Resolution Unification
 
 **Goal**: A single shared, name-based camera-resolution helper is used by both the model's inference-input path and the `IOLogger` recording path (one `StereoSplitCamera` instance, not two independent opens), so `camera_overhead` recordings reliably show the robot workspace instead of the laptop webcam, and the bridge logs client-side provenance of what it actually sent to Colab per step.
 **Mode:** mvp
-**Depends on**: Phase 12 (technically independent of Phase 12's control-loop work — touches only camera-opening code — but sequenced directly after it since Phase 13's cap re-tightening has been moved to the end of this milestone; see Phase 13 below)
+**Depends on**: Phase 12 (technically independent of Phase 12's control-loop work — touches only camera-opening code — but sequenced directly after it since Phase 17's cap re-tightening has been moved to the end of this milestone; see Phase 17 below)
 **Requirements**: CAMFIX-01, CAMFIX-02, CAMFIX-03
 **Context/Notes**:
 
@@ -409,18 +409,18 @@ Plans:
 
 **Plans**: TBD
 
-### Phase 15: VLA-Style Pipeline & Backends
+### Phase 14: VLA-Style Pipeline & Backends
 
 **Goal**: A consistent VLA-style `ActionSource` pattern exists that the already-working SmolVLA integration fits without modification, and four new native-action VLA backends — Gemini Robotics, π0/π0.5, Wall-X, and ACT — each drive the real SO-ARM101 through it, reusing the shared control loop, safety validator, and I/O logger unchanged.
 **Mode:** mvp
-**Depends on**: Phase 14 (needs the corrected camera pipeline and re-tightened safety caps as trustworthy infrastructure before onboarding new backends)
+**Depends on**: Phase 13 (needs the corrected camera pipeline as trustworthy infrastructure before onboarding new backends; safety-cap re-tightening is deliberately deferred to Phase 17/last, not a prerequisite here)
 **Requirements**: PIPE-01, VLAB-01, VLAB-02, VLAB-03, VLAB-04
 **Context/Notes**:
 
 - Phase 11 already proved the `ActionSource` Protocol seam by swapping `ScriptedActionSource` → `BridgeActionSource` with zero control-loop changes; this phase applies the same pattern to 4 more backends, not new infrastructure.
 - Each backend integration is independently live-hardware-verifiable (at least one observed action per backend) — do not batch all 4 behind a single end-to-end test; verify incrementally as each lands.
 - No backend-specific safety or logging code paths — every new backend must flow through the unmodified `safety_validator.py`/`io_logger.py`/`action_contract.py` trio, same as SmolVLA.
-- Parallel-capable with Phase 16 (independent pipeline pattern, different backend set) once Phase 14 lands.
+- Parallel-capable with Phase 15 (independent pipeline pattern, different backend set) once Phase 13 lands.
 
 **Success Criteria** (what must be TRUE):
 
@@ -431,11 +431,11 @@ Plans:
 
 **Plans**: TBD
 
-### Phase 16: MLLM-Style Pipeline & Backends
+### Phase 15: MLLM-Style Pipeline & Backends
 
 **Goal**: A consistent MLLM-style `ActionSource` pattern (shared prompt construction, output JSON schema generated from `action_contract.py`, staged reasoning-trace capture) exists, and three raw-JSON-reasoning MLLM backends — a free/cheap HuggingFace-hosted reasoning model, Claude, and GPT — each drive the real SO-ARM101 through it with no pre-built movement primitives.
 **Mode:** mvp
-**Depends on**: Phase 12 (action-chunk sizing needs Phase 12's real measured latency/timing data) and Phase 14 (needs the corrected camera pipeline for trustworthy vision input)
+**Depends on**: Phase 12 (action-chunk sizing needs Phase 12's real measured latency/timing data) and Phase 13 (needs the corrected camera pipeline for trustworthy vision input)
 **Requirements**: PIPE-02, MLLM-01, MLLM-02, MLLM-03, MLLM-04, MLLM-05, MLLM-06, MLLM-07
 **Context/Notes**:
 
@@ -443,7 +443,7 @@ Plans:
 - Use structured output (an explicit JSON schema), not tool-use/function-calling — tool-use would reintroduce the pre-built-primitive abstraction this milestone explicitly rules out.
 - Explicit anti-features per research: no movement-primitive helper functions, no multi-agent decomposition, no few-shot in-context examples, no code-generation-as-policy, no per-tick MLLM calls, no fine-tuning the MLLM.
 - A malformed/parse-failing action within a chunk must hold the robot's current position, never zero-fill or crash the episode (MLLM-07) — with no primitives, every value in a chunk is a fresh parse-failure opportunity.
-- Parallel-capable with Phase 15 (independent pipeline pattern, different backend set) once Phases 12 and 14 land.
+- Parallel-capable with Phase 14 (independent pipeline pattern, different backend set) once Phases 12 and 13 land.
 
 **Success Criteria** (what must be TRUE):
 
@@ -455,11 +455,11 @@ Plans:
 
 **Plans**: TBD
 
-### Phase 17: Cross-Backend Pen Transfer Benchmark
+### Phase 16: Cross-Backend Pen Transfer Benchmark
 
 **Goal**: All 8 action-source backends (SmolVLA baseline + Gemini Robotics + π0/π0.5 + Wall-X + ACT + HF reasoning model + Claude + GPT) are run on one live Pen Transfer episode each and directly compared, closing the milestone's core research question of how a general reasoning model performs as a raw-autonomy controller relative to trained VLA policies.
 **Mode:** mvp
-**Depends on**: Phase 15 and Phase 16 (needs both pipeline patterns' backends built and live-verified)
+**Depends on**: Phase 14 and Phase 15 (needs both pipeline patterns' backends built and live-verified)
 **Requirements**: EVAL-01, EVAL-02
 **Context/Notes**:
 
@@ -475,15 +475,15 @@ Plans:
 
 **Plans**: TBD
 
-### Phase 13: Safety-Validator Cap Re-Tightening
+### Phase 17: Safety-Validator Cap Re-Tightening
 
 **Goal**: `safety_validator.py`'s soft-margin caps (`MAX_RELATIVE_TARGET_DEG`, `MAX_VELOCITY_DEG_PER_S`, `STALE_OBSERVATION_S`, `STALE_ACTION_S`), loosened ~8-10x for Phase 11's one-off live test, are incrementally restored toward their original conservative defaults now that all 8 backends' Pen Transfer episodes have been observed — deliberately sequenced last, not right after the latency fix, so the loosened margins don't clip or discard real actions during the experiment phases and mask what each model actually does. The cross-phase `WRIST_ROLL_LIMIT_DEG` constant is pinned to its Phase 10 source of truth in the same phase.
 **Mode:** mvp
-**Depends on**: Phase 17 (deliberately last — resequenced 2026-09-24 per explicit user decision: keep soft margins loose through the entire 8-backend experiment so they don't interfere with observing genuine model behavior, then tighten once results are in)
+**Depends on**: Phase 16 (deliberately last — resequenced 2026-09-24 per explicit user decision: keep soft margins loose through the entire 8-backend experiment so they don't interfere with observing genuine model behavior, then tighten once results are in)
 **Requirements**: SAFETY-01, DEBT-01
 **Context/Notes**:
 
-- **Resequencing decision (2026-09-24):** originally planned immediately after Phase 12 (the latency fix); user explicitly requested the soft-margin caps stay loose through Phases 14-17 because tight per-step/velocity/staleness caps can clip or discard actions in ways that mask what a model under test is actually trying to do — particularly relevant for the MLLM backends (Phase 16), where observing genuine (if imperfect) raw-autonomy behavior is the point of the experiment.
+- **Resequencing decision (2026-09-24):** originally planned immediately after Phase 12 (the latency fix); user explicitly requested the soft-margin caps stay loose through the camera-fix and all-backend experiment phases because tight per-step/velocity/staleness caps can clip or discard actions in ways that mask what a model under test is actually trying to do — particularly relevant for the MLLM backends, where observing genuine (if imperfect) raw-autonomy behavior is the point of the experiment.
 - **Hard limits are NOT part of this loosening and were never in scope for it**: absolute joint-limit clamping, NaN/inf/malformed-action rejection, and e-stop stay active and unmodified for every episode across all 8 backends, throughout Phases 12-17 — these protect the physical servos/mechanics, not the experiment's behavior, and loosening them was explicitly declined.
 - Mechanical, well-understood config change; the required discipline (live-hardware re-verification at each step) is already fully specified in `FINDINGS.md` and `research/SUMMARY.md` — a standard pattern, not a design task.
 - DEBT-01 fits here because `WRIST_ROLL_LIMIT_DEG` in `action_contract.py` is itself a safety-relevant constant consumed by this same validator.
@@ -501,7 +501,7 @@ Plans:
 
 **Execution Order (v1 / v1.1):** 1 → 2 → 3 → (4 ∥ 5) → 6 → 7 → 8 → 9
 **Execution Order (v2.0):** (10 ∥ 11) — independent, parallel-capable
-**Execution Order (v2.1):** 12 → 14 → (15 ∥ 16) → 17 → 13 (safety-cap re-tightening deliberately moved last, 2026-09-24 — see Phase 13)
+**Execution Order (v2.1):** 12 → 13 → (14 ∥ 15) → 16 → 17 (safety-cap re-tightening deliberately moved last, 2026-09-24 — see Phase 17)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|

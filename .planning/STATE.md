@@ -20,7 +20,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** A researcher types a task prompt and watches SOARM execute it in a LIBERO simulation — the loop from language to embodied action.
-**Current focus:** Milestone v2.1 (MLLM Raw-Autonomy Benchmark) — roadmap created, ready to plan Phase 12. Scope: bridge tick-latency fix → safety cap re-tightening → camera device-resolution fix → two parallel-capable pipeline-architecture phases (VLA-style backends, MLLM-style backends) → cross-backend Pen Transfer benchmark.
+**Current focus:** Milestone v2.1 (MLLM Raw-Autonomy Benchmark) — roadmap created, ready to plan Phase 12. Scope: bridge tick-latency fix → camera device-resolution fix → two parallel-capable pipeline-architecture phases (VLA-style backends, MLLM-style backends) → cross-backend Pen Transfer benchmark → safety-cap re-tightening (deliberately last).
 
 ## Current Position
 
@@ -63,8 +63,8 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- **v2.1 roadmap (2026-09-24):** Phases 12-17 derived from the 26 v2.1 requirements (LATENCY ×4, SAFETY ×1, CAMFIX ×3, PIPE ×2, VLA ×4, MLLM ×7, EVAL ×2, DEBT ×3). Phase 12 (latency fix + 2 debt items) → Phase 13 (safety re-tightening + wrist_roll debt pin) → Phase 14 (camera resolution unification) form a strict, live-hardware-verified chain. Phases 15 (VLA-style pipeline + 4 backends) and 16 (MLLM-style pipeline + 3 backends) are **independent and parallel-capable** — different `ActionSource` pattern, different backend set — both gated on Phase 14's trustworthy camera/safety infrastructure, with Phase 16 additionally gated on Phase 12's real latency data for chunk sizing. Phase 17 (8-backend Pen Transfer comparison) depends on both. Full rationale in ROADMAP.md Overview.
-- **Requirement-ID collision found during roadmap creation (2026-09-24):** v2.1's `VLA-01..04` (VLA Backends, Phase 15) reuse the same IDs as v1's `VLA-01..04` (VLA Inference Pipeline, Phase 3) — unintentional authoring duplication in REQUIREMENTS.md, not a re-scoping. Both occurrences disambiguated in REQUIREMENTS.md's Traceability table with explicit notes; not renamed (out of scope for a roadmap pass). Flag for a future doc cleanup: rename the v2.1 set (e.g. `VLAB-01..04`).
+- **v2.1 roadmap (2026-09-24):** Phases 12-17 derived from the 26 v2.1 requirements (LATENCY ×4, SAFETY ×1, CAMFIX ×3, PIPE ×2, VLAB ×4, MLLM ×7, EVAL ×2, DEBT ×3). Phase 12 (latency fix + 2 debt items) → Phase 13 (camera resolution unification) form a chain. Phases 14 (VLA-style pipeline + 4 backends) and 15 (MLLM-style pipeline + 3 backends) are **independent and parallel-capable** — different `ActionSource` pattern, different backend set — both gated on Phase 13's trustworthy camera pipeline, with Phase 15 additionally gated on Phase 12's real latency data for chunk sizing. Phase 16 (8-backend Pen Transfer comparison) depends on both 14 and 15. Phase 17 (safety-cap re-tightening + wrist_roll debt pin) is deliberately sequenced LAST — resequenced 2026-09-24 per explicit user decision to keep loosened soft-margin caps in place through the whole experiment so they don't mask genuine model behavior; hard limits (absolute joint clamping, NaN/inf rejection, e-stop) stay on unmodified throughout regardless. Full rationale in ROADMAP.md Overview.
+- **Requirement-ID collision found during roadmap creation, fixed same session (2026-09-24):** v2.1's VLA Backends requirements (Phase 14) originally reused v1's `VLA-01..04` IDs (VLA Inference Pipeline, Phase 3) — unintentional authoring duplication, not a re-scoping. Renamed to `VLAB-01..04` in REQUIREMENTS.md/ROADMAP.md to remove the collision.
 - **Phase 10 established model (2026-09-20):** User accepted the complete
   Coppelia-aligned assembly. Black housing, yellow jaws, `[0, 0.036]` joint and
   actuator ranges, `+1` opens / `-1` closes, mechanical jaw equality, ~88°
@@ -84,12 +84,12 @@ None yet for v2.1 — begin by planning Phase 12 (`/gsd-plan-phase 12`).
 
 ### Blockers/Concerns
 
-- **v2.1 Phase 12 is a hard prerequisite for Phases 15/16/17** — no new live-hardware benchmark work should start until the tick-latency root cause (only 1/60 real actions in Phase 11's episode) is fixed and measured.
+- **v2.1 Phase 12 is a hard prerequisite for the rest of the milestone (13 → 14/15 → 16 → 17)** — no new live-hardware benchmark work should start until the tick-latency root cause (only 1/60 real actions in Phase 11's episode) is fixed and measured.
 - 04 embodiment note (still binding for any new v2.1 task/object work): SO-ARM101 is a small ~500g-payload desktop arm; objects ≤84mm graspable, objects AND targets within ~0.45m reach, avoid the base's forward centerline collision corridor.
 - 05 PRE-EXISTING TEST DEBT (unrelated to v2.1, still open): `test_replay.py::test_verify_full_obs_regeneration_passes_on_04_02_output` pixel-mismatch failure, not investigated.
 - 10 RISK — RESOLVED (2026-09-24): [huggingface/lerobot#2210](https://github.com/huggingface/lerobot/issues/2210) did NOT reproduce in Phase 11's live episode.
 - 11/v2.1 OPEN (root cause diagnosed, fix scoped to Phase 12, not yet implemented): Phase 11's live episode yielded only 1/60 (1.7%) real executed VLA actions because `control_loop_observation()` resends a full camera observation to Colab on every control tick instead of gating on queue-empty. See `control/vla_bridge/FINDINGS.md` §5 and `.planning/research/SUMMARY.md` for the full diagnosis and fix direction (wire up `lerobot`'s existing `_ready_to_send_observation()` gate).
-- v2.1 camera bug (root cause diagnosed, fix scoped to Phase 14, not yet implemented): `camera_overhead` recordings in both `vla_episode_001` and the Phase 11 go/no-go episode are confirmed to be the laptop webcam, not the robot workspace — recording path never got the name-based camera-resolution fix already applied to the inference-input path.
+- v2.1 camera bug (root cause diagnosed, fix scoped to Phase 13, not yet implemented): `camera_overhead` recordings in both `vla_episode_001` and the Phase 11 go/no-go episode are confirmed to be the laptop webcam, not the robot workspace — recording path never got the name-based camera-resolution fix already applied to the inference-input path.
 
 ### Quick Tasks Completed
 
