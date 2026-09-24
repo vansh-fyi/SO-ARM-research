@@ -204,6 +204,21 @@ def pop_validated_action(
     synchronous threshold, which a real cloud round-trip (tens of seconds,
     worse on a cold-started policy server) can never meet, permanently
     holding position regardless of whether real actions were arriving.
+
+    Normalizes `.pos`-suffixed keys out of `raw_action` immediately after
+    `_action_tensor_to_action_dict()`, before validation. lerobot's real
+    convention (`SO101Follower.action_features`, confirmed by reading the
+    installed `lerobot==0.6.1` source) returns keys like `"shoulder_pan.pos"`,
+    while this project's convention everywhere else (`action_contract.
+    JOINT_ORDER`, `safety_validator.validate_action()`'s lookups) is plain
+    names like `"shoulder_pan"`. Left unnormalized, every joint failed
+    `validate_action()`'s `if joint not in raw_action: continue` membership
+    check, so `validated_action` silently came back `{}` for every real
+    bridge-returned action -- no exception, no flag -- which crashed the
+    last live episode at step 1 (`robot.send_action({f"{j}.pos": v for j, v
+    in validated_action.items()})` sent an empty `goal_pos`, raising
+    `ValueError: max_relative_target keys must match those of
+    goal_present_pos.` from lerobot's `ensure_safe_goal_position()`).
     """
     with client.action_queue_lock:
         try:
@@ -212,6 +227,7 @@ def pop_validated_action(
             return dict(current_state), ["no action available, holding position"], {}, 0.0
 
     raw_action = client._action_tensor_to_action_dict(timed_action.get_action())
+    raw_action = {key.removesuffix(".pos"): value for key, value in raw_action.items()}
     # Network round-trip staleness -- feeds safety_validator's
     # STALE_ACTION_S/STALE_OBSERVATION_S holds.
     obs_age_s = time.time() - timed_action.get_timestamp()
