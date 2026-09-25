@@ -43,6 +43,8 @@ class FakeBridgeClient:
     def __init__(self):
         self.action_queue = queue.Queue()
         self.action_queue_lock = threading.Lock()
+        self.latest_action_lock = threading.Lock()
+        self.latest_action = -1
 
     def _action_tensor_to_action_dict(self, action_tensor):
         return action_tensor
@@ -162,6 +164,52 @@ def test_pop_validated_action_empty_queue_holds_position(mock_calibration_file):
     assert flags == ["no action available, holding position"]
     assert raw_out == {}
     assert obs_age_s == 0.0
+
+
+def test_pop_validated_action_updates_latest_action_on_successful_pop(mock_calibration_file):
+    """LATENCY-02: after a successful pop, client.latest_action must reflect
+    the popped action's timestep, mirroring the vendored lerobot library's
+    own control_loop_action() pattern, so _ready_to_send_observation()'s
+    queue-size gate and the library's staleness dedup logic both function as
+    designed."""
+    client = FakeBridgeClient()
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    client.action_queue.put(FakeTimedAction(raw_action, timestamp=time.time(), timestep=7))
+
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    current_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    robot_client.pop_validated_action(
+        client,
+        safety_validator.validate_action,
+        joint_limits_deg,
+        current_state,
+        prev_action=None,
+        dt_s=1.0,
+    )
+
+    assert client.latest_action == 7
+
+
+def test_pop_validated_action_leaves_latest_action_unchanged_on_empty_queue(mock_calibration_file):
+    """LATENCY-02 regression: the empty-queue early-return path must not
+    touch client.latest_action at all."""
+    client = FakeBridgeClient()  # empty action_queue
+    client.latest_action = 3  # pre-call value
+
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    current_state = dict.fromkeys(JOINT_ORDER, 1.0)
+
+    robot_client.pop_validated_action(
+        client,
+        safety_validator.validate_action,
+        joint_limits_deg,
+        current_state,
+        prev_action=None,
+        dt_s=1.0,
+    )
+
+    assert client.latest_action == 3
 
 
 # --- connect_bridge ----------------------------------------------------------
@@ -386,6 +434,8 @@ class FakeClientReturnsAction:
     def __init__(self, action, ready_to_send: bool = True):
         self.action_queue = queue.Queue()
         self.action_queue_lock = threading.Lock()
+        self.latest_action_lock = threading.Lock()
+        self.latest_action = -1
         self.action_queue.put(FakeTimedAction(action, timestamp=time.time()))
         self._ready_to_send = ready_to_send
         self.control_loop_observation_call_count = 0

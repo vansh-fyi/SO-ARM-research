@@ -226,6 +226,9 @@ def pop_validated_action(
         except queue.Empty:
             return dict(current_state), ["no action available, holding position"], {}, 0.0
 
+    with client.latest_action_lock:
+        client.latest_action = timed_action.get_timestep()
+
     raw_action = client._action_tensor_to_action_dict(timed_action.get_action())
     raw_action = {key.removesuffix(".pos"): value for key, value in raw_action.items()}
     # Network round-trip staleness -- feeds safety_validator's
