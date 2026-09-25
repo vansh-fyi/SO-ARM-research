@@ -269,32 +269,44 @@ class BridgeActionSource:
         self.joint_limits_deg = joint_limits_deg
         self._dt_s = dt_s
         self._last_action: dict[str, float] | None = None
+        self._inflight_lock = threading.Lock()
 
     def get_action(
         self, joint_state: dict[str, float], instruction: str
     ) -> tuple[dict[str, float], str]:
-        if self.client._ready_to_send_observation():
+        # LATENCY-04: defensive-only guard (per CONTEXT.md D-05) -- get_action()
+        # is called synchronously, once per tick, from a single-threaded
+        # control loop today, so no active overlap bug exists. This structurally
+        # prevents a *future* change (e.g. adding a call timeout) from silently
+        # reintroducing an overlapping in-flight request.
+        if not self._inflight_lock.acquire(blocking=False):
+            return joint_state, f"{self.checkpoint}@bridge-request-inflight-holding-position"
+
+        try:
+            if self.client._ready_to_send_observation():
+                try:
+                    self.client.control_loop_observation(task=instruction)
+                except (grpc.RpcError, ConnectionError, RuntimeError):
+                    return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
+
             try:
-                self.client.control_loop_observation(task=instruction)
+                validated_action, flags, _raw_action, _obs_age_s = pop_validated_action(
+                    self.client,
+                    safety_validator.validate_action,
+                    self.joint_limits_deg,
+                    joint_state,
+                    self._last_action,
+                    self._dt_s,
+                )
             except (grpc.RpcError, ConnectionError, RuntimeError):
                 return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
 
-        try:
-            validated_action, flags, _raw_action, _obs_age_s = pop_validated_action(
-                self.client,
-                safety_validator.validate_action,
-                self.joint_limits_deg,
-                joint_state,
-                self._last_action,
-                self._dt_s,
-            )
-        except (grpc.RpcError, ConnectionError, RuntimeError):
-            return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
-
-        self._last_action = validated_action
-        if flags:
-            return validated_action, f"{self.checkpoint}@{'+'.join(flags)}"
-        return validated_action, f"{self.checkpoint}@unknown"
+            self._last_action = validated_action
+            if flags:
+                return validated_action, f"{self.checkpoint}@{'+'.join(flags)}"
+            return validated_action, f"{self.checkpoint}@unknown"
+        finally:
+            self._inflight_lock.release()
 
 
 __all__ = [

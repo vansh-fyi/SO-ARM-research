@@ -502,3 +502,92 @@ def test_bridge_action_source_sends_observation_when_gate_is_true(mock_calibrati
     source.get_action(joint_state, "Pick the red cube and place it in the bowl")
 
     assert client.control_loop_observation_call_count == 1
+
+
+# --- BridgeActionSource in-flight guard (LATENCY-04) -------------------------
+
+
+class FakeClientBlocksOnObservation:
+    """Simulates an in-flight bridge call: control_loop_observation() blocks
+    on a threading.Event until the test releases it, so a second, concurrent
+    get_action() call can be exercised from the main test thread while the
+    first is still "in flight" on a background thread."""
+
+    def __init__(self, action, entered_event: threading.Event, release_event: threading.Event):
+        self.action_queue = queue.Queue()
+        self.action_queue_lock = threading.Lock()
+        self.latest_action_lock = threading.Lock()
+        self.latest_action = -1
+        self.action_queue.put(FakeTimedAction(action, timestamp=time.time()))
+        self._entered_event = entered_event
+        self._release_event = release_event
+
+    def _ready_to_send_observation(self) -> bool:
+        return True
+
+    def control_loop_observation(self, task: str):
+        self._entered_event.set()
+        self._release_event.wait(timeout=5.0)
+        return {"task": task}
+
+    def _action_tensor_to_action_dict(self, action_tensor):
+        return action_tensor
+
+
+def test_bridge_action_source_inflight_guard_rejects_concurrent_get_action_call(mock_calibration_file):
+    """LATENCY-04: while a first get_action() call is in flight (blocked
+    inside control_loop_observation()), a second, concurrent get_action()
+    call on the same BridgeActionSource must return immediately with the
+    in-flight holding-position flag, without touching the client at all."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    entered_event = threading.Event()
+    release_event = threading.Event()
+    client = FakeClientBlocksOnObservation(raw_action, entered_event, release_event)
+    source = robot_client.BridgeActionSource(
+        client, checkpoint="victorvanhalst/smolvla_so101_cube", joint_limits_deg=joint_limits_deg
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    first_call_result: dict = {}
+
+    def first_call():
+        action, model_version = source.get_action(joint_state, "Pick the red cube")
+        first_call_result["action"] = action
+        first_call_result["model_version"] = model_version
+
+    first_thread = threading.Thread(target=first_call)
+    first_thread.start()
+    assert entered_event.wait(timeout=2.0), "first call never entered control_loop_observation()"
+
+    # Second call arrives while the first is still in flight -- must return
+    # immediately (not block) with the distinct in-flight flag.
+    second_action, second_model_version = source.get_action(joint_state, "Pick the red cube")
+
+    release_event.set()
+    first_thread.join(timeout=2.0)
+    assert not first_thread.is_alive()
+
+    assert second_action == joint_state
+    assert second_model_version == (
+        "victorvanhalst/smolvla_so101_cube@bridge-request-inflight-holding-position"
+    )
+    assert first_call_result["model_version"] == "victorvanhalst/smolvla_so101_cube@unknown"
+
+
+def test_bridge_action_source_inflight_guard_never_rejects_sequential_calls(mock_calibration_file):
+    """Regression: the in-flight guard must never reject a call that arrives
+    after the previous one has fully returned -- normal, non-overlapping
+    sequential get_action() calls behave exactly as before this change."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    client = FakeClientReturnsAction(raw_action)
+    source = robot_client.BridgeActionSource(
+        client, checkpoint="victorvanhalst/smolvla_so101_cube", joint_limits_deg=joint_limits_deg
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    for _ in range(3):
+        client.action_queue.put(FakeTimedAction(raw_action, timestamp=time.time()))
+        _action, model_version = source.get_action(joint_state, "Pick the red cube")
+        assert model_version == "victorvanhalst/smolvla_so101_cube@unknown"
