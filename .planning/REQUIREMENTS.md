@@ -189,8 +189,8 @@ Requirements for milestone v2.1 (MLLM Raw-Autonomy Benchmark). Builds on v2.0's 
 ### Tech Debt (from v2.0 audit)
 
 - [ ] **DEBT-01**: `action_contract.py`'s `WRIST_ROLL_LIMIT_DEG` is pinned to Phase 10's `robot.xml` wrist_roll value with an automated test (or SHA-pinned comment)
-- [ ] **DEBT-02**: `soarm_gripper.py`'s `format_action` docstring is corrected (currently mislabels OPEN/CLOSE direction post-polarity-fix)
-- [ ] **DEBT-03**: The untracked `So-101/` and `coppelia/` mesh asset directories are added to git so the URDF's relative mesh references resolve on a fresh clone
+- [X] **DEBT-02**: `soarm_gripper.py`'s `format_action` docstring is corrected (currently mislabels OPEN/CLOSE direction post-polarity-fix) — Not applicable: already fixed in commit `1bc5f54` (2026-09-20), predating this phase's scoping. Docstring already reads "External +1 opens and -1 closes", matching the code. Confirmed via `git log` and direct file read during Phase 12 plan-phase (2026-09-25); see `12-CONTEXT.md` D-04.
+- [X] **DEBT-03**: The untracked `So-101/` and `coppelia/` mesh asset directories are added to git so the URDF's relative mesh references resolve on a fresh clone — Not applicable: `So-101/` is already fully tracked (39 files); no `coppelia/` mesh directory exists or is referenced by the URDF. "Coppelia" refers to an unrelated one-time local diagnostic reference (see `diagnostics/COPPELIA_MUJOCO_ALIGNMENT.md`). Confirmed during Phase 12 discuss-phase (2026-09-25); see `12-CONTEXT.md` D-03.
 
 ## Out of Scope
 
@@ -267,8 +267,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LATENCY-02 | Phase 12 | Pending |
 | LATENCY-03 | Phase 12 | Pending |
 | LATENCY-04 | Phase 12 | Pending |
-| DEBT-02 | Phase 12 | Pending |
-| DEBT-03 | Phase 12 | Pending |
+| DEBT-02 | Phase 12 | Not applicable (already fixed pre-scoping) |
+| DEBT-03 | Phase 12 | Not applicable (already tracked pre-scoping) |
 | SAFETY-01 | Phase 17 | Pending |
 | DEBT-01 | Phase 17 | Pending |
 | CAMFIX-01 | Phase 13 | Pending |
