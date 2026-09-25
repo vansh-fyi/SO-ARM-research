@@ -2,15 +2,19 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: MLLM Raw-Autonomy Benchmark
+current_phase: 12
+current_phase_name: Bridge Tick-Latency Fix
 status: planning
-last_updated: "2026-09-24T12:30:00.000Z"
+stopped_at: Phase 12 context gathered
+last_updated: "2026-09-25T06:46:33.862Z"
 last_activity: 2026-09-24
+last_activity_desc: ROADMAP.md/REQUIREMENTS.md updated with v2.1 Phases 12-17 (26 requirements, 100% coverage)
 progress:
-  total_phases: 6
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 17
+  completed_phases: 9
+  total_plans: 38
+  completed_plans: 38
+  percent: 53
 ---
 
 # Project State
@@ -70,6 +74,7 @@ Recent decisions affecting current work:
   actuator ranges, `+1` opens / `-1` closes, mechanical jaw equality, ~88°
   wrist-flex initial pose. This supersedes earlier 84 mm aperture and visual-only
   correction assumptions. See [10-ESTABLISHED-MODEL.md](phases/10-digital-twin-fidelity/10-ESTABLISHED-MODEL.md).
+
 - **v2.0 roadmap (2026-09-18):** Phases 10-11 derived from the 12 v2.0 requirements (TWIN-01..07, VLAHW-01..05). Phase 10 (Digital-Twin Fidelity) and Phase 11 (VLA Hardware Connection) are **independent and parallel-capable, not a sequential chain**.
 - **v2.0 scope narrowing (2026-09-17):** An initial general-MLLM-prompting experiment (`experiment-design/`, `docs/multimodal-context-ablation-experiment.md`) failed badly. Milestone narrowed to two concrete workstreams (digital-twin fix + VLA hardware connection) before committing to the full raw-autonomy MLLM-benchmark-suite design.
 - Research: OpenVLA-OFT chosen as primary VLA (97.1% LIBERO avg, T4-compatible at 4-bit)
@@ -114,10 +119,10 @@ None yet for v2.1 — begin by planning Phase 12 (`/gsd-plan-phase 12`).
 
 ## Session Continuity
 
-**Resume file:** None
+**Resume file:** .planning/phases/12-bridge-tick-latency-fix/12-CONTEXT.md
 
-Last session: 2026-09-24T12:30:00.000Z
-Stopped at: v2.1 ROADMAP.md and REQUIREMENTS.md written (Phases 12-17, 26/26 requirements mapped, 0 orphans). Awaiting user approval of the roadmap draft before planning begins.
+Last session: 2026-09-25T06:46:33.850Z
+Stopped at: Phase 12 context gathered
 
 Phases 1-6 (milestone v1.0), Phase 7 (v1.1), and Phases 10-11 (v2.0) are all
 complete. Phases 8-9 (v1.1) remain defined but PAUSED (not cancelled).
