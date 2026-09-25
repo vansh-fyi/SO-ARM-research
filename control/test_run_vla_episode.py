@@ -93,6 +93,41 @@ def test_loop_writes_termination_json_with_max_steps_reason(tmp_path, mock_robot
     assert termination["steps_completed"] == 3
 
 
+def test_latency_ms_reflects_real_monotonic_deltas_under_controlled_clock(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch
+):
+    """LATENCY-03: `latency_ms` must carry real `time.monotonic()`-derived
+    millisecond deltas, not the old hardcoded-zero dict. Monkeypatches
+    `run_vla_episode.time.monotonic` to a known incrementing sequence
+    (0.0 -> 0.1 -> 0.25 across the single tick's t0/t1/t2 brackets) and
+    asserts the written `latency_ms` dict matches the expected deltas
+    exactly (100.0ms observation_to_action, 150.0ms action_to_execution)."""
+    action_source = ScriptedActionSource()
+    caps = _fake_caps()
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+
+    monotonic_sequence = iter([0.0, 0.1, 0.25])
+    monkeypatch.setattr(run_vla_episode.time, "monotonic", lambda: next(monotonic_sequence))
+
+    with IOLogger(tmp_path, CAMERA_NAMES) as io_logger:
+        run_episode(
+            mock_robot,
+            caps,
+            CAMERA_NAMES,
+            io_logger,
+            action_source,
+            instruction="Pick up the red cube",
+            max_steps=1,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+        )
+
+    lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
+    record = json.loads(lines[0])
+    assert record["latency_ms"]["observation_to_action"] == pytest.approx(100.0)
+    assert record["latency_ms"]["action_to_execution"] == pytest.approx(150.0)
+
+
 def test_keyboard_interrupt_triggers_return_to_start_before_disconnect(
     tmp_path, mock_robot, mock_calibration_file, monkeypatch
 ):

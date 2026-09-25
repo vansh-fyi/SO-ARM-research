@@ -146,7 +146,7 @@ Requirements for milestone v2.1 (MLLM Raw-Autonomy Benchmark). Builds on v2.0's 
 
 - [ ] **LATENCY-01**: The bridge only requests fresh Colab inference when the local action queue is empty/near-empty (wiring up `lerobot`'s existing, currently-unused `_ready_to_send_observation()`/`chunk_size_threshold` gate), instead of resending a full camera observation to Colab on every control tick
 - [ ] **LATENCY-02**: `pop_validated_action()` updates `client.latest_action` so the vendored library's own staleness dedup logic functions as designed
-- [ ] **LATENCY-03**: `io_logger.py`'s `latency_ms` field records real measured latency (via `time.monotonic()` deltas) instead of always `{0,0}`
+- [X] **LATENCY-03**: `io_logger.py`'s `latency_ms` field records real measured latency (via `time.monotonic()` deltas) instead of always `{0,0}` — Complete in Phase 12 Plan 02: `run_episode()`'s t0/t1/t2 `time.monotonic()` brackets feed real `observation_to_action`/`action_to_execution` millisecond deltas into `io_logger.write_step()`, proven exact under a controlled clock (2026-09-25)
 - [ ] **LATENCY-04**: An in-flight-request guard prevents duplicate/overlapping observation requests when Colab responds slowly
 
 ### Safety Validator
@@ -265,7 +265,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VLAHW-05 | Phase 11 | Complete |
 | LATENCY-01 | Phase 12 | Pending |
 | LATENCY-02 | Phase 12 | Pending |
-| LATENCY-03 | Phase 12 | Pending |
+| LATENCY-03 | Phase 12 | Complete |
 | LATENCY-04 | Phase 12 | Pending |
 | DEBT-02 | Phase 12 | Not applicable (already fixed pre-scoping) |
 | DEBT-03 | Phase 12 | Not applicable (already tracked pre-scoping) |
