@@ -386,7 +386,12 @@ Plans:
   4. A live-hardware episode shows a measurably higher real (non-stale) action yield than Phase 11's 1/60 baseline, with an in-flight-request guard confirmed to prevent duplicate observation requests
   5. `soarm_gripper.py`'s `format_action` docstring correctly describes OPEN/CLOSE direction, and the `So-101/` and `coppelia/` mesh asset directories are tracked in git so a fresh clone resolves the URDF's relative mesh references
 
-**Plans**: TBD
+**Plans**: 2/2 plans
+Plans:
+**Wave 1** (independent — zero files_modified overlap, run fully in parallel)
+
+- [ ] 12-01-PLAN.md — Observation-send gate, latest_action dedup wiring, and in-flight-request guard in `robot_client.py` (LATENCY-01, LATENCY-02, LATENCY-04)
+- [ ] 12-02-PLAN.md — Real `time.monotonic()` latency measurement in `run_vla_episode.py`, plus DEBT-02/DEBT-03 re-confirmation (LATENCY-03, DEBT-02, DEBT-03)
 
 ### Phase 13: Camera Device Resolution Unification
 
@@ -516,7 +521,7 @@ Plans:
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
 | 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
 | 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
-| 12. Bridge Tick-Latency Fix | 0/TBD | Not started | - |
+| 12. Bridge Tick-Latency Fix | 0/2 | Not started | - |
 | 13. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
 | 14. Camera Device Resolution Unification | 0/TBD | Not started | - |
 | 15. VLA-Style Pipeline & Backends | 0/TBD | Not started | - |
