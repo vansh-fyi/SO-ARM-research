@@ -195,7 +195,9 @@ def run_episode(
     try:
         for i in range(max_steps):
             current = read_positions(robot)
+            t0 = time.monotonic()
             raw_action, model_version = action_source.get_action(current, instruction)
+            t1 = time.monotonic()
             validated_action, flags = safety_validator.validate_action(
                 raw_action,
                 current,
@@ -208,6 +210,7 @@ def run_episode(
                 robot.send_action({f"{j}.pos": v for j, v in validated_action.items()})
             except (ConnectionError, RuntimeError) as e:
                 print(f"Write failed, skipping this tick: {e}")
+            t2 = time.monotonic()
 
             camera_frames = {
                 name: io_logger.capture_camera_frame(caps[idx], name, step=i)
@@ -224,7 +227,10 @@ def run_episode(
                 validated_action=validated_action,
                 validator_flags=flags,
                 executed_action=validated_action,
-                latency_ms={"observation_to_action": 0, "action_to_execution": 0},
+                latency_ms={
+                    "observation_to_action": (t1 - t0) * 1000,
+                    "action_to_execution": (t2 - t1) * 1000,
+                },
                 model_version=model_version,
             )
             last_sent_action = validated_action
