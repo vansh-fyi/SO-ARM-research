@@ -270,10 +270,11 @@ class BridgeActionSource:
     def get_action(
         self, joint_state: dict[str, float], instruction: str
     ) -> tuple[dict[str, float], str]:
-        try:
-            self.client.control_loop_observation(task=instruction)
-        except (grpc.RpcError, ConnectionError, RuntimeError):
-            return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
+        if self.client._ready_to_send_observation():
+            try:
+                self.client.control_loop_observation(task=instruction)
+            except (grpc.RpcError, ConnectionError, RuntimeError):
+                return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
 
         try:
             validated_action, flags, _raw_action, _obs_age_s = pop_validated_action(

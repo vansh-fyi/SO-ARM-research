@@ -337,10 +337,14 @@ class FakeClientRaisesOnObservation:
     """Simulates a dead/unreachable bridge: `control_loop_observation()`
     raises instead of returning normally."""
 
-    def __init__(self, exc):
+    def __init__(self, exc, ready_to_send: bool = True):
         self.action_queue = queue.Queue()
         self.action_queue_lock = threading.Lock()
         self._exc = exc
+        self._ready_to_send = ready_to_send
+
+    def _ready_to_send_observation(self) -> bool:
+        return self._ready_to_send
 
     def control_loop_observation(self, task: str):
         raise self._exc
@@ -379,12 +383,18 @@ class FakeClientReturnsAction:
     """Simulates a healthy bridge: `control_loop_observation()` succeeds, one
     action is already queued for `pop_validated_action()` to consume."""
 
-    def __init__(self, action):
+    def __init__(self, action, ready_to_send: bool = True):
         self.action_queue = queue.Queue()
         self.action_queue_lock = threading.Lock()
         self.action_queue.put(FakeTimedAction(action, timestamp=time.time()))
+        self._ready_to_send = ready_to_send
+        self.control_loop_observation_call_count = 0
+
+    def _ready_to_send_observation(self) -> bool:
+        return self._ready_to_send
 
     def control_loop_observation(self, task: str):
+        self.control_loop_observation_call_count += 1
         return {"task": task}
 
     def _action_tensor_to_action_dict(self, action_tensor):
@@ -404,3 +414,41 @@ def test_bridge_action_source_returns_validated_action_on_success(mock_calibrati
 
     assert isinstance(action, dict)
     assert model_version == "victorvanhalst/smolvla_so101_cube@unknown"
+
+
+def test_bridge_action_source_skips_observation_send_when_gate_is_false(mock_calibration_file):
+    """LATENCY-01: when the local queue is not near-empty (the vendored
+    _ready_to_send_observation() gate returns False), get_action() must not
+    call control_loop_observation() at all -- it should just drain whatever
+    is already queued via pop_validated_action()."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    client = FakeClientReturnsAction(raw_action, ready_to_send=False)
+    source = robot_client.BridgeActionSource(
+        client, checkpoint="victorvanhalst/smolvla_so101_cube", joint_limits_deg=joint_limits_deg
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    action, model_version = source.get_action(joint_state, "Pick the red cube and place it in the bowl")
+
+    assert client.control_loop_observation_call_count == 0
+    # The already-queued action is still popped/validated (drain-while-full).
+    assert isinstance(action, dict)
+    assert model_version == "victorvanhalst/smolvla_so101_cube@unknown"
+
+
+def test_bridge_action_source_sends_observation_when_gate_is_true(mock_calibration_file):
+    """LATENCY-01 regression: when the gate returns True, get_action() must
+    still call control_loop_observation() exactly as it did before this
+    change."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    client = FakeClientReturnsAction(raw_action, ready_to_send=True)
+    source = robot_client.BridgeActionSource(
+        client, checkpoint="victorvanhalst/smolvla_so101_cube", joint_limits_deg=joint_limits_deg
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    source.get_action(joint_state, "Pick the red cube and place it in the bowl")
+
+    assert client.control_loop_observation_call_count == 1
