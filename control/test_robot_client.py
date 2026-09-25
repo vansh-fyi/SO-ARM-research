@@ -43,6 +43,8 @@ class FakeBridgeClient:
     def __init__(self):
         self.action_queue = queue.Queue()
         self.action_queue_lock = threading.Lock()
+        self.latest_action_lock = threading.Lock()
+        self.latest_action = -1
 
     def _action_tensor_to_action_dict(self, action_tensor):
         return action_tensor
@@ -162,6 +164,52 @@ def test_pop_validated_action_empty_queue_holds_position(mock_calibration_file):
     assert flags == ["no action available, holding position"]
     assert raw_out == {}
     assert obs_age_s == 0.0
+
+
+def test_pop_validated_action_updates_latest_action_on_successful_pop(mock_calibration_file):
+    """LATENCY-02: after a successful pop, client.latest_action must reflect
+    the popped action's timestep, mirroring the vendored lerobot library's
+    own control_loop_action() pattern, so _ready_to_send_observation()'s
+    queue-size gate and the library's staleness dedup logic both function as
+    designed."""
+    client = FakeBridgeClient()
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    client.action_queue.put(FakeTimedAction(raw_action, timestamp=time.time(), timestep=7))
+
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    current_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    robot_client.pop_validated_action(
+        client,
+        safety_validator.validate_action,
+        joint_limits_deg,
+        current_state,
+        prev_action=None,
+        dt_s=1.0,
+    )
+
+    assert client.latest_action == 7
+
+
+def test_pop_validated_action_leaves_latest_action_unchanged_on_empty_queue(mock_calibration_file):
+    """LATENCY-02 regression: the empty-queue early-return path must not
+    touch client.latest_action at all."""
+    client = FakeBridgeClient()  # empty action_queue
+    client.latest_action = 3  # pre-call value
+
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    current_state = dict.fromkeys(JOINT_ORDER, 1.0)
+
+    robot_client.pop_validated_action(
+        client,
+        safety_validator.validate_action,
+        joint_limits_deg,
+        current_state,
+        prev_action=None,
+        dt_s=1.0,
+    )
+
+    assert client.latest_action == 3
 
 
 # --- connect_bridge ----------------------------------------------------------
@@ -337,10 +385,14 @@ class FakeClientRaisesOnObservation:
     """Simulates a dead/unreachable bridge: `control_loop_observation()`
     raises instead of returning normally."""
 
-    def __init__(self, exc):
+    def __init__(self, exc, ready_to_send: bool = True):
         self.action_queue = queue.Queue()
         self.action_queue_lock = threading.Lock()
         self._exc = exc
+        self._ready_to_send = ready_to_send
+
+    def _ready_to_send_observation(self) -> bool:
+        return self._ready_to_send
 
     def control_loop_observation(self, task: str):
         raise self._exc
@@ -379,12 +431,20 @@ class FakeClientReturnsAction:
     """Simulates a healthy bridge: `control_loop_observation()` succeeds, one
     action is already queued for `pop_validated_action()` to consume."""
 
-    def __init__(self, action):
+    def __init__(self, action, ready_to_send: bool = True):
         self.action_queue = queue.Queue()
         self.action_queue_lock = threading.Lock()
+        self.latest_action_lock = threading.Lock()
+        self.latest_action = -1
         self.action_queue.put(FakeTimedAction(action, timestamp=time.time()))
+        self._ready_to_send = ready_to_send
+        self.control_loop_observation_call_count = 0
+
+    def _ready_to_send_observation(self) -> bool:
+        return self._ready_to_send
 
     def control_loop_observation(self, task: str):
+        self.control_loop_observation_call_count += 1
         return {"task": task}
 
     def _action_tensor_to_action_dict(self, action_tensor):
@@ -404,3 +464,130 @@ def test_bridge_action_source_returns_validated_action_on_success(mock_calibrati
 
     assert isinstance(action, dict)
     assert model_version == "victorvanhalst/smolvla_so101_cube@unknown"
+
+
+def test_bridge_action_source_skips_observation_send_when_gate_is_false(mock_calibration_file):
+    """LATENCY-01: when the local queue is not near-empty (the vendored
+    _ready_to_send_observation() gate returns False), get_action() must not
+    call control_loop_observation() at all -- it should just drain whatever
+    is already queued via pop_validated_action()."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    client = FakeClientReturnsAction(raw_action, ready_to_send=False)
+    source = robot_client.BridgeActionSource(
+        client, checkpoint="victorvanhalst/smolvla_so101_cube", joint_limits_deg=joint_limits_deg
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    action, model_version = source.get_action(joint_state, "Pick the red cube and place it in the bowl")
+
+    assert client.control_loop_observation_call_count == 0
+    # The already-queued action is still popped/validated (drain-while-full).
+    assert isinstance(action, dict)
+    assert model_version == "victorvanhalst/smolvla_so101_cube@unknown"
+
+
+def test_bridge_action_source_sends_observation_when_gate_is_true(mock_calibration_file):
+    """LATENCY-01 regression: when the gate returns True, get_action() must
+    still call control_loop_observation() exactly as it did before this
+    change."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    client = FakeClientReturnsAction(raw_action, ready_to_send=True)
+    source = robot_client.BridgeActionSource(
+        client, checkpoint="victorvanhalst/smolvla_so101_cube", joint_limits_deg=joint_limits_deg
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    source.get_action(joint_state, "Pick the red cube and place it in the bowl")
+
+    assert client.control_loop_observation_call_count == 1
+
+
+# --- BridgeActionSource in-flight guard (LATENCY-04) -------------------------
+
+
+class FakeClientBlocksOnObservation:
+    """Simulates an in-flight bridge call: control_loop_observation() blocks
+    on a threading.Event until the test releases it, so a second, concurrent
+    get_action() call can be exercised from the main test thread while the
+    first is still "in flight" on a background thread."""
+
+    def __init__(self, action, entered_event: threading.Event, release_event: threading.Event):
+        self.action_queue = queue.Queue()
+        self.action_queue_lock = threading.Lock()
+        self.latest_action_lock = threading.Lock()
+        self.latest_action = -1
+        self.action_queue.put(FakeTimedAction(action, timestamp=time.time()))
+        self._entered_event = entered_event
+        self._release_event = release_event
+
+    def _ready_to_send_observation(self) -> bool:
+        return True
+
+    def control_loop_observation(self, task: str):
+        self._entered_event.set()
+        self._release_event.wait(timeout=5.0)
+        return {"task": task}
+
+    def _action_tensor_to_action_dict(self, action_tensor):
+        return action_tensor
+
+
+def test_bridge_action_source_inflight_guard_rejects_concurrent_get_action_call(mock_calibration_file):
+    """LATENCY-04: while a first get_action() call is in flight (blocked
+    inside control_loop_observation()), a second, concurrent get_action()
+    call on the same BridgeActionSource must return immediately with the
+    in-flight holding-position flag, without touching the client at all."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    entered_event = threading.Event()
+    release_event = threading.Event()
+    client = FakeClientBlocksOnObservation(raw_action, entered_event, release_event)
+    source = robot_client.BridgeActionSource(
+        client, checkpoint="victorvanhalst/smolvla_so101_cube", joint_limits_deg=joint_limits_deg
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    first_call_result: dict = {}
+
+    def first_call():
+        action, model_version = source.get_action(joint_state, "Pick the red cube")
+        first_call_result["action"] = action
+        first_call_result["model_version"] = model_version
+
+    first_thread = threading.Thread(target=first_call)
+    first_thread.start()
+    assert entered_event.wait(timeout=2.0), "first call never entered control_loop_observation()"
+
+    # Second call arrives while the first is still in flight -- must return
+    # immediately (not block) with the distinct in-flight flag.
+    second_action, second_model_version = source.get_action(joint_state, "Pick the red cube")
+
+    release_event.set()
+    first_thread.join(timeout=2.0)
+    assert not first_thread.is_alive()
+
+    assert second_action == joint_state
+    assert second_model_version == (
+        "victorvanhalst/smolvla_so101_cube@bridge-request-inflight-holding-position"
+    )
+    assert first_call_result["model_version"] == "victorvanhalst/smolvla_so101_cube@unknown"
+
+
+def test_bridge_action_source_inflight_guard_never_rejects_sequential_calls(mock_calibration_file):
+    """Regression: the in-flight guard must never reject a call that arrives
+    after the previous one has fully returned -- normal, non-overlapping
+    sequential get_action() calls behave exactly as before this change."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+    client = FakeClientReturnsAction(raw_action)
+    source = robot_client.BridgeActionSource(
+        client, checkpoint="victorvanhalst/smolvla_so101_cube", joint_limits_deg=joint_limits_deg
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    for _ in range(3):
+        client.action_queue.put(FakeTimedAction(raw_action, timestamp=time.time()))
+        _action, model_version = source.get_action(joint_state, "Pick the red cube")
+        assert model_version == "victorvanhalst/smolvla_so101_cube@unknown"

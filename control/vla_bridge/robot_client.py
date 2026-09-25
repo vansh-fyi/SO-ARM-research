@@ -226,6 +226,9 @@ def pop_validated_action(
         except queue.Empty:
             return dict(current_state), ["no action available, holding position"], {}, 0.0
 
+    with client.latest_action_lock:
+        client.latest_action = timed_action.get_timestep()
+
     raw_action = client._action_tensor_to_action_dict(timed_action.get_action())
     raw_action = {key.removesuffix(".pos"): value for key, value in raw_action.items()}
     # Network round-trip staleness -- feeds safety_validator's
@@ -266,31 +269,44 @@ class BridgeActionSource:
         self.joint_limits_deg = joint_limits_deg
         self._dt_s = dt_s
         self._last_action: dict[str, float] | None = None
+        self._inflight_lock = threading.Lock()
 
     def get_action(
         self, joint_state: dict[str, float], instruction: str
     ) -> tuple[dict[str, float], str]:
-        try:
-            self.client.control_loop_observation(task=instruction)
-        except (grpc.RpcError, ConnectionError, RuntimeError):
-            return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
+        # LATENCY-04: defensive-only guard (per CONTEXT.md D-05) -- get_action()
+        # is called synchronously, once per tick, from a single-threaded
+        # control loop today, so no active overlap bug exists. This structurally
+        # prevents a *future* change (e.g. adding a call timeout) from silently
+        # reintroducing an overlapping in-flight request.
+        if not self._inflight_lock.acquire(blocking=False):
+            return joint_state, f"{self.checkpoint}@bridge-request-inflight-holding-position"
 
         try:
-            validated_action, flags, _raw_action, _obs_age_s = pop_validated_action(
-                self.client,
-                safety_validator.validate_action,
-                self.joint_limits_deg,
-                joint_state,
-                self._last_action,
-                self._dt_s,
-            )
-        except (grpc.RpcError, ConnectionError, RuntimeError):
-            return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
+            if self.client._ready_to_send_observation():
+                try:
+                    self.client.control_loop_observation(task=instruction)
+                except (grpc.RpcError, ConnectionError, RuntimeError):
+                    return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
 
-        self._last_action = validated_action
-        if flags:
-            return validated_action, f"{self.checkpoint}@{'+'.join(flags)}"
-        return validated_action, f"{self.checkpoint}@unknown"
+            try:
+                validated_action, flags, _raw_action, _obs_age_s = pop_validated_action(
+                    self.client,
+                    safety_validator.validate_action,
+                    self.joint_limits_deg,
+                    joint_state,
+                    self._last_action,
+                    self._dt_s,
+                )
+            except (grpc.RpcError, ConnectionError, RuntimeError):
+                return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
+
+            self._last_action = validated_action
+            if flags:
+                return validated_action, f"{self.checkpoint}@{'+'.join(flags)}"
+            return validated_action, f"{self.checkpoint}@unknown"
+        finally:
+            self._inflight_lock.release()
 
 
 __all__ = [
