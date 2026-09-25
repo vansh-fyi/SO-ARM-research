@@ -143,3 +143,7 @@ None - no external service configuration required. Live-hardware verification of
 ---
 *Phase: 12-bridge-tick-latency-fix*
 *Completed: 2026-09-25*
+
+## Self-Check: PASSED
+
+All created/modified files found on disk (control/vla_bridge/robot_client.py, control/test_robot_client.py, this SUMMARY.md). All 4 commit hashes (5e843e0, 18a7d23, 965172c, 8c81b8e) confirmed present in `git log`.
