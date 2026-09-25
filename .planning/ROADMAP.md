@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 9: Benchmark Data Collection & Re-Fine-Tuning** ⏸ PAUSED (2026-09-15, v1.1 paused for v2.0 — see PROJECT.md) - Collect demonstrations for the new benchmark suite and re-fine-tune/re-evaluate OpenVLA-OFT with before/after results in WandB
 - [x] **Phase 10: Digital-Twin Fidelity** - Rebuild the URDF and MuJoCo XML as a correct, complete, 1:1 kinematic match to the real SO-ARM101 (gripper properly chained, wrist_roll + gripper joints restored, correct directions/limits, in-repo mesh paths) (completed 2026-09-19)
 - [x] **Phase 11: VLA Hardware Connection** - Connect an SO-101-native joint-action VLA (SmolVLA) to the real SO-ARM101 over the existing LeRobot bridge with a safety validator and complete per-step I/O logging, and record at least one full observed run (completed 2026-09-24)
-- [ ] **Phase 12: Bridge Tick-Latency Fix** - Fix the observation-resend-per-tick root cause so the bridge only requests fresh inference when the local action queue is empty/near-empty, with real measured latency logging and an in-flight-request guard; sweep 2 small pre-existing tech-debt items alongside it
+- [x] **Phase 12: Bridge Tick-Latency Fix** - Fix the observation-resend-per-tick root cause so the bridge only requests fresh inference when the local action queue is empty/near-empty, with real measured latency logging and an in-flight-request guard; sweep 2 small pre-existing tech-debt items alongside it (completed 2026-09-25)
 - [ ] **Phase 13: Camera Device Resolution Unification** - Unify the model's inference-input and `IOLogger` recording camera paths behind one shared, name-based resolution helper, and log client-side frame provenance
 - [ ] **Phase 14: VLA-Style Pipeline & Backends** - Build the shared VLA-style `ActionSource` pattern and onboard 4 new native-action VLA backends (Gemini Robotics, π0/π0.5, Wall-X, ACT) driving the real SO-ARM101
 - [ ] **Phase 15: MLLM-Style Pipeline & Backends** - Build the shared MLLM-style `ActionSource` pattern (prompt construction, schema, reasoning-trace capture) and onboard 3 raw-JSON MLLM backends (HF reasoning model, Claude, GPT) with no movement primitives
@@ -386,12 +386,12 @@ Plans:
   4. A live-hardware episode shows a measurably higher real (non-stale) action yield than Phase 11's 1/60 baseline, with an in-flight-request guard confirmed to prevent duplicate observation requests
   5. `soarm_gripper.py`'s `format_action` docstring correctly describes OPEN/CLOSE direction, and the `So-101/` and `coppelia/` mesh asset directories are tracked in git so a fresh clone resolves the URDF's relative mesh references
 
-**Plans**: 2/2 plans
+**Plans**: 2/2 plans complete
 Plans:
 **Wave 1** (independent — zero files_modified overlap, run fully in parallel)
 
-- [ ] 12-01-PLAN.md — Observation-send gate, latest_action dedup wiring, and in-flight-request guard in `robot_client.py` (LATENCY-01, LATENCY-02, LATENCY-04)
-- [ ] 12-02-PLAN.md — Real `time.monotonic()` latency measurement in `run_vla_episode.py`, plus DEBT-02/DEBT-03 re-confirmation (LATENCY-03, DEBT-02, DEBT-03)
+- [x] 12-01-PLAN.md — Observation-send gate, latest_action dedup wiring, and in-flight-request guard in `robot_client.py` (LATENCY-01, LATENCY-02, LATENCY-04)
+- [x] 12-02-PLAN.md — Real `time.monotonic()` latency measurement in `run_vla_episode.py`, plus DEBT-02/DEBT-03 re-confirmation (LATENCY-03, DEBT-02, DEBT-03)
 
 ### Phase 13: Camera Device Resolution Unification
 
@@ -521,7 +521,7 @@ Plans:
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
 | 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
 | 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
-| 12. Bridge Tick-Latency Fix | 0/2 | Not started | - |
+| 12. Bridge Tick-Latency Fix | 2/2 | Complete   | 2026-09-25 |
 | 13. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
 | 14. Camera Device Resolution Unification | 0/TBD | Not started | - |
 | 15. VLA-Style Pipeline & Backends | 0/TBD | Not started | - |

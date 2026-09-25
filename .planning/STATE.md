@@ -4,15 +4,15 @@ milestone: v2.1
 milestone_name: MLLM Raw-Autonomy Benchmark
 current_phase: 12
 current_phase_name: Bridge Tick-Latency Fix
-status: planning
+status: executing
 stopped_at: Phase 12 context gathered
-last_updated: "2026-09-25T06:46:33.862Z"
-last_activity: 2026-09-24
-last_activity_desc: ROADMAP.md/REQUIREMENTS.md updated with v2.1 Phases 12-17 (26 requirements, 100% coverage)
+last_updated: "2026-09-25T07:32:15.911Z"
+last_activity: 2026-09-25
+last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 17
   completed_phases: 9
-  total_plans: 38
+  total_plans: 40
   completed_plans: 38
   percent: 53
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** A researcher types a task prompt and watches SOARM execute it in a LIBERO simulation — the loop from language to embodied action.
-**Current focus:** Milestone v2.1 (MLLM Raw-Autonomy Benchmark) — roadmap created, ready to plan Phase 12. Scope: bridge tick-latency fix → camera device-resolution fix → two parallel-capable pipeline-architecture phases (VLA-style backends, MLLM-style backends) → cross-backend Pen Transfer benchmark → safety-cap re-tightening (deliberately last).
+**Current focus:** Phase 12 — Bridge Tick-Latency Fix
 
 ## Current Position
 
-Phase: 12 of 17 (Bridge Tick-Latency Fix) — ready to plan
-Plan: — of TBD in current phase
-Status: Roadmap created, ready to plan
-Last activity: 2026-09-24 — ROADMAP.md/REQUIREMENTS.md updated with v2.1 Phases 12-17 (26 requirements, 100% coverage)
+Phase: 12 (Bridge Tick-Latency Fix) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 12
+Last activity: 2026-09-25 — Phase 12 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
