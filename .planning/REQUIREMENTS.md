@@ -154,8 +154,8 @@ Requirements for milestone v2.1 (MLLM Raw-Autonomy Benchmark). Builds on v2.0's 
 Raised directly in conversation, not from the original 3-item bridge-latency UAT diagnosis — see `12-UAT.md`'s 4th Gaps entry and `12-CONTEXT.md` D-07/D-08/D-09 for full background (StereoPatch, arXiv 2609.15509; NVIDIA Fast-FoundationStereo, NVlabs/Fast-FoundationStereo, CVPR 2026).
 
 - [x] **DEPTH-CAL-01**: A checkerboard-based stereo calibration (`cv2.stereoCalibrate`/`stereoRectify` against the AR0144's live left/right split) produces a saved calibration file in Fast-FoundationStereo's required format (flattened 3x3 intrinsics + baseline in meters), with a human-confirmed low reprojection error
-- [ ] **DEPTH-CAL-02**: A Colab-hosted Fast-FoundationStereo endpoint is documented and reachable, and a local `depth_camera.py` rectifies + downsamples a live AR0144 stereo pair to its input constraints (<1000px width, dimensions divisible by 32) and requests a metric depth map from it
-- [ ] **DEPTH-CAL-03**: Computed depth is recorded to the episode output directory and referenced in `episode.jsonl` via `IOLogger` — never added to the PolicyServer's observation dict (`BridgeActionSource`/`connect_bridge`) this phase — with a human-verified real-world-known-distance-vs-computed-depth check within a documented tolerance
+- [x] **DEPTH-CAL-02**: A Colab-hosted Fast-FoundationStereo endpoint is documented and reachable, and a local `depth_camera.py` rectifies + downsamples a live AR0144 stereo pair to its input constraints (<1000px width, dimensions divisible by 32) and requests a metric depth map from it
+- [x] **DEPTH-CAL-03**: Computed depth is recorded to the episode output directory and referenced in `episode.jsonl` via `IOLogger` — never added to the PolicyServer's observation dict (`BridgeActionSource`/`connect_bridge`) this phase — with a human-verified real-world-known-distance-vs-computed-depth check within a documented tolerance
 
 ### Safety Validator
 
@@ -280,8 +280,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEBT-02 | Phase 12 | Not applicable (already fixed pre-scoping) |
 | DEBT-03 | Phase 12 | Not applicable (already tracked pre-scoping) |
 | DEPTH-CAL-01 | Phase 12 | Complete |
-| DEPTH-CAL-02 | Phase 12 | Pending |
-| DEPTH-CAL-03 | Phase 12 | Pending |
+| DEPTH-CAL-02 | Phase 12 | Complete |
+| DEPTH-CAL-03 | Phase 12 | Complete |
 | SAFETY-01 | Phase 17 | Pending |
 | DEBT-01 | Phase 17 | Pending |
 | CAMFIX-01 | Phase 13 | Pending |
