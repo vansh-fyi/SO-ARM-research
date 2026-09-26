@@ -386,12 +386,17 @@ Plans:
   4. A live-hardware episode shows a measurably higher real (non-stale) action yield than Phase 11's 1/60 baseline, with an in-flight-request guard confirmed to prevent duplicate observation requests
   5. `soarm_gripper.py`'s `format_action` docstring correctly describes OPEN/CLOSE direction, and the `So-101/` and `coppelia/` mesh asset directories are tracked in git so a fresh clone resolves the URDF's relative mesh references
 
-**Plans**: 2/2 plans complete
+**Plans**: 2/4 plans complete
 Plans:
 **Wave 1** (independent — zero files_modified overlap, run fully in parallel)
 
 - [x] 12-01-PLAN.md — Observation-send gate, latest_action dedup wiring, and in-flight-request guard in `robot_client.py` (LATENCY-01, LATENCY-02, LATENCY-04)
 - [x] 12-02-PLAN.md — Real `time.monotonic()` latency measurement in `run_vla_episode.py`, plus DEBT-02/DEBT-03 re-confirmation (LATENCY-03, DEBT-02, DEBT-03)
+
+**Wave 2 — gap closure** *(from 12-UAT.md, live-hardware re-verification episode: camera-mislabel bug, jerky motion, and a 6+ minute stale/similarity deadlock)*
+
+- [ ] 12-03-PLAN.md — Camera overhead logging fix (reuse shared StereoSplitCamera, log left+right separately) + waypoint interpolation for smooth motion, decoupled from the observation cadence (LATENCY-03, LATENCY-04)
+- [ ] 12-04-PLAN.md — Bridge staleness watchdog: force `must_go`/`action_queue` recovery after N consecutive stale results, closing the 6+ minute deadlock (LATENCY-01, LATENCY-02, LATENCY-04)
 
 ### Phase 13: Camera Device Resolution Unification
 
