@@ -591,3 +591,225 @@ def test_bridge_action_source_inflight_guard_never_rejects_sequential_calls(mock
         client.action_queue.put(FakeTimedAction(raw_action, timestamp=time.time()))
         _action, model_version = source.get_action(joint_state, "Pick the red cube")
         assert model_version == "victorvanhalst/smolvla_so101_cube@unknown"
+
+
+# --- staleness watchdog (Gap 3, blocker-severity fix) ------------------------
+
+
+class FakeMustGoEvent:
+    """Stand-in for `threading.Event()` tracking whether `.set()` was called
+    -- no real `threading.Event` needed for these synchronous tests."""
+
+    def __init__(self):
+        self.was_set = False
+
+    def set(self):
+        self.was_set = True
+
+
+class FakeBridgeClientWithMustGo(FakeBridgeClient):
+    """Extends `FakeBridgeClient` (empty-queue-capable) with a `must_go`
+    attribute and the observation-gate surface `BridgeActionSource.get_action()`
+    calls, so the empty-queue watchdog-trigger path can be exercised."""
+
+    def __init__(self):
+        super().__init__()
+        self.must_go = FakeMustGoEvent()
+        self._ready_to_send = True
+        self.control_loop_observation_call_count = 0
+
+    def _ready_to_send_observation(self) -> bool:
+        return self._ready_to_send
+
+    def control_loop_observation(self, task: str):
+        self.control_loop_observation_call_count += 1
+        return {"task": task}
+
+
+class FakeClientReturnsGrowingStaleAction:
+    """Simulates the live UAT's stuck state: a real, non-empty `action_queue`
+    that keeps returning an already-stale `FakeTimedAction` on every pop --
+    `pop_validated_action()`'s `obs_age_s` exceeds `STALE_ACTION_S` every
+    time, so a genuinely fresh result never arrives."""
+
+    def __init__(self):
+        self.action_queue = queue.Queue()
+        self.action_queue_lock = threading.Lock()
+        self.latest_action_lock = threading.Lock()
+        self.latest_action = -1
+        self.must_go = FakeMustGoEvent()
+        self._ready_to_send = True
+        self.control_loop_observation_call_count = 0
+
+    def queue_one_stale_action(self) -> None:
+        stale_timestamp = time.time() - (safety_validator.STALE_ACTION_S + 1.0)
+        raw_action = dict.fromkeys(JOINT_ORDER, 0.0)
+        self.action_queue.put(FakeTimedAction(raw_action, timestamp=stale_timestamp))
+
+    def _ready_to_send_observation(self) -> bool:
+        return self._ready_to_send
+
+    def control_loop_observation(self, task: str):
+        self.control_loop_observation_call_count += 1
+        return {"task": task}
+
+    def _action_tensor_to_action_dict(self, action_tensor):
+        return action_tensor
+
+
+# --- force_bridge_recovery() / _is_stale_or_empty() (unit) -------------------
+
+
+def test_force_bridge_recovery_drains_queue_and_sets_must_go():
+    client = FakeBridgeClientWithMustGo()
+    client.action_queue.put(FakeTimedAction({}, timestamp=time.time()))
+    client.action_queue.put(FakeTimedAction({}, timestamp=time.time()))
+
+    robot_client.force_bridge_recovery(client)
+
+    assert client.action_queue.empty()
+    assert client.must_go.was_set is True
+
+
+def test_force_bridge_recovery_handles_already_empty_queue():
+    client = FakeBridgeClientWithMustGo()  # empty action_queue
+
+    robot_client.force_bridge_recovery(client)  # must not raise queue.Empty
+
+    assert client.action_queue.empty()
+    assert client.must_go.was_set is True
+
+
+def test_is_stale_or_empty_true_for_no_action_available_flag():
+    assert robot_client._is_stale_or_empty(["no action available, holding position"]) is True
+
+
+def test_is_stale_or_empty_true_for_stale_observation_flag():
+    assert (
+        robot_client._is_stale_or_empty(["stale observation (35.0s > 30.0s), holding all joints"])
+        is True
+    )
+
+
+def test_is_stale_or_empty_false_for_fresh_or_empty_flags():
+    assert robot_client._is_stale_or_empty([]) is False
+    assert (
+        robot_client._is_stale_or_empty(["shoulder_pan: clamped 10.0 -> 5.0 (limit -5.0/5.0)"])
+        is False
+    )
+
+
+# --- BridgeActionSource watchdog wiring --------------------------------------
+
+
+def test_bridge_action_source_watchdog_triggers_at_limit_for_growing_stale_action(
+    mock_calibration_file,
+):
+    """The exact live UAT failure mode: a real, non-empty timed_action is
+    returned on every pop but is always already stale (obs_age_s >
+    STALE_ACTION_S) -- after the configured limit of consecutive stale
+    results, the watchdog must force recovery."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    client = FakeClientReturnsGrowingStaleAction()
+    source = robot_client.BridgeActionSource(
+        client,
+        checkpoint="victorvanhalst/smolvla_so101_cube",
+        joint_limits_deg=joint_limits_deg,
+        stale_watchdog_limit=3,
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    for _ in range(2):
+        client.queue_one_stale_action()
+        _action, model_version = source.get_action(joint_state, "Pick the red cube")
+        assert client.must_go.was_set is False
+        assert "staleness-watchdog" not in model_version
+
+    client.queue_one_stale_action()
+    _action, model_version = source.get_action(joint_state, "Pick the red cube")
+
+    assert client.must_go.was_set is True
+    assert client.action_queue.empty()
+    assert "staleness-watchdog" in model_version
+
+
+def test_bridge_action_source_watchdog_triggers_at_limit_for_empty_queue(mock_calibration_file):
+    """Both stuck symptoms (growing-stale action AND permanently-empty queue)
+    must count toward the same consecutive-count watchdog."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    client = FakeBridgeClientWithMustGo()  # empty action_queue every tick
+    source = robot_client.BridgeActionSource(
+        client,
+        checkpoint="victorvanhalst/smolvla_so101_cube",
+        joint_limits_deg=joint_limits_deg,
+        stale_watchdog_limit=3,
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    for _ in range(2):
+        _action, model_version = source.get_action(joint_state, "Pick the red cube")
+        assert client.must_go.was_set is False
+        assert "staleness-watchdog" not in model_version
+
+    _action, model_version = source.get_action(joint_state, "Pick the red cube")
+
+    assert client.must_go.was_set is True
+    assert "staleness-watchdog" in model_version
+
+
+def test_bridge_action_source_watchdog_does_not_trigger_below_limit(mock_calibration_file):
+    """A single stale/empty-queue result, below the configured limit, must
+    never call force_bridge_recovery() -- must_go.set() is never called and
+    action_queue is left untouched."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    client = FakeBridgeClientWithMustGo()
+    source = robot_client.BridgeActionSource(
+        client,
+        checkpoint="victorvanhalst/smolvla_so101_cube",
+        joint_limits_deg=joint_limits_deg,
+        stale_watchdog_limit=3,
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    _action, model_version = source.get_action(joint_state, "Pick the red cube")
+
+    assert client.must_go.was_set is False
+    assert client.action_queue.empty()
+    assert "staleness-watchdog" not in model_version
+
+
+def test_bridge_action_source_watchdog_counter_resets_on_fresh_result(mock_calibration_file):
+    """A genuine fresh (non-stale, non-empty) result must reset the
+    consecutive-stale counter to zero -- interleaving stale/fresh/stale calls
+    below the limit must never trigger recovery."""
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    client = FakeBridgeClientWithMustGo()
+    source = robot_client.BridgeActionSource(
+        client,
+        checkpoint="victorvanhalst/smolvla_so101_cube",
+        joint_limits_deg=joint_limits_deg,
+        stale_watchdog_limit=3,
+    )
+    joint_state = dict.fromkeys(JOINT_ORDER, 0.0)
+    fresh_action = dict.fromkeys(JOINT_ORDER, 0.0)
+
+    # 2 consecutive empty-queue results -- below limit=3.
+    source.get_action(joint_state, "Pick the red cube")
+    source.get_action(joint_state, "Pick the red cube")
+    assert client.must_go.was_set is False
+
+    # A genuine fresh result resets the counter.
+    client.action_queue.put(FakeTimedAction(fresh_action, timestamp=time.time()))
+    _action, model_version = source.get_action(joint_state, "Pick the red cube")
+    assert "staleness-watchdog" not in model_version
+    assert client.must_go.was_set is False
+
+    # 2 more empty-queue results -- still below limit since the counter reset.
+    source.get_action(joint_state, "Pick the red cube")
+    source.get_action(joint_state, "Pick the red cube")
+    assert client.must_go.was_set is False
+
+    # The 3rd consecutive stale/empty result after the reset finally triggers.
+    _action, model_version = source.get_action(joint_state, "Pick the red cube")
+    assert client.must_go.was_set is True
+    assert "staleness-watchdog" in model_version
