@@ -37,8 +37,10 @@ from lerobot.robots.so_follower.so_follower import SO101Follower
 
 from keyboard_joint_control import move_to_positions, read_positions
 from vla_bridge import action_contract, safety_validator
+from vla_bridge.depth_camera import DepthCameraClient
 from vla_bridge.io_logger import IOLogger
 from vla_bridge.robot_client import BridgeActionSource, connect_bridge
+from vla_bridge.stereo_calibration import load_calibration
 
 # Plan 11-05 Task 2's `detect_devices.py` output -- the new default source of
 # truth for PORT/ROBOT_ID/camera indices, since both were confirmed to drift
@@ -238,6 +240,8 @@ def run_episode(
     joint_limits_deg: dict[str, tuple[float, float]],
     stereo_camera=None,
     execution_hz: float = 20.0,
+    depth_client=None,
+    depth_every_n_steps: int = 10,
 ) -> None:
     """Main control loop -- one iteration per step, up to `max_steps`.
 
@@ -267,6 +271,22 @@ def run_episode(
     single discrete jump. When `execution_hz <= control_hz`, exactly one
     waypoint (the target itself) is sent per tick -- identical to
     pre-this-plan behavior.
+
+    `depth_client` (Plan 12-06, DEPTH-CAL-03, default `None`) is an optional
+    `DepthCameraClient`-shaped object exposing `compute_depth(left, right) ->
+    np.ndarray | None`. When given (and `stereo_camera` is also given), a
+    depth map is computed from the SAME tick's stereo frame already read for
+    the `overhead_left`/`overhead_right` diagnostic recording above -- never
+    a second, freshly-read frame -- and recorded via
+    `io_logger.capture_depth_map()`, referenced under `depth_frames` in that
+    tick's `episode.jsonl` record. `depth_every_n_steps` (default 10)
+    rate-limits how often this happens: a full network round-trip to a
+    Colab-hosted GPU inference server is far too slow to run on every 2Hz
+    control tick without dominating episode timing, and depth is
+    recording-only (D-08) -- it does not need per-tick freshness the way the
+    policy's own observation does. `None` (the default) produces
+    `depth_frames == {}` for every step and creates no `depth_overhead/`
+    directory at all -- identical to pre-this-plan behavior.
     """
     control_period = 1.0 / control_hz
     execution_period = 1.0 / execution_hz
@@ -307,13 +327,37 @@ def run_episode(
                 for idx, name in camera_names.items()
                 if idx in caps
             }
+            stereo_left_frame = stereo_right_frame = None
             if stereo_camera is not None:
+                # Read the stereo device exactly ONCE this tick -- both the
+                # overhead_left/overhead_right diagnostic recording below AND
+                # the depth computation reuse these SAME local variables,
+                # never a second, freshly-read frame (StereoSplitCamera's
+                # read_left()/read_right() only share one physical read when
+                # called back-to-back without an intervening third call).
+                stereo_left_frame = stereo_camera.read_left()
+                stereo_right_frame = stereo_camera.read_right()
                 camera_frames["overhead_left"] = io_logger.capture_stereo_frame(
-                    stereo_camera.read_left(), "overhead_left", step=i
+                    stereo_left_frame, "overhead_left", step=i
                 )
                 camera_frames["overhead_right"] = io_logger.capture_stereo_frame(
-                    stereo_camera.read_right(), "overhead_right", step=i
+                    stereo_right_frame, "overhead_right", step=i
                 )
+
+            depth_frames = {}
+            # Cadence-gated: a full network round-trip to a Colab-hosted GPU
+            # inference server is far too slow to run on every 2Hz control
+            # tick without dominating episode timing -- depth is
+            # recording-only (D-08) and does not need per-tick freshness the
+            # way the policy's own observation does.
+            if (
+                depth_client is not None
+                and stereo_left_frame is not None
+                and stereo_right_frame is not None
+                and i % depth_every_n_steps == 0
+            ):
+                depth_map = depth_client.compute_depth(stereo_left_frame, stereo_right_frame)
+                depth_frames["overhead"] = io_logger.capture_depth_map(depth_map, "overhead", step=i)
 
             io_logger.write_step(
                 step=i,
@@ -329,6 +373,7 @@ def run_episode(
                     "action_to_execution": (t2 - t1) * 1000,
                 },
                 model_version=model_version,
+                depth_frames=depth_frames,
             )
             last_sent_action = validated_action
             steps_completed = i + 1
@@ -413,12 +458,43 @@ def main():
         "from control/device_map.json's cameras.stereo_overhead_name (falling back to "
         "cameras.stereo_overhead, then to 1, if device_map.json or that field is unavailable).",
     )
+    parser.add_argument(
+        "--depth-endpoint",
+        type=str,
+        default=None,
+        help="Colab-hosted Fast-FoundationStereo HTTP endpoint URL documented in "
+        "policy_server_launch.md, e.g. https://xxxx.ngrok-free.app/depth. Requires "
+        "--depth-calibration and --server-address.",
+    )
+    parser.add_argument(
+        "--depth-calibration",
+        type=Path,
+        default=None,
+        help="Path to the calibration file produced by vla_bridge.stereo_calibration's CLI, "
+        "e.g. stereo_calibration.json. Requires --depth-endpoint and --server-address.",
+    )
+    parser.add_argument(
+        "--depth-every-n-steps",
+        type=int,
+        default=10,
+        help="Capture a depth map only every Nth control tick, since each capture is a full "
+        "network round trip to a GPU inference server -- decoupled from --control-hz/"
+        "--execution-hz, matching those flags' own precedent of decoupling different-cost "
+        "operations from a single shared rate.",
+    )
     args = parser.parse_args()
 
     if args.server_address and not args.checkpoint:
         parser.error("--checkpoint is required when --server-address is given")
     if args.checkpoint and not args.server_address:
         parser.error("--server-address is required when --checkpoint is given")
+    if (args.depth_endpoint is None) != (args.depth_calibration is None):
+        parser.error("--depth-endpoint and --depth-calibration must be given together")
+    if args.depth_endpoint and not args.server_address:
+        parser.error(
+            "--server-address is required when --depth-endpoint is given (depth capture "
+            "needs the bridge's shared StereoSplitCamera)"
+        )
 
     device_map = _load_device_map()
 
@@ -472,6 +548,7 @@ def main():
     joint_limits_deg = action_contract.load_joint_limits_deg()
 
     stereo_camera = None
+    depth_client = None
 
     if args.server_address:
         # Real, network-bridged SmolVLA path (Plan 11-04). `connect_bridge()`
@@ -512,6 +589,11 @@ def main():
         # the policy for the camera_overhead diagnostic recording below --
         # never a second, colliding open of the AR0144.
         stereo_camera = client._stereo_camera
+        depth_client = (
+            DepthCameraClient(load_calibration(args.depth_calibration), args.depth_endpoint)
+            if args.depth_endpoint
+            else None
+        )
     else:
         # Plan 11-02's scripted dry-run path, unchanged.
         robot = SO101Follower(
@@ -545,6 +627,8 @@ def main():
                 joint_limits_deg,
                 stereo_camera=stereo_camera,
                 execution_hz=args.execution_hz,
+                depth_client=depth_client,
+                depth_every_n_steps=args.depth_every_n_steps,
             )
     finally:
         for cap in caps.values():

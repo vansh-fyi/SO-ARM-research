@@ -53,6 +53,7 @@ class IOLogger:
         executed_action: dict,
         latency_ms: dict,
         model_version: str,
+        depth_frames: dict | None = None,
     ) -> None:
         record = {
             "step": step,
@@ -66,6 +67,7 @@ class IOLogger:
             "executed_action": executed_action,
             "latency_ms": latency_ms,
             "model_version": model_version,
+            "depth_frames": depth_frames if depth_frames is not None else {},
         }
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
@@ -104,6 +106,37 @@ class IOLogger:
             return {"path": None, "captured_at_utc": captured_at_utc, "error": "capture failed"}
 
         return self._record_frame(frame, camera_name, step, captured_at_utc)
+
+    def capture_depth_map(self, depth_map, camera_name: str, step: int) -> dict:
+        """Saves an already-computed depth map (a float32-meters numpy array,
+        e.g. from `depth_camera.DepthCameraClient.compute_depth()`) under
+        `out_dir/depth_{camera_name}/{step:06d}.npy`.
+
+        A depth map is NOT an 8-bit image `cv2.imwrite()` can losslessly
+        encode -- this is a separate method from `_record_frame()`, never
+        routed through it, and uses `np.save()` instead of PNG encoding.
+        Mirrors `capture_stereo_frame()`'s fail-safe convention: never
+        raises, returns a `{"path": None, ..., "error": ...}` shape when
+        `depth_map` is `None` (e.g. a failed/timed-out FastFS request).
+        """
+        import numpy as np  # local import: keeps this module importable without numpy for pure-logic tests
+
+        captured_at_utc = datetime.now(timezone.utc).isoformat()
+        if depth_map is None:
+            return {"path": None, "captured_at_utc": captured_at_utc, "error": "depth capture failed"}
+
+        (self.out_dir / f"depth_{camera_name}").mkdir(parents=True, exist_ok=True)
+        rel_path = Path(f"depth_{camera_name}") / f"{step:06d}.npy"
+        np.save(self.out_dir / rel_path, depth_map)
+        # np.save() only auto-appends ".npy" if the given path doesn't
+        # already end in it -- rel_path already ends in ".npy", and passing
+        # a Path object directly (as above) does not double-append.
+        return {
+            "path": str(rel_path),
+            "captured_at_utc": captured_at_utc,
+            "shape": list(depth_map.shape),
+            "dtype": str(depth_map.dtype),
+        }
 
     def _record_frame(self, frame, camera_name: str, step: int, captured_at_utc: str) -> dict:
         """Shared directory-ensure + PNG-write + result-dict step for both
