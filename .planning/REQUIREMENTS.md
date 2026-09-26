@@ -149,6 +149,14 @@ Requirements for milestone v2.1 (MLLM Raw-Autonomy Benchmark). Builds on v2.0's 
 - [X] **LATENCY-03**: `io_logger.py`'s `latency_ms` field records real measured latency (via `time.monotonic()` deltas) instead of always `{0,0}` — Complete in Phase 12 Plan 02: `run_episode()`'s t0/t1/t2 `time.monotonic()` brackets feed real `observation_to_action`/`action_to_execution` millisecond deltas into `io_logger.write_step()`, proven exact under a controlled clock (2026-09-25)
 - [x] **LATENCY-04**: An in-flight-request guard prevents duplicate/overlapping observation requests when Colab responds slowly
 
+### Stereo Depth Calibration (user-requested extension, added 2026-09-26 during Phase 12 gap closure)
+
+Raised directly in conversation, not from the original 3-item bridge-latency UAT diagnosis — see `12-UAT.md`'s 4th Gaps entry and `12-CONTEXT.md` D-07/D-08/D-09 for full background (StereoPatch, arXiv 2609.15509; NVIDIA Fast-FoundationStereo, NVlabs/Fast-FoundationStereo, CVPR 2026).
+
+- [ ] **DEPTH-CAL-01**: A checkerboard-based stereo calibration (`cv2.stereoCalibrate`/`stereoRectify` against the AR0144's live left/right split) produces a saved calibration file in Fast-FoundationStereo's required format (flattened 3x3 intrinsics + baseline in meters), with a human-confirmed low reprojection error
+- [ ] **DEPTH-CAL-02**: A Colab-hosted Fast-FoundationStereo endpoint is documented and reachable, and a local `depth_camera.py` rectifies + downsamples a live AR0144 stereo pair to its input constraints (<1000px width, dimensions divisible by 32) and requests a metric depth map from it
+- [ ] **DEPTH-CAL-03**: Computed depth is recorded to the episode output directory and referenced in `episode.jsonl` via `IOLogger` — never added to the PolicyServer's observation dict (`BridgeActionSource`/`connect_bridge`) this phase — with a human-verified real-world-known-distance-vs-computed-depth check within a documented tolerance
+
 ### Safety Validator
 
 - [ ] **SAFETY-01**: `safety_validator.py`'s caps (`MAX_RELATIVE_TARGET_DEG`, `MAX_VELOCITY_DEG_PER_S`, `STALE_OBSERVATION_S`, `STALE_ACTION_S`) are incrementally re-tightened toward their original conservative defaults, with each step confirmed via a live-hardware re-verification episode (not assumed safe as a blind revert)
@@ -206,6 +214,8 @@ Requirements for milestone v2.1 (MLLM Raw-Autonomy Benchmark). Builds on v2.0's 
 | Arbitrary code-as-policy execution without a sandboxing/safety design | Superseded (2026-09-24): MLLM backends emit validated JSON through the unmodified `safety_validator.py`, never execute code, so no sandboxing design is needed |
 | Provider-agnostic MLLM router beyond the 3 v2.1 backends (OpenAI/Anthropic/HF only) | Deferred; v2.1 proves out the MLLM-style pattern with 3 concrete backends before generalizing to a full router |
 | Full 4-task suite beyond Pen Transfer (Selective Color Sorting, Multi-Object Packing, Precision Pen Placement) | Deferred to a later milestone once the 8-backend Pen Transfer comparison validates both pipelines |
+| StereoPatch's own custom RGB-depth fusion architecture (DeFM encoder + cross-attention "StereoPatch Tokens") | No public code release exists; explicitly out of scope for the Phase 12 depth-calibration extension (2026-09-26) |
+| Fine-tuning a depth-aware VLA checkpoint / wiring depth into the PolicyServer's observation dict | Deferred to a later milestone — the current SmolVLA checkpoint has no depth input feature and no fusion architecture exists yet to consume it usefully (see `12-CONTEXT.md` D-08/D-09) |
 | Recovery Rate metric automation / automated vision-based success detection | Deferred; v2.1 uses human-judged outcomes per the paper's own first-version approach |
 
 ## Traceability
@@ -269,6 +279,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LATENCY-04 | Phase 12 | Complete |
 | DEBT-02 | Phase 12 | Not applicable (already fixed pre-scoping) |
 | DEBT-03 | Phase 12 | Not applicable (already tracked pre-scoping) |
+| DEPTH-CAL-01 | Phase 12 | Pending |
+| DEPTH-CAL-02 | Phase 12 | Pending |
+| DEPTH-CAL-03 | Phase 12 | Pending |
 | SAFETY-01 | Phase 17 | Pending |
 | DEBT-01 | Phase 17 | Pending |
 | CAMFIX-01 | Phase 13 | Pending |
@@ -295,10 +308,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 - v1 requirements: 24 total
 - v1.1 requirements: 13 total (paused, unmapped to active phases pending resume)
 - v2.0 requirements: 12 total (TWIN ×7, VLAHW ×5)
-- v2.1 requirements: 26 total (LATENCY ×4, SAFETY ×1, CAMFIX ×3, PIPE ×2, VLA ×4, MLLM ×7, EVAL ×2, DEBT ×3)
-- Mapped to phases: 24 (v1) + 13 (v1.1) + 12 (v2.0) + 26 (v2.1) = 75
+- v2.1 requirements: 29 total (LATENCY ×4, DEPTH-CAL ×3, SAFETY ×1, CAMFIX ×3, PIPE ×2, VLA ×4, MLLM ×7, EVAL ×2, DEBT ×3)
+- Mapped to phases: 24 (v1) + 13 (v1.1) + 12 (v2.0) + 29 (v2.1) = 78
 - Unmapped: 0 (v1) ✓ / 0 (v1.1) ✓ / 0 (v2.0) ✓ / 0 (v2.1) ✓
 
 ---
 *Requirements defined: 2026-07-07*
 *Last updated: 2026-09-24 — mapped v2.1 requirements (26 total) to Phases 12-17 via roadmap creation: LATENCY-01..04 + DEBT-02/03 → Phase 12 (Bridge Tick-Latency Fix); CAMFIX-01..03 → Phase 13 (Camera Device Resolution Unification); PIPE-01 + VLAB-01..04 → Phase 14 (VLA-Style Pipeline & Backends); PIPE-02 + MLLM-01..07 → Phase 15 (MLLM-Style Pipeline & Backends); EVAL-01..02 → Phase 16 (Cross-Backend Pen Transfer Benchmark); SAFETY-01 + DEBT-01 → Phase 17 (Safety-Validator Cap Re-Tightening). Phases 12-13 form a chain; Phases 14 and 15 are independent/parallel-capable (different pipeline patterns); Phase 16 depends on both. Phase 17 is deliberately sequenced LAST (resequenced 2026-09-24 per user decision) so loosened soft-margin safety caps stay in place through the whole experiment rather than being re-tightened before it. The v2.1 VLA Backends requirements were renamed VLA-01..04 → VLAB-01..04 to remove a collision with v1's pre-existing VLA-01..04 (VLA Inference Pipeline, Phase 3).*
+*Addendum 2026-09-26: added DEPTH-CAL-01..03 (3 new) to Phase 12 — a user-requested stereo-depth-calibration extension raised directly in conversation during Phase 12 gap-closure plan-phase, not from the original bridge-latency scoping. See `12-UAT.md`'s 4th Gaps entry and `12-CONTEXT.md` D-07/D-08/D-09. v2.1 total revised 26 → 29.*

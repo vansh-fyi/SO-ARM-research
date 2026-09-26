@@ -370,13 +370,14 @@ Plans:
 **Goal**: The VLA bridge only requests fresh Colab inference when its local action queue is empty/near-empty instead of resending a full camera observation on every control tick, real latency is now measured instead of always logged as zero, and duplicate in-flight requests are guarded against — closing the root cause that limited Phase 11's live episode to 1/60 real (non-stale) actions. Two small pre-existing tech-debt items (a stale gripper-direction docstring and untracked mesh asset directories) are also cleared out.
 **Mode:** mvp
 **Depends on**: Phase 11 (reuses `control/vla_bridge` infrastructure unchanged)
-**Requirements**: LATENCY-01, LATENCY-02, LATENCY-03, LATENCY-04, DEBT-02, DEBT-03
+**Requirements**: LATENCY-01, LATENCY-02, LATENCY-03, LATENCY-04, DEBT-02, DEBT-03, DEPTH-CAL-01, DEPTH-CAL-02, DEPTH-CAL-03
 **Context/Notes**:
 
 - Root cause and fix mechanism are already fully diagnosed at the source level per `control/vla_bridge/FINDINGS.md` §5 and `research/SUMMARY.md`: the vendored `lerobot` library's own `_ready_to_send_observation()`/`chunk_size_threshold` gate already exists and is already configured, just never consulted by `BridgeActionSource.get_action()`.
 - Pick a concrete numeric round-trip latency target before implementing, and measure observation-to-execution wall-clock latency directly (not just discard-rate) — a wider `STALE_ACTION_S` can look like a fix while just legalizing stale actions (research Pitfall 1).
 - The in-flight-request guard (LATENCY-04) is required specifically to avoid a new race condition (research Pitfall 2): firing duplicate/overlapping observation requests when Colab responds slowly.
 - This is a location-and-wire-up task, not a design task — research flags it as a standard pattern (skip a dedicated research sub-phase).
+- **DEPTH-CAL-01..03 (user-requested extension, added 2026-09-26 during gap-closure plan-phase):** raised directly in conversation, not from the original bridge-latency scoping — see `12-UAT.md`'s 4th Gaps entry and `12-CONTEXT.md` D-07/D-08/D-09. Based on deep research into StereoPatch (arXiv 2609.15509) and NVIDIA's Fast-FoundationStereo (NVlabs/Fast-FoundationStereo, CVPR 2026): StereoPatch's own RGB-depth fusion architecture has no public code release (out of scope, not planned); FastFS's depth-computation half is real, open-source, CUDA-GPU-only (runs on the same Colab runtime already hosting the SmolVLA `PolicyServer`, over a second tunnel), and requires a rectified stereo pair + a calibration file (flattened 3x3 intrinsics + baseline in meters). Depth is calibrated, computed, and recorded to the episode output directory this phase — it is NOT wired into the PolicyServer's observation dict, since the current SmolVLA checkpoint has no depth input feature and no fusion architecture exists yet to consume it usefully. Fine-tuning a depth-aware checkpoint and the StereoPatch fusion architecture itself are deferred to a later milestone phase.
 
 **Success Criteria** (what must be TRUE):
 
@@ -385,8 +386,9 @@ Plans:
   3. `io_logger.py`'s `latency_ms` field records real measured latency (`time.monotonic()` deltas) instead of always `{0,0}`, confirmed on a live re-verification episode
   4. A live-hardware episode shows a measurably higher real (non-stale) action yield than Phase 11's 1/60 baseline, with an in-flight-request guard confirmed to prevent duplicate observation requests
   5. `soarm_gripper.py`'s `format_action` docstring correctly describes OPEN/CLOSE direction, and the `So-101/` and `coppelia/` mesh asset directories are tracked in git so a fresh clone resolves the URDF's relative mesh references
+  6. A checkerboard-based stereo calibration produces a Fast-FoundationStereo-format calibration file with a human-confirmed low reprojection error, and a local `depth_camera.py` rectifies/downsamples a live AR0144 stereo pair and requests a metric depth map from a Colab-hosted Fast-FoundationStereo endpoint, recorded (not sent to the policy) alongside a human-verified real-world-distance-vs-computed-depth check within a documented tolerance
 
-**Plans**: 2/4 plans complete
+**Plans**: 2/6 plans complete
 Plans:
 **Wave 1** (independent — zero files_modified overlap, run fully in parallel)
 
@@ -397,6 +399,14 @@ Plans:
 
 - [ ] 12-03-PLAN.md — Camera overhead logging fix (reuse shared StereoSplitCamera, log left+right separately) + waypoint interpolation for smooth motion, decoupled from the observation cadence (LATENCY-03, LATENCY-04)
 - [ ] 12-04-PLAN.md — Bridge staleness watchdog: force `must_go`/`action_queue` recovery after N consecutive stale results, closing the 6+ minute deadlock (LATENCY-01, LATENCY-02, LATENCY-04)
+
+**Wave 2 — depth calibration** *(user-requested extension, added 2026-09-26 — independent of 12-03/12-04, new files only, zero files_modified overlap)*
+
+- [ ] 12-05-PLAN.md — Checkerboard-based stereo calibration (`stereo_calibration.py`) producing a Fast-FoundationStereo-format calibration file, human-verified reprojection error (DEPTH-CAL-01)
+
+**Wave 3 — depth capture + Colab FastFS endpoint** *(blocked on 12-03 and 12-05)*
+
+- [ ] 12-06-PLAN.md — `depth_camera.py` (rectify/downsample/request) + Colab FastFS endpoint doc + `run_vla_episode.py`/`io_logger.py` recording-only wiring, human-verified known-distance depth-accuracy checkpoint (DEPTH-CAL-02, DEPTH-CAL-03)
 
 ### Phase 13: Camera Device Resolution Unification
 
