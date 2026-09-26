@@ -154,3 +154,9 @@ None - no external service configuration required.
 ---
 *Phase: 12-bridge-tick-latency-fix*
 *Completed: 2026-09-27*
+
+## Self-Check: PASSED
+
+All modified files verified present (control/vla_bridge/io_logger.py, control/run_vla_episode.py,
+control/test_io_logger.py, control/test_run_vla_episode.py, this SUMMARY.md). Both commits verified
+in git log (e7ff126 task commit, 6e478ff SUMMARY commit).
