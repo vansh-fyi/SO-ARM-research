@@ -388,7 +388,7 @@ Plans:
   5. `soarm_gripper.py`'s `format_action` docstring correctly describes OPEN/CLOSE direction, and the `So-101/` and `coppelia/` mesh asset directories are tracked in git so a fresh clone resolves the URDF's relative mesh references
   6. A checkerboard-based stereo calibration produces a Fast-FoundationStereo-format calibration file with a human-confirmed low reprojection error, and a local `depth_camera.py` rectifies/downsamples a live AR0144 stereo pair and requests a metric depth map from a Colab-hosted Fast-FoundationStereo endpoint, recorded (not sent to the policy) alongside a human-verified real-world-distance-vs-computed-depth check within a documented tolerance
 
-**Plans**: 2/6 plans complete
+**Plans**: 6/6 plans complete
 Plans:
 **Wave 1** (independent — zero files_modified overlap, run fully in parallel)
 
@@ -397,16 +397,16 @@ Plans:
 
 **Wave 2 — gap closure** *(from 12-UAT.md, live-hardware re-verification episode: camera-mislabel bug, jerky motion, and a 6+ minute stale/similarity deadlock)*
 
-- [ ] 12-03-PLAN.md — Camera overhead logging fix (reuse shared StereoSplitCamera, log left+right separately) + waypoint interpolation for smooth motion, decoupled from the observation cadence (LATENCY-03, LATENCY-04)
-- [ ] 12-04-PLAN.md — Bridge staleness watchdog: force `must_go`/`action_queue` recovery after N consecutive stale results, closing the 6+ minute deadlock (LATENCY-01, LATENCY-02, LATENCY-04)
+- [x] 12-03-PLAN.md — Camera overhead logging fix (reuse shared StereoSplitCamera, log left+right separately) + waypoint interpolation for smooth motion, decoupled from the observation cadence (LATENCY-03, LATENCY-04)
+- [x] 12-04-PLAN.md — Bridge staleness watchdog: force `must_go`/`action_queue` recovery after N consecutive stale results, closing the 6+ minute deadlock (LATENCY-01, LATENCY-02, LATENCY-04)
 
 **Wave 2 — depth calibration** *(user-requested extension, added 2026-09-26 — independent of 12-03/12-04, new files only, zero files_modified overlap)*
 
-- [ ] 12-05-PLAN.md — Checkerboard-based stereo calibration (`stereo_calibration.py`) producing a Fast-FoundationStereo-format calibration file, human-verified reprojection error (DEPTH-CAL-01)
+- [x] 12-05-PLAN.md — Checkerboard-based stereo calibration (`stereo_calibration.py`) producing a Fast-FoundationStereo-format calibration file, human-verified reprojection error (DEPTH-CAL-01)
 
 **Wave 3 — depth capture + Colab FastFS endpoint** *(blocked on 12-03 and 12-05)*
 
-- [ ] 12-06-PLAN.md — `depth_camera.py` (rectify/downsample/request) + Colab FastFS endpoint doc + `run_vla_episode.py`/`io_logger.py` recording-only wiring, human-verified known-distance depth-accuracy checkpoint (DEPTH-CAL-02, DEPTH-CAL-03)
+- [x] 12-06-PLAN.md — `depth_camera.py` (rectify/downsample/request) + Colab FastFS endpoint doc + `run_vla_episode.py`/`io_logger.py` recording-only wiring, human-verified known-distance depth-accuracy checkpoint (DEPTH-CAL-02, DEPTH-CAL-03)
 
 ### Phase 13: Camera Device Resolution Unification
 
@@ -536,7 +536,7 @@ Plans:
 | 9. Benchmark Data Collection & Re-Fine-Tuning | 0/TBD | Paused (2026-09-15) | - |
 | 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
 | 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
-| 12. Bridge Tick-Latency Fix | 2/2 | Complete   | 2026-09-25 |
+| 12. Bridge Tick-Latency Fix | 6/6 | Complete   | 2026-09-25 |
 | 13. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
 | 14. Camera Device Resolution Unification | 0/TBD | Not started | - |
 | 15. VLA-Style Pipeline & Backends | 0/TBD | Not started | - |
