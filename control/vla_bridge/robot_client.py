@@ -48,6 +48,18 @@ from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from vla_bridge import safety_validator
 from vla_bridge.stereo_camera import StereoSplitCamera
 
+# Gap 3 (blocker-severity, `12-UAT.md`): the vendored `lerobot` library's own
+# `must_go`/`action_queue`-empty recovery path is not guaranteed to converge
+# quickly once its `PolicyServer`'s `observations_similar()` filter starts
+# silently dropping every non-`must_go` observation -- the live UAT run
+# showed this take 6+ minutes to self-recover (steps ~192-241 of a 300-step
+# episode, `obs_age_s` growing unbounded from 30s to 227s). At a typical 2 Hz
+# control tick, `STALE_WATCHDOG_CONSECUTIVE_LIMIT` consecutive stale/no-action
+# results is ~5 seconds -- well under that 6+ minute window -- before this
+# project's own code forces the bridge out of the stuck state directly,
+# rather than waiting on the vendored library's internal timing.
+STALE_WATCHDOG_CONSECUTIVE_LIMIT = 10
+
 
 def connect_bridge(
     server_address: str,
@@ -247,6 +259,46 @@ def pop_validated_action(
     return validated_action, flags, raw_action, obs_age_s
 
 
+def _is_stale_or_empty(flags: list[str]) -> bool:
+    """`True` if `flags` (as returned by `pop_validated_action()`) represents
+    a held, not-genuinely-fresh result -- the two exact shapes
+    `pop_validated_action()` can return for a held result: its own
+    empty-queue early return (`"no action available, holding position"`) or
+    `safety_validator.validate_action()`'s stale-observation override (a flag
+    containing the substring `"stale observation"`)."""
+    return any(
+        flag == "no action available, holding position" or "stale observation" in flag
+        for flag in flags
+    )
+
+
+def force_bridge_recovery(client) -> None:
+    """Force the vendored `RobotClient` out of a stuck stale/similarity
+    deadlock (Gap 3, blocker) directly -- this project's own code -- instead
+    of waiting on its own internal `must_go`/`action_queue`-empty convergence,
+    confirmed live to take 6+ minutes once the server's `observations_similar()`
+    filter starts dropping every non-`must_go` observation
+    (`policy_server.py`'s `_enqueue_observation()`, read-only reference, never
+    patched in place).
+
+    Drains `client.action_queue` to empty via repeated `get_nowait()` under
+    `client.action_queue_lock` -- never `client.action_queue.empty()` as a
+    loop condition, since that check-then-act pattern would race against
+    `receive_actions()`'s background thread refilling the queue between the
+    check and the pop. Then sets `client.must_go` so the next
+    `control_loop_observation()` call sends an observation the server's own
+    `_enqueue_observation()` unconditionally processes, bypassing
+    `observations_similar()`.
+    """
+    with client.action_queue_lock:
+        while True:
+            try:
+                client.action_queue.get_nowait()
+            except queue.Empty:
+                break
+    client.must_go.set()
+
+
 class BridgeActionSource:
     """`run_vla_episode.py`'s `ActionSource` interface, backed by a real,
     network-bridged SmolVLA policy over an already-connected `RobotClient`.
@@ -263,6 +315,7 @@ class BridgeActionSource:
         checkpoint: str,
         joint_limits_deg: dict[str, tuple[float, float]],
         dt_s: float = 0.5,
+        stale_watchdog_limit: int = STALE_WATCHDOG_CONSECUTIVE_LIMIT,
     ):
         self.client = client
         self.checkpoint = checkpoint
@@ -270,6 +323,8 @@ class BridgeActionSource:
         self._dt_s = dt_s
         self._last_action: dict[str, float] | None = None
         self._inflight_lock = threading.Lock()
+        self._stale_watchdog_limit = stale_watchdog_limit
+        self._consecutive_stale_count = 0
 
     def get_action(
         self, joint_state: dict[str, float], instruction: str
@@ -300,6 +355,21 @@ class BridgeActionSource:
                 )
             except (grpc.RpcError, ConnectionError, RuntimeError):
                 return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
+
+            # Gap 3 (blocker) watchdog: count consecutive stale/no-action
+            # results; after `_stale_watchdog_limit` in a row, force the
+            # bridge out of the stuck state directly rather than waiting on
+            # the vendored library's own must_go/action_queue-empty
+            # convergence (confirmed live to take 6+ minutes). Any genuine
+            # fresh result always resets the counter to zero.
+            if _is_stale_or_empty(flags):
+                self._consecutive_stale_count += 1
+                if self._consecutive_stale_count >= self._stale_watchdog_limit:
+                    force_bridge_recovery(self.client)
+                    self._consecutive_stale_count = 0
+                    flags = [*flags, "staleness-watchdog: forced must_go + cleared action_queue"]
+            else:
+                self._consecutive_stale_count = 0
 
             self._last_action = validated_action
             if flags:
