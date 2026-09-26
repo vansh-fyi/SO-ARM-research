@@ -194,6 +194,129 @@ left listening after the tunnel is torn down.
 
 ---
 
+## Depth endpoint (Fast-FoundationStereo, Phase 12 gap-closure extension)
+
+Phase 12, Plan 12-06 -- step 2 of the 3-step depth-calibration extension
+(`12-CONTEXT.md` D-07). This is a SECOND, independent Colab-side endpoint
+alongside the existing gRPC `PolicyServer` (Steps 1-5 above), for
+recording-only depth capture (per D-08) -- it is never wired into the
+SmolVLA `PolicyServer`'s own observation path.
+
+**Fast-FoundationStereo legitimacy gate:** this section's Step 7 clones a
+full external ML repo (not a PyPI package) from GitHub -- a tampering risk
+at least as serious as the `pyngrok` gate above. Do **not** run that install
+cell until a human has visited `github.com/NVlabs/Fast-FoundationStereo`
+themselves and confirmed: (a) it is genuinely under the `NVlabs` GitHub org
+(NVIDIA's own research org -- the same org publishing other real repos, e.g.
+the earlier `FoundationStereo`), (b) its README matches the real-time
+zero-shot stereo-matching / CVPR 2026 description this plan's research is
+based on, (c) a quick skim of its `requirements.txt`/`setup.py` (or
+equivalent) doesn't reveal anything unexpected before installing it on the
+Colab runtime.
+
+### Step 7 — Colab: install and load Fast-FoundationStereo
+
+```python
+# Colab notebook cell -- DO NOT RUN until the human has completed the
+# Fast-FoundationStereo legitimacy check above.
+!git clone https://github.com/NVlabs/Fast-FoundationStereo
+```
+
+Then follow that repo's own README to install its dependencies and download
+its pretrained checkpoint. This file does NOT re-derive FastFS's own Python
+call signature/API -- research for this extension already confirmed FastFS's
+INPUT/OUTPUT contract (rectified pair + calibration in, depth map out), but
+not its exact function/class names -- so the human implementing this Colab
+cell should refer to the actual cloned repo's own README/examples for the
+precise inference call. This matches this file's own existing precedent for
+an unresolved implementation detail (see the `camera2`/`camera3` `type:
+<split-stereo-left/right>` placeholder note in the Camera mapping section
+above -- documented as a target contract, not a fully-resolved
+implementation).
+
+### Step 8 — Colab: serve the depth endpoint
+
+```python
+# Colab notebook cell
+!pip install flask  # widely-used, long-established -- no dedicated
+                     # legitimacy check needed, unlike pyngrok/FastFS above
+
+import base64
+import io
+
+import cv2
+import numpy as np
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+
+@app.route("/depth", methods=["POST"])
+def depth():
+    body = request.get_json()
+    left_bytes = base64.b64decode(body["left_png_b64"])
+    right_bytes = base64.b64decode(body["right_png_b64"])
+    left_img = cv2.imdecode(np.frombuffer(left_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    right_img = cv2.imdecode(np.frombuffer(right_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    intrinsics_flat = body["intrinsics_flat"]
+    baseline_m = body["baseline_m"]
+
+    # Call FastFS's own inference entry point here (per Step 7's own README
+    # reference) with left_img/right_img/intrinsics_flat/baseline_m.
+    depth_map = run_fastfs_inference(left_img, right_img, intrinsics_flat, baseline_m)
+
+    buf = io.BytesIO()
+    np.save(buf, depth_map.astype(np.float32))
+    depth_npy_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return jsonify({"depth_npy_b64": depth_npy_b64})
+
+
+# Run in the background, same convention as Step 3's PolicyServerConfig/serve() cell.
+app.run(host="0.0.0.0", port=8081)
+```
+
+This exact request/response shape (`left_png_b64`/`right_png_b64`/
+`intrinsics_flat`/`baseline_m` request, `depth_npy_b64` response) is what
+`depth_camera.DepthCameraClient.compute_depth()` (Plan 12-06 Task 1) sends
+and parses -- keep them in sync if either side changes.
+
+### Step 9 — Colab: open a second tunnel
+
+```python
+# Colab notebook cell
+from pyngrok import ngrok
+
+# A DIFFERENT local port than Step 3's gRPC server (8080), and a plain HTTP
+# tunnel type -- unlike Step 4's gRPC tunnel, which specifically needs "tcp"
+# for HTTP/2 semantics, this is a plain JSON-over-HTTP POST endpoint, so
+# ngrok's default HTTP tunnel type works fine here.
+depth_tunnel = ngrok.connect(8081, "http")
+print(f"Depth endpoint reachable at: {depth_tunnel.public_url}/depth")
+```
+
+Pass the printed `.../depth` URL as `depth_camera.py`'s `--endpoint` argument
+(Plan 12-06 Task 1) or `run_vla_episode.py`'s `--depth-endpoint` flag
+(Task 3).
+
+### Teardown (extends Step 6 above)
+
+Every session, no exceptions, ALSO tear down this second tunnel and stop the
+Flask server process -- same rationale as the existing gRPC tunnel's own
+teardown discipline (an unattended open tunnel into a Colab-hosted endpoint
+is an elevation-of-privilege risk):
+
+```python
+# Colab notebook cell, at the end of the session
+ngrok.disconnect(depth_tunnel.public_url)
+# ngrok.kill() already stops all tunnels including this one, if not already called above.
+```
+
+Then interrupt/stop the Flask `app.run(...)` cell (Colab: click the cell's
+stop button, or restart the runtime) so the depth server process itself is
+not left listening after the tunnel is torn down.
+
+---
+
 ## Summary
 
 | Item | Value |
@@ -204,3 +327,4 @@ left listening after the tunnel is torn down.
 | Camera mapping | `camera1`=wrist, `camera2`=AR0144 stereo-left, `camera3`=AR0144 stereo-right |
 | Fallback tunnel | `cloudflared` + configured Zero Trust tunnel (heavier setup) |
 | Fallback policy | ACT or pi0/pi05 (`lerobot.policies`, already installed) if this checkpoint underperforms |
+| Depth endpoint | Fast-FoundationStereo (NVlabs/Fast-FoundationStereo), served via Flask, HTTP tunnel (separate from the gRPC PolicyServer tunnel) |
