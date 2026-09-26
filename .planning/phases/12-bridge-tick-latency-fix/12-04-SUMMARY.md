@@ -160,3 +160,12 @@ This is a blocker-severity fix for a failure mode that took 6+ minutes to self-r
 ---
 *Phase: 12-bridge-tick-latency-fix*
 *Completed: 2026-09-26*
+
+## Self-Check: PASSED
+
+- FOUND: control/vla_bridge/robot_client.py
+- FOUND: control/test_robot_client.py
+- FOUND: .planning/phases/12-bridge-tick-latency-fix/12-04-SUMMARY.md
+- FOUND: 2a6c2fe (test commit)
+- FOUND: 086970d (feat commit)
+- FOUND: ba3bf4d (docs/summary commit)
