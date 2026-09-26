@@ -72,6 +72,70 @@ def _build_camera_names(camera_indices: list[int]) -> dict[int, str]:
     return dict(zip(camera_indices, CAMERA_SEMANTIC_NAMES))
 
 
+def _open_cameras(
+    camera_indices: list[int],
+    camera_names: dict[int, str],
+    skip_names: frozenset[str] = frozenset(),
+) -> dict[int, "cv2.VideoCapture"]:
+    """Opens a `cv2.VideoCapture` for every index in `camera_indices` EXCEPT
+    those whose `camera_names` label is in `skip_names` -- for a skipped
+    index, `cv2.VideoCapture` is never called at all (not just discarded
+    after opening).
+
+    Exists to stop this script's own diagnostic recording from opening a
+    second, independent capture of the AR0144 -- the physical device backing
+    the "overhead" index -- while `connect_bridge()`'s `StereoSplitCamera`
+    already holds it open exclusively, per that class's own docstring: the
+    AR0144 does not tolerate concurrent opens (Gap 1). In the live UAT
+    episode, the second open silently landed on the laptop's FaceTime camera
+    instead of failing loudly.
+    """
+    caps: dict[int, "cv2.VideoCapture"] = {}
+    for idx in camera_indices:
+        if camera_names.get(idx) in skip_names:
+            continue
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            caps[idx] = cap
+        else:
+            print(f"WARNING: camera index {idx} did not open, skipping")
+    return caps
+
+
+def _interpolate_waypoints(
+    start: dict[str, float], end: dict[str, float], num_steps: int
+) -> list[dict[str, float]]:
+    """Builds `num_steps` waypoints tracing a straight-line path from `start`
+    to `end`, one per joint in `end`.
+
+    Fixes Gap 2: sending a target directly via `robot.send_action()` every
+    control tick produces visible discrete jumps between successive chunk
+    waypoints; sending this function's intermediate waypoints at a higher
+    `--execution-hz` instead traces a continuous path between them.
+
+    The FINAL waypoint (`k == num_steps`) is `end` taken directly -- not
+    computed via the interpolation formula -- guaranteeing bit-exact equality
+    with the target and avoiding a floating-point reassociation difference
+    (`start + (end - start) * 1.0` is not always exactly `end`).
+
+    Uses `start.get(j, end[j])` (not `start[j]`) defensively: if `start` is
+    missing a joint `end` has, that joint has no known starting point, so it
+    is held at `end[j]` for every waypoint (no interpolation for that joint)
+    rather than raising a `KeyError`.
+    """
+    waypoints: list[dict[str, float]] = []
+    for k in range(1, num_steps + 1):
+        if k == num_steps:
+            waypoints.append(dict(end))
+            continue
+        waypoint = {}
+        for joint, end_v in end.items():
+            start_v = start.get(joint, end_v)
+            waypoint[joint] = start_v + (end_v - start_v) * (k / num_steps)
+        waypoints.append(waypoint)
+    return waypoints
+
+
 class ActionSource(Protocol):
     """Pluggable seam for whatever produces the next candidate action.
 
@@ -172,6 +236,8 @@ def run_episode(
     max_steps: int,
     control_hz: float,
     joint_limits_deg: dict[str, tuple[float, float]],
+    stereo_camera=None,
+    execution_hz: float = 20.0,
 ) -> None:
     """Main control loop -- one iteration per step, up to `max_steps`.
 
@@ -185,8 +251,27 @@ def run_episode(
     via `action_contract.load_joint_limits_deg()`) and passed in here rather
     than loaded internally -- keeps this function hermetic/testable against
     a mocked calibration file, not this machine's real hardware cache.
+
+    `stereo_camera` (Gap 1 closure) is an optional `StereoSplitCamera`-shaped
+    object exposing `read_left()`/`read_right()` -- when given, this same
+    shared instance (the one already feeding the policy) is used to record
+    two additional `camera_frames` entries (`"overhead_left"`/
+    `"overhead_right"`) every step, instead of a second, independently-opened
+    capture of the same physical device. `None` (the default) reproduces
+    pre-this-plan behavior exactly -- no such keys are recorded.
+
+    `execution_hz` (Gap 2 closure, default 20.0) decouples the local
+    waypoint-send rate from `control_hz`'s observation-fetch cadence: each
+    tick's target is reached via `_interpolate_waypoints()`'s intermediate
+    waypoints sent at `execution_hz`, tracing a continuous path instead of a
+    single discrete jump. When `execution_hz <= control_hz`, exactly one
+    waypoint (the target itself) is sent per tick -- identical to
+    pre-this-plan behavior.
     """
     control_period = 1.0 / control_hz
+    execution_period = 1.0 / execution_hz
+    num_substeps = max(1, round(control_period / execution_period))
+    final_sleep = max(0.0, control_period - execution_period * (num_substeps - 1))
     start_positions = read_positions(robot)
     last_sent_action: dict[str, float] | None = None
     steps_completed = 0
@@ -206,10 +291,15 @@ def run_episode(
                 prev_action=last_sent_action,
                 dt_s=1.0 / control_hz,
             )
-            try:
-                robot.send_action({f"{j}.pos": v for j, v in validated_action.items()})
-            except (ConnectionError, RuntimeError) as e:
-                print(f"Write failed, skipping this tick: {e}")
+            interpolation_start = last_sent_action if last_sent_action is not None else current
+            waypoints = _interpolate_waypoints(interpolation_start, validated_action, num_substeps)
+            for wp_idx, waypoint in enumerate(waypoints):
+                try:
+                    robot.send_action({f"{j}.pos": v for j, v in waypoint.items()})
+                except (ConnectionError, RuntimeError) as e:
+                    print(f"Write failed, skipping this tick: {e}")
+                if wp_idx < len(waypoints) - 1:
+                    time.sleep(execution_period)
             t2 = time.monotonic()
 
             camera_frames = {
@@ -217,6 +307,13 @@ def run_episode(
                 for idx, name in camera_names.items()
                 if idx in caps
             }
+            if stereo_camera is not None:
+                camera_frames["overhead_left"] = io_logger.capture_stereo_frame(
+                    stereo_camera.read_left(), "overhead_left", step=i
+                )
+                camera_frames["overhead_right"] = io_logger.capture_stereo_frame(
+                    stereo_camera.read_right(), "overhead_right", step=i
+                )
 
             io_logger.write_step(
                 step=i,
@@ -235,7 +332,7 @@ def run_episode(
             )
             last_sent_action = validated_action
             steps_completed = i + 1
-            time.sleep(control_period)
+            time.sleep(final_sleep)
     except KeyboardInterrupt:
         print("Interrupted -- returning to start position...")
         reason = "keyboard_interrupt"
@@ -278,6 +375,16 @@ def main():
     parser.add_argument("--instruction", type=str, default="Pick up the red cube")
     parser.add_argument("--max-steps", type=int, default=60)
     parser.add_argument("--control-hz", type=float, default=2.0)
+    parser.add_argument(
+        "--execution-hz",
+        type=float,
+        default=20.0,
+        help="Local waypoint-interpolation send rate (Hz), decoupled from --control-hz's "
+        "observation-fetch cadence -- chunk playback drains a local queue and needs no "
+        "network round trip except at chunk boundaries (BridgeActionSource's LATENCY-01 "
+        "gate already restricts control_loop_observation() calls to when the queue is "
+        "near-empty, so raising this does not increase Colab inference request frequency).",
+    )
     parser.add_argument(
         "--server-address",
         type=str,
@@ -351,15 +458,20 @@ def main():
 
     camera_names = _build_camera_names(args.camera)
 
-    caps = {}
-    for idx in args.camera:
-        cap = cv2.VideoCapture(idx)
-        if cap.isOpened():
-            caps[idx] = cap
-        else:
-            print(f"WARNING: camera index {idx} did not open, skipping")
+    # Gap 1: in the bridge path, the "overhead" index is never opened here --
+    # connect_bridge()'s StereoSplitCamera already holds that physical device
+    # (the AR0144) open exclusively, and it does not tolerate concurrent
+    # opens. The non-bridge (ScriptedActionSource) path is unaffected: no
+    # StereoSplitCamera exists there, so nothing is skipped.
+    caps = _open_cameras(
+        args.camera,
+        camera_names,
+        skip_names=frozenset({"overhead"}) if args.server_address else frozenset(),
+    )
 
     joint_limits_deg = action_contract.load_joint_limits_deg()
+
+    stereo_camera = None
 
     if args.server_address:
         # Real, network-bridged SmolVLA path (Plan 11-04). `connect_bridge()`
@@ -396,6 +508,10 @@ def main():
             return
         robot = client.robot
         action_source = BridgeActionSource(client, args.checkpoint, joint_limits_deg)
+        # Gap 1: reuse the SAME StereoSplitCamera instance already feeding
+        # the policy for the camera_overhead diagnostic recording below --
+        # never a second, colliding open of the AR0144.
+        stereo_camera = client._stereo_camera
     else:
         # Plan 11-02's scripted dry-run path, unchanged.
         robot = SO101Follower(
@@ -411,7 +527,12 @@ def main():
         action_source = ScriptedActionSource()
 
     try:
-        with IOLogger(args.out, camera_names) as io_logger:
+        # The "overhead" index is never in `caps` in the bridge path (see
+        # `_open_cameras(..., skip_names=...)` above), so this comprehension
+        # naturally excludes it from `IOLogger`'s pre-declared camera_names
+        # -- no now-unused, always-empty `camera_overhead/` directory.
+        io_logger_camera_names = {idx: name for idx, name in camera_names.items() if idx in caps}
+        with IOLogger(args.out, io_logger_camera_names) as io_logger:
             run_episode(
                 robot,
                 caps,
@@ -422,6 +543,8 @@ def main():
                 args.max_steps,
                 args.control_hz,
                 joint_limits_deg,
+                stereo_camera=stereo_camera,
+                execution_hz=args.execution_hz,
             )
     finally:
         for cap in caps.values():

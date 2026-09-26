@@ -20,7 +20,9 @@ from pathlib import Path
 class IOLogger:
     """Writes one JSON Lines record per inference step to `out_dir/episode.jsonl`.
 
-    Also owns per-camera frame capture (`capture_camera_frame`), writing each
+    Also owns per-camera frame capture (`capture_camera_frame` for a `cap`
+    object owning its own `.read()`; `capture_stereo_frame` for an
+    already-read frame, e.g. from a shared `StereoSplitCamera`), writing each
     frame as a PNG under `out_dir/camera_{name}/{step:06d}.png` and returning
     a path+timestamp reference for that step's JSONL record.
     """
@@ -78,13 +80,43 @@ class IOLogger:
         after its own read -- never shared across cameras (unlike
         `record_episode.py`'s single `ts` variable).
         """
-        import cv2  # local import: keeps this module importable without cv2 for pure-logic tests
-
         ok, frame = cap.read()
         captured_at_utc = datetime.now(timezone.utc).isoformat()
         if not ok:
             return {"path": None, "captured_at_utc": captured_at_utc, "error": "capture failed"}
 
+        return self._record_frame(frame, camera_name, step, captured_at_utc)
+
+    def capture_stereo_frame(self, frame, camera_name: str, step: int) -> dict:
+        """Records an ALREADY-read frame from the shared `StereoSplitCamera`
+        feed the live-bridge policy itself receives (Gap 1 closure).
+
+        Unlike `capture_camera_frame()`, which owns the read via a `cap.read()`
+        call, this method takes a raw `np.ndarray` (or `None` on read failure)
+        directly -- matching `StereoSplitCamera.read_left()`/`read_right()`'s
+        actual return contract, never a `cv2.VideoCapture`-style `(ok, frame)`
+        tuple. Exists specifically so the `camera_overhead` diagnostic log
+        strictly mirrors what the policy actually saw, instead of a second,
+        independently-opened, colliding capture of the same physical device.
+        """
+        captured_at_utc = datetime.now(timezone.utc).isoformat()
+        if frame is None:
+            return {"path": None, "captured_at_utc": captured_at_utc, "error": "capture failed"}
+
+        return self._record_frame(frame, camera_name, step, captured_at_utc)
+
+    def _record_frame(self, frame, camera_name: str, step: int, captured_at_utc: str) -> dict:
+        """Shared directory-ensure + PNG-write + result-dict step for both
+        `capture_camera_frame()` and `capture_stereo_frame()`.
+
+        Creates `camera_{camera_name}/` lazily on every call (not only in
+        `__init__`) so names never declared in `__init__`'s `camera_names`
+        argument (e.g. `"overhead_left"`/`"overhead_right"`) still get a
+        subdirectory on first write.
+        """
+        import cv2  # local import: keeps this module importable without cv2 for pure-logic tests
+
+        (self.out_dir / f"camera_{camera_name}").mkdir(parents=True, exist_ok=True)
         rel_path = Path(f"camera_{camera_name}") / f"{step:06d}.png"
         cv2.imwrite(str(self.out_dir / rel_path), frame)
         return {"path": str(rel_path), "captured_at_utc": captured_at_utc}
