@@ -34,11 +34,11 @@ Resolution: split the AR0144's single 2560x720 frame into left/right
 halves, giving **3 genuinely distinct real camera views** (not a dummy or
 duplicated 3rd slot):
 
-| Checkpoint camera key | Real source | Crop |
-|---|---|---|
-| `camera1` | IMX335 wrist | as-is, full 1920x1080 frame |
-| `camera2` | AR0144 stereo — LEFT half | columns `[0:1280]` of the 2560x720 frame |
-| `camera3` | AR0144 stereo — RIGHT half | columns `[1280:2560]` of the 2560x720 frame |
+| Checkpoint camera key | Real source                 | Crop                                         |
+| --------------------- | --------------------------- | -------------------------------------------- |
+| `camera1`           | IMX335 wrist                | as-is, full 1920x1080 frame                  |
+| `camera2`           | AR0144 stereo — LEFT half  | columns`[0:1280]` of the 2560x720 frame    |
+| `camera3`           | AR0144 stereo — RIGHT half | columns`[1280:2560]` of the 2560x720 frame |
 
 This is a better structural fit than an empty/dummy 3rd slot: all 3 of the
 checkpoint's expected inputs receive real image data during inference,
@@ -154,6 +154,7 @@ python -m lerobot.async_inference.robot_client \
 ```
 
 Notes:
+
 - `<ngrok_tcp_host>:<ngrok_tcp_port>` = the value printed in Step 4, with
   the `tcp://` prefix stripped.
 - `--robot.port` / `--robot.id` match `control/COMMANDS.md`'s documented
@@ -319,12 +320,12 @@ not left listening after the tunnel is torn down.
 
 ## Summary
 
-| Item | Value |
-|---|---|
-| Checkpoint | `victorvanhalst/smolvla_so101_cube` |
-| Task instruction | "Pick the red cube and place it in the bowl" |
-| Tunnel type | TCP (`ngrok.connect(8080, "tcp")`) — not HTTP |
-| Camera mapping | `camera1`=wrist, `camera2`=AR0144 stereo-left, `camera3`=AR0144 stereo-right |
-| Fallback tunnel | `cloudflared` + configured Zero Trust tunnel (heavier setup) |
-| Fallback policy | ACT or pi0/pi05 (`lerobot.policies`, already installed) if this checkpoint underperforms |
-| Depth endpoint | Fast-FoundationStereo (NVlabs/Fast-FoundationStereo), served via Flask, HTTP tunnel (separate from the gRPC PolicyServer tunnel) |
+| Item             | Value                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| Checkpoint       | `victorvanhalst/smolvla_so101_cube`                                                      |
+| Task instruction | "Pick the red cube and place it in the bowl"                                               |
+| Tunnel type      | TCP (`ngrok.connect(8080, "tcp")`) — not HTTP                                           |
+| Camera mapping   | `camera1`=wrist, `camera2`=AR0144 stereo-left, `camera3`=AR0144 stereo-right         |
+| Fallback tunnel  | `cloudflared` + configured Zero Trust tunnel (heavier setup)                             |
+| Fallback policy  | ACT or pi0/pi05 (`lerobot.policies`, already installed) if this checkpoint underperforms |
+| Depth endpoint   | Fast-FoundationStereo (NVlabs/Fast-FoundationStereo), served via Flask, HTTP tunnel (separate from the gRPC PolicyServer tunnel) |
