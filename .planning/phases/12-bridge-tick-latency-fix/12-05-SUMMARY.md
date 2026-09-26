@@ -145,3 +145,7 @@ Keep the resulting calibration file -- Plan 12-06 loads it directly. See Task 2'
 ---
 *Phase: 12-bridge-tick-latency-fix*
 *Completed: 2026-09-26*
+
+## Self-Check: PASSED
+
+All created files found on disk (`control/vla_bridge/stereo_calibration.py`, `control/test_stereo_calibration.py`, this SUMMARY.md). Both commit hashes (`d8e79bf`, `8412905`) confirmed present in `git log`.
