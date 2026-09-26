@@ -1026,3 +1026,310 @@ def test_run_episode_default_execution_hz_sends_exactly_one_action_per_tick(
         )
 
     assert len(mock_robot.sent_actions) == 3
+
+
+# --- depth recording (Plan 12-06, Task 3 -- DEPTH-CAL-03) --------------------
+
+
+class FakeStereoCameraCountingReads:
+    """Stand-in for `StereoSplitCamera` that returns fixed left/right frames
+    and counts how many times each read method is called -- confirms the
+    per-tick stereo device is read exactly once, shared between the
+    diagnostic recording and depth computation."""
+
+    def __init__(self, left_frame, right_frame):
+        self.left_frame = left_frame
+        self.right_frame = right_frame
+        self.read_left_calls = 0
+        self.read_right_calls = 0
+
+    def read_left(self):
+        self.read_left_calls += 1
+        return self.left_frame
+
+    def read_right(self):
+        self.read_right_calls += 1
+        return self.right_frame
+
+
+class FakeDepthClient:
+    """Stand-in for `DepthCameraClient` -- records each call's arguments and
+    returns a fixed depth map."""
+
+    def __init__(self, depth_map):
+        self.depth_map = depth_map
+        self.compute_depth_calls = []
+
+    def compute_depth(self, left, right):
+        self.compute_depth_calls.append((left, right))
+        return self.depth_map
+
+
+def test_run_episode_records_depth_frame_when_depth_client_given(tmp_path, mock_robot, mock_calibration_file):
+    action_source = ScriptedActionSource()
+    caps = {0: FakeCamera()}
+    camera_names = {0: "wrist"}
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    left_frame = np.full((2, 2, 3), 1, dtype=np.uint8)
+    right_frame = np.full((2, 2, 3), 2, dtype=np.uint8)
+    stereo_camera = FakeStereoCameraCountingReads(left_frame, right_frame)
+    depth_map = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+    depth_client = FakeDepthClient(depth_map)
+
+    with IOLogger(tmp_path, camera_names) as io_logger:
+        run_episode(
+            mock_robot,
+            caps,
+            camera_names,
+            io_logger,
+            action_source,
+            instruction="Pick up the red cube",
+            max_steps=1,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+            stereo_camera=stereo_camera,
+            depth_client=depth_client,
+            depth_every_n_steps=1,
+        )
+
+    lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
+    record = json.loads(lines[0])
+    depth_path = record["depth_frames"]["overhead"]["path"]
+    assert depth_path is not None
+    loaded = np.load(tmp_path / depth_path)
+    np.testing.assert_array_equal(loaded, depth_map)
+
+
+def test_run_episode_depth_cadence_gate_skips_non_matching_ticks(tmp_path, mock_robot, mock_calibration_file):
+    action_source = ScriptedActionSource()
+    caps = {0: FakeCamera()}
+    camera_names = {0: "wrist"}
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    left_frame = np.full((2, 2, 3), 1, dtype=np.uint8)
+    right_frame = np.full((2, 2, 3), 2, dtype=np.uint8)
+    stereo_camera = FakeStereoCameraCountingReads(left_frame, right_frame)
+    depth_map = np.array([[1.0]], dtype=np.float32)
+    depth_client = FakeDepthClient(depth_map)
+
+    with IOLogger(tmp_path, camera_names) as io_logger:
+        run_episode(
+            mock_robot,
+            caps,
+            camera_names,
+            io_logger,
+            action_source,
+            instruction="Pick up the red cube",
+            max_steps=2,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+            stereo_camera=stereo_camera,
+            depth_client=depth_client,
+            depth_every_n_steps=2,
+        )
+
+    # Only step i=0 satisfies 0 % 2 == 0 -- step i=1 (1 % 2 == 1) is skipped.
+    assert len(depth_client.compute_depth_calls) == 1
+
+
+def test_run_episode_without_depth_client_produces_empty_depth_frames_and_no_directory(
+    tmp_path, mock_robot, mock_calibration_file
+):
+    action_source = ScriptedActionSource()
+    caps = {0: FakeCamera()}
+    camera_names = {0: "wrist"}
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    left_frame = np.full((2, 2, 3), 1, dtype=np.uint8)
+    right_frame = np.full((2, 2, 3), 2, dtype=np.uint8)
+    stereo_camera = FakeStereoCameraCountingReads(left_frame, right_frame)
+
+    with IOLogger(tmp_path, camera_names) as io_logger:
+        run_episode(
+            mock_robot,
+            caps,
+            camera_names,
+            io_logger,
+            action_source,
+            instruction="Pick up the red cube",
+            max_steps=1,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+            stereo_camera=stereo_camera,
+        )
+
+    lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
+    record = json.loads(lines[0])
+    assert record["depth_frames"] == {}
+    assert not (tmp_path / "depth_overhead").exists()
+
+
+def test_run_episode_reads_stereo_camera_exactly_once_per_tick_and_shares_frame_with_depth_client(
+    tmp_path, mock_robot, mock_calibration_file
+):
+    action_source = ScriptedActionSource()
+    caps = {0: FakeCamera()}
+    camera_names = {0: "wrist"}
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    left_frame = np.full((2, 2, 3), 1, dtype=np.uint8)
+    right_frame = np.full((2, 2, 3), 2, dtype=np.uint8)
+    stereo_camera = FakeStereoCameraCountingReads(left_frame, right_frame)
+    depth_map = np.array([[1.0]], dtype=np.float32)
+    depth_client = FakeDepthClient(depth_map)
+
+    with IOLogger(tmp_path, camera_names) as io_logger:
+        run_episode(
+            mock_robot,
+            caps,
+            camera_names,
+            io_logger,
+            action_source,
+            instruction="Pick up the red cube",
+            max_steps=1,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+            stereo_camera=stereo_camera,
+            depth_client=depth_client,
+            depth_every_n_steps=1,
+        )
+
+    assert stereo_camera.read_left_calls == 1
+    assert stereo_camera.read_right_calls == 1
+    assert len(depth_client.compute_depth_calls) == 1
+    called_left, called_right = depth_client.compute_depth_calls[0]
+    assert called_left is left_frame
+    assert called_right is right_frame
+
+
+def test_main_constructs_and_threads_depth_client_when_both_depth_flags_given(monkeypatch, tmp_path):
+    calls = {}
+
+    class FakeBridgeClient:
+        def __init__(self):
+            self.robot = object()
+            self._stereo_camera = object()
+
+        def stop(self):
+            pass
+
+    fake_client = FakeBridgeClient()
+
+    def fake_connect_bridge(
+        server_address,
+        checkpoint,
+        robot_config,
+        task,
+        policy_device="cuda",
+        stereo_camera_index=1,
+        wrist_camera_index=None,
+    ):
+        return fake_client
+
+    def fake_run_episode(
+        robot,
+        caps,
+        camera_names,
+        io_logger,
+        action_source,
+        instruction,
+        max_steps,
+        control_hz,
+        joint_limits_deg,
+        **kwargs,
+    ):
+        calls["depth_client"] = kwargs.get("depth_client")
+        calls["depth_every_n_steps"] = kwargs.get("depth_every_n_steps")
+
+    fake_calibration = object()
+
+    def fake_load_calibration(path):
+        calls["load_calibration_path"] = path
+        return fake_calibration
+
+    class FakeDepthCameraClient:
+        def __init__(self, calibration, endpoint_url):
+            calls["depth_camera_client_calibration"] = calibration
+            calls["depth_camera_client_endpoint"] = endpoint_url
+
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
+    monkeypatch.setattr(run_vla_episode, "load_calibration", fake_load_calibration)
+    monkeypatch.setattr(run_vla_episode, "DepthCameraClient", FakeDepthCameraClient)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/fake_port",
+            "fake_robot_id",
+            "--out",
+            str(tmp_path),
+            "--camera",
+            "0",
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+            "--depth-endpoint",
+            "https://fake.ngrok.io/depth",
+            "--depth-calibration",
+            str(tmp_path / "stereo_calibration.json"),
+        ],
+    )
+
+    run_vla_episode.main()
+
+    assert calls["load_calibration_path"] == tmp_path / "stereo_calibration.json"
+    assert calls["depth_camera_client_calibration"] is fake_calibration
+    assert calls["depth_camera_client_endpoint"] == "https://fake.ngrok.io/depth"
+    assert isinstance(calls["depth_client"], FakeDepthCameraClient)
+    assert calls["depth_every_n_steps"] == 10
+
+
+def test_main_errors_when_only_depth_endpoint_given_without_calibration(monkeypatch, tmp_path):
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/fake_port",
+            "fake_robot_id",
+            "--out",
+            str(tmp_path),
+            "--camera",
+            "0",
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+            "--depth-endpoint",
+            "https://fake.ngrok.io/depth",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        run_vla_episode.main()
+
+
+def test_main_errors_when_depth_flags_given_without_server_address(monkeypatch, tmp_path):
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/fake_port",
+            "fake_robot_id",
+            "--out",
+            str(tmp_path),
+            "--camera",
+            "0",
+            "--depth-endpoint",
+            "https://fake.ngrok.io/depth",
+            "--depth-calibration",
+            str(tmp_path / "stereo_calibration.json"),
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        run_vla_episode.main()

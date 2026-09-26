@@ -160,3 +160,68 @@ def test_capture_stereo_frame_creates_subdirectory_lazily_for_undeclared_camera_
         logger.capture_stereo_frame(frame, "overhead_left", step=0)
 
     assert (tmp_path / "camera_overhead_left").exists()
+
+
+# --- capture_depth_map (Plan 12-06, Task 3 -- DEPTH-CAL-03) ------------------
+
+
+def test_capture_depth_map_saves_npy_and_returns_path_shape_dtype(tmp_path):
+    with IOLogger(tmp_path, CAMERA_NAMES) as logger:
+        depth_map = np.zeros((4, 4), dtype=np.float32)
+        result = logger.capture_depth_map(depth_map, "overhead", step=0)
+
+    assert result["path"] == "depth_overhead/000000.npy"
+    assert "captured_at_utc" in result
+    assert result["shape"] == [4, 4]
+    assert result["dtype"] == "float32"
+
+    loaded = np.load(tmp_path / result["path"])
+    np.testing.assert_array_equal(loaded, depth_map)
+
+
+def test_capture_depth_map_returns_capture_failed_error_on_none_input(tmp_path):
+    with IOLogger(tmp_path, CAMERA_NAMES) as logger:
+        result = logger.capture_depth_map(None, "overhead", step=0)
+
+    assert result["path"] is None
+    assert result["error"] == "depth capture failed"
+    assert "captured_at_utc" in result
+
+
+def test_capture_depth_map_creates_subdirectory_lazily_for_undeclared_camera_name(tmp_path):
+    with IOLogger(tmp_path, CAMERA_NAMES) as logger:
+        assert not (tmp_path / "depth_overhead").exists()
+        depth_map = np.zeros((2, 2), dtype=np.float32)
+        logger.capture_depth_map(depth_map, "overhead", step=0)
+
+    assert (tmp_path / "depth_overhead").exists()
+
+
+def test_write_step_defaults_depth_frames_to_empty_dict_when_omitted(tmp_path):
+    with IOLogger(tmp_path, CAMERA_NAMES) as logger:
+        _write_dummy_step(logger, 0)
+
+    lines = (tmp_path / "episode.jsonl").read_text().splitlines()
+    record = json.loads(lines[0])
+    assert record["depth_frames"] == {}
+
+
+def test_write_step_records_explicit_depth_frames_dict(tmp_path):
+    with IOLogger(tmp_path, CAMERA_NAMES) as logger:
+        logger.write_step(
+            step=0,
+            instruction="Pick up the red cube",
+            camera_frames={},
+            joint_state={"shoulder_pan": 0.0},
+            raw_model_output={"shoulder_pan": 0.0},
+            validated_action={"shoulder_pan": 0.0},
+            validator_flags=[],
+            executed_action={"shoulder_pan": 0.0},
+            latency_ms={"observation_to_action": 0, "action_to_execution": 0},
+            model_version="scripted-dry-run-v1",
+            depth_frames={"overhead": {"path": "depth_overhead/000000.npy"}},
+        )
+
+    lines = (tmp_path / "episode.jsonl").read_text().splitlines()
+    record = json.loads(lines[0])
+    assert record["depth_frames"] == {"overhead": {"path": "depth_overhead/000000.npy"}}
