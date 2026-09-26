@@ -179,3 +179,14 @@ None for the automated portions -- no new environment variables or dashboard con
 ---
 *Phase: 12-bridge-tick-latency-fix*
 *Completed: 2026-09-26*
+
+## Self-Check: PASSED
+
+- FOUND: control/vla_bridge/depth_camera.py
+- FOUND: control/test_depth_camera.py
+- FOUND: .planning/phases/12-bridge-tick-latency-fix/12-06-SUMMARY.md
+- FOUND commit: 344a62d (test)
+- FOUND commit: deca078 (feat)
+- FOUND commit: 850b8dc (docs)
+- FOUND commit: 9845410 (test)
+- FOUND commit: ccfb1e8 (feat)
