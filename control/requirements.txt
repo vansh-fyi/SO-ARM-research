@@ -2,6 +2,9 @@ lerobot[feetech,async]==0.6.1
 opencv-python==5.0.0.93
 pynput==1.8.2
 pytest==8.3.4
+# Already installed transitively via lerobot[async]; pinned explicitly here
+# since Plan 12-06's depth_camera.py now imports it directly.
+requests==2.34.2
 
 # Installed for the planned YOLO object-follow feature (adapting XLeRobot's
 # 3_so100_yolo_ee_follow.py) - not yet wired into any script here.
