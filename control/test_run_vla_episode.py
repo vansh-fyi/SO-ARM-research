@@ -10,7 +10,13 @@ import numpy as np
 import pytest
 
 import run_vla_episode
-from run_vla_episode import ScriptedActionSource, _build_camera_names, run_episode
+from run_vla_episode import (
+    ScriptedActionSource,
+    _build_camera_names,
+    _interpolate_waypoints,
+    _open_cameras,
+    run_episode,
+)
 from vla_bridge import action_contract
 from vla_bridge.io_logger import IOLogger
 
@@ -39,6 +45,40 @@ CAMERA_NAMES = {0: "wrist", 1: "overhead"}
 
 def _fake_caps():
     return {0: FakeCamera(), 1: FakeCamera()}
+
+
+class _TrackingCapture:
+    """Stand-in for `cv2.VideoCapture` that records the indices it was
+    constructed with -- lets tests assert exactly which indices
+    `_open_cameras()` attempted to open, matching this file's existing
+    hand-rolled-fake convention (not `unittest.mock`)."""
+
+    constructed_indices: list[int] = []
+
+    def __init__(self, idx):
+        _TrackingCapture.constructed_indices.append(idx)
+        self._idx = idx
+
+    def isOpened(self):
+        return True
+
+    def release(self):
+        pass
+
+
+class _FakeStereoCamera:
+    """Stand-in for `StereoSplitCamera` -- returns fixed, distinct left/right
+    frames instead of reading a real AR0144."""
+
+    def __init__(self):
+        self.left_frame = np.full((2, 2, 3), 1, dtype=np.uint8)
+        self.right_frame = np.full((2, 2, 3), 2, dtype=np.uint8)
+
+    def read_left(self):
+        return self.left_frame
+
+    def read_right(self):
+        return self.right_frame
 
 
 def test_scripted_action_source_toggles_gripper_after_30_steps():
@@ -214,6 +254,11 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
     class FakeBridgeClient:
         def __init__(self):
             self.robot = object()
+            # Plan 12-03's Gap 1 fix reads client._stereo_camera through to
+            # run_episode()'s stereo_camera parameter -- every FakeBridgeClient
+            # double needs this attribute even when a given test doesn't
+            # assert on it directly.
+            self._stereo_camera = object()
 
         def stop(self):
             calls["stopped"] = True
@@ -240,8 +285,20 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
             calls["bridge_action_source_checkpoint"] = checkpoint
 
     def fake_run_episode(
-        robot, caps, camera_names, io_logger, action_source, instruction, max_steps, control_hz, joint_limits_deg
+        robot,
+        caps,
+        camera_names,
+        io_logger,
+        action_source,
+        instruction,
+        max_steps,
+        control_hz,
+        joint_limits_deg,
+        **kwargs,
     ):
+        # **kwargs absorbs Plan 12-03's new stereo_camera/execution_hz
+        # keyword arguments -- main() now always threads them through this
+        # call site; this fake's assertions are unaffected.
         calls["action_source_type"] = type(action_source).__name__
 
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
@@ -288,6 +345,11 @@ def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch,
     class FakeBridgeClient:
         def __init__(self):
             self.robot = object()
+            # Plan 12-03's Gap 1 fix reads client._stereo_camera through to
+            # run_episode()'s stereo_camera parameter -- every FakeBridgeClient
+            # double needs this attribute even when a given test doesn't
+            # assert on it directly.
+            self._stereo_camera = object()
 
         def stop(self):
             pass
@@ -347,6 +409,11 @@ def test_wrist_camera_index_threads_through_from_camera_names(monkeypatch, tmp_p
     class FakeBridgeClient:
         def __init__(self):
             self.robot = object()
+            # Plan 12-03's Gap 1 fix reads client._stereo_camera through to
+            # run_episode()'s stereo_camera parameter -- every FakeBridgeClient
+            # double needs this attribute even when a given test doesn't
+            # assert on it directly.
+            self._stereo_camera = object()
 
         def stop(self):
             pass
@@ -483,6 +550,11 @@ def test_device_map_supplies_port_robot_id_camera_defaults_when_cli_args_omitted
     class FakeBridgeClient:
         def __init__(self):
             self.robot = object()
+            # Plan 12-03's Gap 1 fix reads client._stereo_camera through to
+            # run_episode()'s stereo_camera parameter -- every FakeBridgeClient
+            # double needs this attribute even when a given test doesn't
+            # assert on it directly.
+            self._stereo_camera = object()
 
         def stop(self):
             calls["stopped"] = True
@@ -552,6 +624,11 @@ def test_device_map_prefers_stereo_overhead_name_over_numeric_index_when_present
     class FakeBridgeClient:
         def __init__(self):
             self.robot = object()
+            # Plan 12-03's Gap 1 fix reads client._stereo_camera through to
+            # run_episode()'s stereo_camera parameter -- every FakeBridgeClient
+            # double needs this attribute even when a given test doesn't
+            # assert on it directly.
+            self._stereo_camera = object()
 
         def stop(self):
             pass
@@ -614,6 +691,11 @@ def test_explicit_cli_args_override_device_map_json(monkeypatch, tmp_path):
     class FakeBridgeClient:
         def __init__(self):
             self.robot = object()
+            # Plan 12-03's Gap 1 fix reads client._stereo_camera through to
+            # run_episode()'s stereo_camera parameter -- every FakeBridgeClient
+            # double needs this attribute even when a given test doesn't
+            # assert on it directly.
+            self._stereo_camera = object()
 
         def stop(self):
             pass
@@ -698,3 +780,249 @@ def test_help_still_documents_port_robot_id_camera_as_explicit_overrides(monkeyp
     assert "port" in captured.out
     assert "robot_id" in captured.out
     assert "--camera" in captured.out
+
+
+# --- _open_cameras (Plan 12-03, Task 1 -- Gap 1 closure) ---------------------
+
+
+def test_open_cameras_skips_indices_whose_name_is_in_skip_names(monkeypatch):
+    _TrackingCapture.constructed_indices = []
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", _TrackingCapture)
+    camera_names = {0: "wrist", 1: "overhead"}
+
+    caps = _open_cameras([0, 1], camera_names, skip_names=frozenset({"overhead"}))
+
+    assert _TrackingCapture.constructed_indices == [0]
+    assert list(caps.keys()) == [0]
+
+
+def test_open_cameras_opens_everything_when_skip_names_is_empty(monkeypatch):
+    _TrackingCapture.constructed_indices = []
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", _TrackingCapture)
+    camera_names = {0: "wrist", 1: "overhead"}
+
+    caps = _open_cameras([0, 1], camera_names)
+
+    assert _TrackingCapture.constructed_indices == [0, 1]
+    assert set(caps.keys()) == {0, 1}
+
+
+def test_server_address_never_opens_overhead_camera_index_while_wrist_still_does(monkeypatch, tmp_path):
+    """main()-level integration test: the "overhead"-labeled index must never
+    reach cv2.VideoCapture in the --server-address (bridge) path, while the
+    wrist index still does (Gap 1)."""
+    _TrackingCapture.constructed_indices = []
+
+    class FakeBridgeClient:
+        def __init__(self):
+            self.robot = object()
+            self._stereo_camera = object()
+
+        def stop(self):
+            pass
+
+    fake_client = FakeBridgeClient()
+
+    def fake_connect_bridge(
+        server_address,
+        checkpoint,
+        robot_config,
+        task,
+        policy_device="cuda",
+        stereo_camera_index=1,
+        wrist_camera_index=None,
+    ):
+        return fake_client
+
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", _TrackingCapture)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py",
+            "/dev/fake_port",
+            "fake_robot_id",
+            "--out",
+            str(tmp_path),
+            "--camera",
+            "0",
+            "--camera",
+            "1",
+            "--server-address",
+            "0.tcp.ngrok.io:12345",
+            "--checkpoint",
+            "victorvanhalst/smolvla_so101_cube",
+        ],
+    )
+
+    run_vla_episode.main()
+
+    # _build_camera_names([0, 1]) == {0: "wrist", 1: "overhead"} -- index 1
+    # ("overhead") must never reach cv2.VideoCapture; index 0 ("wrist") does.
+    assert _TrackingCapture.constructed_indices == [0]
+
+
+# --- run_episode() camera provenance (Plan 12-03, Task 1 -- Gap 1 closure) ---
+
+
+def test_run_episode_records_overhead_left_and_right_from_shared_stereo_camera(
+    tmp_path, mock_robot, mock_calibration_file
+):
+    action_source = ScriptedActionSource()
+    caps = {0: FakeCamera()}  # only the wrist index -- matches the now-fixed bridge path
+    camera_names = {0: "wrist"}
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    stereo_camera = _FakeStereoCamera()
+
+    with IOLogger(tmp_path, camera_names) as io_logger:
+        run_episode(
+            mock_robot,
+            caps,
+            camera_names,
+            io_logger,
+            action_source,
+            instruction="Pick up the red cube",
+            max_steps=2,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+            stereo_camera=stereo_camera,
+        )
+
+    lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
+    assert len(lines) == 2
+    for line in lines:
+        record = json.loads(line)
+        assert "overhead_left" in record["camera_frames"]
+        assert "overhead_right" in record["camera_frames"]
+        left_path = record["camera_frames"]["overhead_left"]["path"]
+        right_path = record["camera_frames"]["overhead_right"]["path"]
+        assert left_path is not None and (tmp_path / left_path).exists()
+        assert right_path is not None and (tmp_path / right_path).exists()
+        assert left_path.startswith("camera_overhead_left")
+        assert right_path.startswith("camera_overhead_right")
+
+
+def test_run_episode_without_stereo_camera_produces_no_overhead_left_right_keys(
+    tmp_path, mock_robot, mock_calibration_file
+):
+    action_source = ScriptedActionSource()
+    caps = _fake_caps()
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+
+    with IOLogger(tmp_path, CAMERA_NAMES) as io_logger:
+        run_episode(
+            mock_robot,
+            caps,
+            CAMERA_NAMES,
+            io_logger,
+            action_source,
+            instruction="Pick up the red cube",
+            max_steps=1,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+        )
+
+    lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
+    record = json.loads(lines[0])
+    assert "overhead_left" not in record["camera_frames"]
+    assert "overhead_right" not in record["camera_frames"]
+
+
+# --- _interpolate_waypoints (Plan 12-03, Task 2 -- Gap 2 closure) -----------
+
+
+def test_interpolate_waypoints_returns_evenly_spaced_intermediate_values():
+    start = {"j": 0.0}
+    end = {"j": 10.0}
+
+    waypoints = _interpolate_waypoints(start, end, num_steps=5)
+
+    assert len(waypoints) == 5
+    for wp, expected in zip(waypoints[:-1], [2.0, 4.0, 6.0, 8.0]):
+        assert wp["j"] == pytest.approx(expected)
+    assert waypoints[-1]["j"] == 10.0
+
+
+def test_interpolate_waypoints_degenerate_single_step_returns_end_exactly():
+    start = {"j": 0.0}
+    end = {"j": 10.0}
+
+    waypoints = _interpolate_waypoints(start, end, num_steps=1)
+
+    assert waypoints == [end]
+    assert waypoints[0]["j"] == end["j"]
+
+
+# --- run_episode() waypoint interpolation (Plan 12-03, Task 2 -- Gap 2 closure) ---
+
+
+def test_run_episode_sends_multiple_interpolated_waypoints_per_tick_when_execution_hz_exceeds_control_hz(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch
+):
+    # move_to_positions() (the end-of-episode return-to-start move) also
+    # calls robot.send_action() at least once -- stub it out so this test's
+    # sent_actions count reflects only the main control loop's sends.
+    monkeypatch.setattr(run_vla_episode, "move_to_positions", lambda *a, **k: None)
+    action_source = ScriptedActionSource()
+    caps = _fake_caps()
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+
+    with IOLogger(tmp_path, CAMERA_NAMES) as io_logger:
+        run_episode(
+            mock_robot,
+            caps,
+            CAMERA_NAMES,
+            io_logger,
+            action_source,
+            instruction="Pick up the red cube",
+            max_steps=2,
+            control_hz=10.0,
+            joint_limits_deg=joint_limits_deg,
+            execution_hz=100.0,
+        )
+
+    # control_period / execution_period == 0.1 / 0.01 == 10 substeps per tick.
+    assert len(mock_robot.sent_actions) == 20
+
+    lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
+    assert len(lines) == 2
+    for tick_idx, line in enumerate(lines):
+        record = json.loads(line)
+        expected_target = {f"{j}.pos": v for j, v in record["validated_action"].items()}
+        last_send_idx = (tick_idx + 1) * 10 - 1
+        assert mock_robot.sent_actions[last_send_idx] == expected_target
+
+
+def test_run_episode_default_execution_hz_sends_exactly_one_action_per_tick(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch
+):
+    """Regression: execution_hz omitted (default 20.0) with the existing
+    fast-test control_hz=100.0 convention (execution_hz <= control_hz) must
+    send exactly ONE robot.send_action() call per tick -- identical to
+    pre-this-plan behavior."""
+    # move_to_positions() (the end-of-episode return-to-start move) also
+    # calls robot.send_action() at least once -- stub it out so this test's
+    # sent_actions count reflects only the main control loop's sends.
+    monkeypatch.setattr(run_vla_episode, "move_to_positions", lambda *a, **k: None)
+    action_source = ScriptedActionSource()
+    caps = _fake_caps()
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+
+    with IOLogger(tmp_path, CAMERA_NAMES) as io_logger:
+        run_episode(
+            mock_robot,
+            caps,
+            CAMERA_NAMES,
+            io_logger,
+            action_source,
+            instruction="Pick up the red cube",
+            max_steps=3,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+        )
+
+    assert len(mock_robot.sent_actions) == 3

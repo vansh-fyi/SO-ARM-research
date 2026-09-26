@@ -125,3 +125,38 @@ def test_log_is_durable_across_a_simulated_mid_episode_crash(tmp_path):
     assert len(lines) == 2
     for line in lines:
         json.loads(line)  # must not raise -- every line is valid JSON
+
+
+# --- capture_stereo_frame (Plan 12-03, Task 1 -- Gap 1 closure) --------------
+
+
+def test_capture_stereo_frame_writes_png_and_returns_path_and_timestamp(tmp_path):
+    with IOLogger(tmp_path, CAMERA_NAMES) as logger:
+        frame = np.zeros((4, 4, 3), dtype=np.uint8)
+        result = logger.capture_stereo_frame(frame, "overhead_left", step=0)
+
+    assert result["path"] is not None
+    assert "captured_at_utc" in result
+    resolved = tmp_path / result["path"]
+    assert resolved.exists()
+
+
+def test_capture_stereo_frame_returns_capture_failed_error_on_none_frame(tmp_path):
+    with IOLogger(tmp_path, CAMERA_NAMES) as logger:
+        result = logger.capture_stereo_frame(None, "overhead_left", step=0)
+
+    assert result["path"] is None
+    assert result["error"] == "capture failed"
+    assert "captured_at_utc" in result
+
+
+def test_capture_stereo_frame_creates_subdirectory_lazily_for_undeclared_camera_name(tmp_path):
+    # "overhead_left"/"overhead_right" are never passed to __init__'s
+    # camera_names argument -- the subdirectory must still be created on
+    # first write, not require pre-declaration.
+    with IOLogger(tmp_path, CAMERA_NAMES) as logger:
+        assert not (tmp_path / "camera_overhead_left").exists()
+        frame = np.zeros((4, 4, 3), dtype=np.uint8)
+        logger.capture_stereo_frame(frame, "overhead_left", step=0)
+
+    assert (tmp_path / "camera_overhead_left").exists()
