@@ -82,6 +82,7 @@ def main() -> None:
         pass
     finally:
         cv2.destroyAllWindows()
+        cam.release()
         print("Preview closed. AR0144 released -- safe to run the real calibration script now.")
 
 

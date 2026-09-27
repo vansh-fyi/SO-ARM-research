@@ -58,52 +58,63 @@ def run_interactive_calibration(
     print(f"Live preview started. SPACE = capture this view, q/ESC = stop early.")
     print(f"Need {num_views} valid views (each must detect corners in BOTH halves).")
 
-    while captured < num_views:
-        left = stereo_camera.read_left()
-        right = stereo_camera.read_right()
-        if left is None or right is None:
-            continue
-
-        left_corners = detect_checkerboard_corners(left, pattern_size)
-        right_corners = detect_checkerboard_corners(right, pattern_size)
-        both_ok = left_corners is not None and right_corners is not None
-
-        left_vis = left.copy()
-        right_vis = right.copy()
-        if left_corners is not None:
-            cv2.drawChessboardCorners(left_vis, pattern_size, left_corners, True)
-        if right_corners is not None:
-            cv2.drawChessboardCorners(right_vis, pattern_size, right_corners, True)
-
-        status = (
-            f"View {captured + 1}/{num_views} | "
-            f"LEFT: {'OK' if left_corners is not None else 'no'}  "
-            f"RIGHT: {'OK' if right_corners is not None else 'no'}  |  "
-            f"SPACE=capture  q=stop"
-        )
-        color = (0, 255, 0) if both_ok else (0, 0, 255)
-        cv2.putText(left_vis, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-        combined = cv2.hconcat([left_vis, right_vis])
-        cv2.imshow("Stereo calibration -- SPACE to capture, q to stop", combined)
-
-        key = cv2.waitKey(1) & 0xFF
-        if key in (ord("q"), 27):  # 'q' or ESC
-            print("Stopped early by user.")
-            break
-        if key == ord(" "):
-            if not both_ok:
-                print("  Skipped -- checkerboard not detected in both halves at capture instant.")
+    try:
+        while captured < num_views:
+            left = stereo_camera.read_left()
+            right = stereo_camera.read_right()
+            if left is None or right is None:
                 continue
-            if first_left_frame is None:
-                first_left_frame = left
-            object_points_list.append(build_object_points(pattern_size, square_size_m))
-            left_points_list.append(left_corners)
-            right_points_list.append(right_corners)
-            captured += 1
-            print(f"  Captured view {captured}/{num_views}")
 
-    cv2.destroyAllWindows()
+            left_corners = detect_checkerboard_corners(left, pattern_size)
+            right_corners = detect_checkerboard_corners(right, pattern_size)
+            both_ok = left_corners is not None and right_corners is not None
+
+            left_vis = left.copy()
+            right_vis = right.copy()
+            if left_corners is not None:
+                cv2.drawChessboardCorners(left_vis, pattern_size, left_corners, True)
+            if right_corners is not None:
+                cv2.drawChessboardCorners(right_vis, pattern_size, right_corners, True)
+
+            status = (
+                f"View {captured + 1}/{num_views} | "
+                f"LEFT: {'OK' if left_corners is not None else 'no'}  "
+                f"RIGHT: {'OK' if right_corners is not None else 'no'}  |  "
+                f"SPACE=capture  q=stop"
+            )
+            color = (0, 255, 0) if both_ok else (0, 0, 255)
+            cv2.putText(left_vis, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+            combined = cv2.hconcat([left_vis, right_vis])
+            cv2.imshow("Stereo calibration -- SPACE to capture, q to stop", combined)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord("q"), 27):  # 'q' or ESC
+                print("Stopped early by user.")
+                break
+            if key == ord(" "):
+                if not both_ok:
+                    print("  Skipped -- checkerboard not detected in both halves at capture instant.")
+                    continue
+                if first_left_frame is None:
+                    first_left_frame = left
+                object_points_list.append(build_object_points(pattern_size, square_size_m))
+                left_points_list.append(left_corners)
+                right_points_list.append(right_corners)
+                captured += 1
+                print(f"  Captured view {captured}/{num_views}")
+    except KeyboardInterrupt:
+        print("Interrupted by user.")
+    finally:
+        # Always release the camera and close windows, on every exit path
+        # (normal completion, 'q'/ESC, KeyboardInterrupt) -- leaving the
+        # underlying ffmpeg subprocess running orphans it, and a second
+        # concurrent process fighting over the same AR0144 device produces
+        # stuck/duplicate frames for every subsequent run (confirmed live
+        # during Phase 12 UAT: multiple un-released ffmpeg processes left the
+        # camera returning byte-identical frames until all were killed).
+        cv2.destroyAllWindows()
+        stereo_camera.release()
 
     if len(object_points_list) < 3:
         raise RuntimeError(
