@@ -1,73 +1,47 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-23T11:25:43.739Z",
-  "phase": "11",
-  "phase_name": "VLA Hardware Connection",
-  "phase_dir": ".planning/phases/11-vla-hardware-connection",
-  "plan": "11-05",
-  "task": 3,
-  "total_tasks": 4,
+  "timestamp": "2026-09-27T11:03:43.885Z",
+  "phase": "12",
+  "phase_name": "bridge-tick-latency-fix",
+  "phase_dir": ".planning/phases/12-bridge-tick-latency-fix",
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
   "status": "paused",
+  "context": "uat",
+  "uat_file": ".planning/phases/12-bridge-tick-latency-fix/12-UAT.md",
   "completed_tasks": [
-    {"id": 1, "name": "E-stop hardware-in-the-loop verification", "status": "done", "commit": "d891f81"},
-    {"id": 2, "name": "Device auto-discovery (device_map.json) + bridge camera1 wiring fix", "status": "done", "commit": "fa99468"}
+    {"id": "gap-closure-12-03", "name": "Camera diagnostic collision fix + waypoint interpolation", "status": "done", "commit": "e7ff126"},
+    {"id": "gap-closure-12-04", "name": "Stale-deadlock watchdog", "status": "done", "commit": "086970d"},
+    {"id": "gap-closure-12-05", "name": "Stereo calibration module (stereo_calibration.py)", "status": "done", "commit": "d8e79bf"},
+    {"id": "gap-closure-12-06", "name": "Depth capture module + Colab FastFS docs", "status": "done", "commit": "deca078"},
+    {"id": "uat-test-1", "name": "Camera-overhead recording shows real AR0144 workspace", "status": "done_pass"},
+    {"id": "uat-test-2", "name": "Motion smoothness (--execution-hz tuning)", "status": "done_pass", "commit": "58ab5b0 (tuned to 100.0)"},
+    {"id": "uat-test-3", "name": "Stale-deadlock watchdog live confirmation", "status": "done_skipped", "note": "no stall occurred during test episode, mechanism unexercised live (unit tests already cover it)"},
+    {"id": "quick-260927-he3", "name": "Fix frozen 2560x720 stereo capture -> 1280x360", "status": "done", "commit": "caa85da"},
+    {"id": "quick-260927-i3s", "name": "Upgrade stereo capture 1280x360 -> 1600x600", "status": "done", "commit": "0545951"},
+    {"id": "uat-test-4", "name": "Stereo calibration produces plausible calibration file", "status": "done_pass", "note": "converged after 4 attempts, 1.79px reprojection error, baseline consistent across last 2 attempts"}
   ],
   "remaining_tasks": [
-    {
-      "id": 3,
-      "name": "Full VLA-driven episode, recorded end-to-end",
-      "status": "in_progress",
-      "progress": "Three real bugs found and fixed live against real hardware + a real Colab-hosted PolicyServer this session (see decisions below). Robot still did not move by end of session -- root cause identified via web research + reading installed lerobot source: an upstream lerobot async_inference self-reinforcing deadlock (server-side observation similarity filter), not a bug in this project's own code. Next attempt should get further now that both fixes are in, but has not yet been retried."
-    },
-    {"id": 4, "name": "Findings write-up and go/no-go recommendation", "status": "not_started"}
+    {"id": "uat-test-5", "name": "Colab Fast-FoundationStereo endpoint docs legitimacy + contract match", "status": "not_started"},
+    {"id": "uat-test-6", "name": "Depth accuracy sanity check against known real-world distance", "status": "not_started", "depends_on": "Colab FastFS endpoint must be running (human-owned setup, D-06)"},
+    {"id": "uat-test-7", "name": "Live episode depth recording end-to-end", "status": "not_started", "depends_on": "uat-test-6"}
   ],
   "blockers": [
-    {
-      "description": "Upstream lerobot async_inference deadlock: PolicyServer's _obs_sanity_checks()/observations_similar() skips running inference on any observation whose joint-space state is nearly identical (~1 degree tolerance) to the last one it actually processed, unless a must_go flag forces it through. Because the robot wasn't moving (initially due to the now-fixed staleness bug below), every subsequent observation looked unchanged to the server, so it silently discarded them instead of running inference -- explaining 0% GPU utilization and an action queue that never refreshed after the first chunk. Matches open, unresolved upstream GitHub issues: huggingface/lerobot#2356 (\"AsyncInference only running one action chunk\"), #2374 (\"SmolVLA freezes and barely fluctuates around neutral\" on SO-101), #1500 (\"Observation #0 has been filtered out\", names the exact mechanism). No confirmed upstream fix exists as of this research.",
-      "type": "technical",
-      "workaround": "Not yet applied/verified. Working theory: now that both local bugs are fixed, the very first real action may arrive fast enough to pass the corrected STALE_ACTION_S=3.0s threshold and cause genuine robot motion, which would make subsequent observations genuinely differ in joint-space and break the deadlock naturally -- untested, needs a fresh live retry. If that doesn't work, the deadlock may need addressing more directly (e.g. investigating whether the client's `must_go` flag is actually reaching the server as expected, or whether the server's own observation_queue maxsize=1 is dropping non-must_go observations regardless)."
-    }
+    {"description": "Tests 5-7 require the Colab-side Fast-FoundationStereo endpoint to actually be stood up (install NVlabs/Fast-FoundationStereo, serve it, tunnel it) -- this is human-owned per CONTEXT.md D-06 (Claude does not run physical hardware or a live Colab GPU runtime).", "type": "human_action", "workaround": "none -- user must set up the Colab depth endpoint before these tests can proceed"}
   ],
   "async_jobs": [],
   "human_actions_pending": [
-    {
-      "action": "Start a fresh Colab PolicyServer + ngrok tunnel session (the previous one was torn down per policy_server_launch.md's Step 6 teardown at end of last session) and re-attempt run_vla_episode.py's live episode, now with both code fixes in place.",
-      "context": "Task 3 still needs one full successful (or clearly-failed-and-understood) live episode before Task 4's findings write-up can be drafted.",
-      "blocking": true
-    },
-    {
-      "action": "Watch the robot during the retry and report: did it move at all this time, did the deadlock recur, what was the first action's obs_age_s, and the final termination reason.",
-      "context": "Task 3 is a blocking checkpoint:human-verify task requiring physical presence and judgment.",
-      "blocking": true
-    }
+    {"action": "Stand up the Colab Fast-FoundationStereo endpoint per control/vla_bridge/policy_server_launch.md's depth section, then run the depth accuracy sanity check (place an object at a known measured distance, compare against depth_camera.py's computed depth)", "context": "Required for UAT tests 5, 6, 7 -- the last 3 pending items in Phase 12's UAT", "blocking": true}
   ],
   "decisions": [
-    {
-      "decision": "Fixed connect_bridge() in control/vla_bridge/robot_client.py to explicitly start the library's receive_actions() background thread (as a daemon thread, with client.start_barrier downsized to 1 party since the library's own control_loop() partner thread is deliberately never run here, per T-11-09's safety-validator-bypass avoidance).",
-      "rationale": "Live testing found action_queue was permanently empty -- an entire 22-step episode ran with the robot never moving because nothing was pulling computed actions off the gRPC stream. receive_actions() never calls robot.send_action() itself, so starting it doesn't reintroduce the T-11-09 bypass. Commit 343fa28.",
-      "phase": "11"
-    },
-    {
-      "decision": "Fixed pop_validated_action()/validate_action() in control/vla_bridge/robot_client.py and control/vla_bridge/safety_validator.py so the bridge path checks action staleness against STALE_ACTION_S (3.0s, defined specifically for network round-trip latency) instead of STALE_OBSERVATION_S (1.0s, meant for a synchronous local loop). Added an explicit stale_threshold_s parameter to validate_action() (default STALE_OBSERVATION_S, unchanged for existing synchronous callers).",
-      "rationale": "After the receive_actions() fix, real actions started arriving in the queue but every single one was being rejected as stale under the 1.0s synchronous threshold, which a real cloud round-trip (tens of seconds, worse on a cold-started policy server) can never meet. STALE_ACTION_S already existed in the code with a comment saying it was 'used by a later plan's bridge path' (i.e. this plan) but was never actually wired in. Commit e55aa53. Note: 3.0s is still an unvalidated starting guess, not yet confirmed against a real warm-server round-trip measurement -- a real warm round-trip time was never obtained this session because the deadlock below prevented a second chunk from ever being computed.",
-      "phase": "11"
-    },
-    {
-      "decision": "Also fixed BridgeActionSource.get_action() to surface pop_validated_action()'s flags (e.g. \"no action available, holding position\", \"stale observation...\") through model_version instead of silently discarding them.",
-      "rationale": "Before this fix, an empty-queue hold and a genuine valid action were indistinguishable in episode.jsonl (both logged as '@unknown') -- this hid the real diagnostic signal that led to finding both bugs above. Commit 343fa28.",
-      "phase": "11"
-    },
-    {
-      "decision": "Diagnosed (via live testing + reading installed lerobot source + web research) but did NOT attempt to patch: PolicyServer's observation-similarity filter causing a motion deadlock.",
-      "rationale": "This is upstream library behavior (lerobot.async_inference.policy_server), not this project's code -- patching it would mean monkey-patching or vendoring a fix into an installed third-party package, a bigger decision than a live-verification session should make unilaterally. Matches unresolved upstream issues huggingface/lerobot#2356, #2374, #1500. Deferred to next session's retry to see if the two already-applied fixes are sufficient to avoid triggering it in practice.",
-      "phase": "11"
-    }
+    {"decision": "AR0144 stereo capture resolution changed from 2560x720 to 1600x600 (800x600 per eye)", "rationale": "2560x720 confirmed persistently frozen (byte-identical frames) via raw ffmpeg testing AND direct inspection of a real episode's 300 recorded frames -- confirmed a real, not-our-code bug. Exhausted all fixes: process cleanup, VDCAssistant restart, camera replug, full OS reboot, and macOS's legacy-camera-plugins-without-sw-camera-indication recovery-mode system override -- none restored 2560x720. 1600x600 confirmed live/stable (20+ consecutive frames with genuine non-zero diffs) and is the best available resolution (next mode up jumps straight to the broken 2560x720; intermediate 1280x480/1280x712 are single-lens crops, not stereo pairs).", "phase": "12"},
+    {"decision": "Stereo calibration required 30 views with deliberately varied angle/position/distance to converge", "rationale": "First 2-3 attempts (15 views each, low variety) produced inconsistent baseline (T) estimates between independent runs (75mm vs 53mm, a 30% swing) despite low-ish reprojection error -- a red flag that reprojection error alone doesn't guarantee a trustworthy calibration. 30 views with real angle/position/distance variety converged: baseline agreed to within 0.6% between the last two attempts, reprojection error dropped to 1.79px, distortion coefficients shrank monotonically toward physically sane values.", "phase": "12"},
+    {"decision": "Built 3 new hardware-debugging/calibration tools this session, committed to control/: preview_checkerboard.py, calibrate_with_preview.py, tune_execution_hz.py", "rationale": "The production stereo_calibration.py's capture loop is headless (input()-prompt, no visual feedback) -- these tools add live preview to make manual calibration/tuning practical. tune_execution_hz.py exercises run_episode()'s real interpolation code against a scripted multi-joint sweep without needing the Colab bridge, used to tune --execution-hz from 20.0 to 100.0.", "phase": "12"}
   ],
   "uncommitted_files": [
-    ".planning/phases/11-vla-hardware-connection/11-PATTERNS.md (untracked, pre-existing since discuss-phase; harmless, not blocking)",
-    "control/vla_bridge/policy_server_launch.md (modified, cosmetic-only markdown table reformatting, not a content change; harmless)",
-    "control/vla_bridge/policy_server.ipynb (untracked, appears to be a local Colab notebook sync artifact from this session; not reviewed for commit-worthiness, not blocking)"
+    ".planning/phases/12-bridge-tick-latency-fix/12-UAT.md (test 4 marked pass, current test advanced to 5 -- part of this handoff commit)"
   ],
-  "next_action": "Start a fresh Colab session (PolicyServer + ngrok tunnel per control/vla_bridge/policy_server_launch.md -- previous session's tunnel/server were torn down). Re-run run_vla_episode.py's live episode against the now-fixed bridge code. Watch episode.jsonl's model_version field per step: if the first real action's obs_age_s lands under STALE_ACTION_S=3.0s, it should execute and cause real motion -- watch the physical robot closely at that point. If the robot still doesn't move after ~2-3 real (non-stale) actions have been logged, the observation-similarity deadlock has recurred despite the fixes and needs deeper investigation (check the server's DEBUG-level logs for 'too similar to last obs predicted' skip messages -- may need to raise Colab notebook's logging verbosity to DEBUG first, e.g. logging.basicConfig(level=logging.DEBUG) before serve(config)).",
-  "context_notes": "This was a long, hands-on live-debugging session walking the user step-by-step through Colab setup, ngrok auth/TCP-tunnel gating (needed a card added for TCP endpoints on ngrok's free tier), and three rounds of real-hardware live episode attempts. Two real, confirmed, tested, committed bugs were found and fixed in this project's own control/vla_bridge/ code. A third, deeper issue was identified with high confidence (exact matching upstream GitHub issues + direct confirmation by reading the installed library's source) but not yet fixed or worked around, and not yet re-tested live. The user explicitly asked for deep web research on Colab+ngrok patterns before pausing -- that research is summarized in the decisions/blockers above and was already relayed to the user in chat this session, not just stored here. Colab's PolicyServer + ngrok tunnel from this session were torn down (Step 6) before pausing -- next session starts from a cold Colab runtime again, likely re-incurring the ~30-45s cold-start latency for the first inference call."
+  "next_action": "Run /gsd-verify-work 12 to resume the UAT session at test 5 (Colab FastFS endpoint legitimacy check) -- this requires the user to have the Colab FastFS endpoint documentation open to cross-check against depth_camera.py, and eventually a live Colab GPU runtime with the endpoint actually running for tests 6-7.",
+  "context_notes": "This session covered: (1) executing all 4 of Phase 12's gap-closure plans (12-03/04/05/06) via /gsd-execute-phase --gaps-only, (2) resuming UAT with a fresh session against the 4 new SUMMARYs, (3) live-hardware testing that surfaced a real, persistent camera-driver bug (2560x720 frozen) requiring two follow-up quick tasks to resolve (1280x360 then upgraded to 1600x600), (4) building 3 new calibration/tuning support scripts, (5) iterating stereo calibration through 4 attempts until the baseline estimate converged. Tests 1-4 of 15 are now genuinely passed (not just claimed) -- test 1 required correcting an earlier incomplete verification (originally only checked left-vs-right parallax within one frozen frame, not frame-to-frame liveness over an episode -- this was caught by the user pushing back, not by my own diligence, and is worth remembering: parallax alone does NOT prove a live feed). Tests 5-7 remain and are gated on Colab-side setup work only the user can do."
 }

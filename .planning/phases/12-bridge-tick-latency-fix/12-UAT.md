@@ -1,97 +1,110 @@
 ---
-status: diagnosed
+status: testing
 phase: 12-bridge-tick-latency-fix
-source: [12-VERIFICATION.md]
-started: 2026-09-25T07:44:11Z
-updated: 2026-09-26T13:00:00Z
+source: [12-03-SUMMARY.md, 12-04-SUMMARY.md, 12-05-SUMMARY.md, 12-06-SUMMARY.md]
+started: 2026-09-27T04:38:00Z
+updated: 2026-09-27T11:03:43Z
 ---
 
 ## Current Test
 
-[testing complete]
+number: 5
+name: Colab Fast-FoundationStereo endpoint docs are legitimate and match the real client
+expected: |
+  Visiting github.com/NVlabs/Fast-FoundationStereo confirms it's the real NVIDIA org,
+  README, and dependencies look legitimate (supply-chain check). The documented Colab
+  install/serve/tunnel cells in policy_server_launch.md match depth_camera.py's actual
+  request/response contract.
+awaiting: user response
 
 ## Tests
 
-### 1. Live-hardware episode confirms tick-latency fix
-expected: Real (non-stale) action yield measurably higher than Phase 11's 1/60; `latency_ms` no longer always `{0,0}`; no evidence of overlapping in-flight requests under normal operation.
-result: issue
-reported: "Live episode against 4.tcp.ngrok.io (checkpoint victorvanhalst/smolvla_so101_cube, 300 steps, outputs/vla_episode_002) met the three literal pass criteria -- 68/300 (22.7%) real-action steps vs Phase 11's 1/60 baseline, 0/300 steps with latency_ms={0,0}, 0 steps with an overlapping in-flight flag -- but the full run surfaced three concrete defects the user wants fixed before this phase is considered done: (1) IOLogger's camera_overhead recording captured the wrong physical device (laptop FaceTime camera, not the AR0144), (2) robot motion is visibly jerky (discrete jumps, not smooth), (3) the bridge entered a 6+ minute stale/no-action deadlock mid-episode (steps ~192-241) that the client only escaped via lerobot's own must_go fallback, not this project's code."
-severity: major
+### 1. Camera-overhead recording shows the real AR0144 workspace (left + right)
+expected: camera_overhead_left/ and camera_overhead_right/ images show the real robot workspace from the AR0144, not the laptop webcam, as two distinct viewpoints.
+result: pass
+
+### 2. Robot motion is visibly smooth during policy execution
+expected: With interpolated waypoints active (--execution-hz decoupled from --control-hz), the arm's motion traces a continuous path rather than discrete jerky jumps. Confirm whether the default --execution-hz=20.0 feels right or needs tuning.
+result: pass
+reported: "Tuned live via a hardware-free multi-joint sweep script exercising the real run_episode() interpolation path: 20 Hz still jerky, 60 Hz smoother, 100 Hz even better. Default updated to 100.0 in control/run_vla_episode.py (commits 0faf142, 58ab5b0)."
+
+### 3. Stale-deadlock watchdog breaks a real multi-minute stall
+expected: During a live episode, if the bridge stalls (stale/no-action ticks), the watchdog forces recovery within a few seconds (not 6+ minutes as observed pre-fix). Inspect episode.jsonl for any model_version containing "staleness-watchdog" and confirm real actions resume shortly after. Confirm whether STALE_WATCHDOG_CONSECUTIVE_LIMIT=10 (~5s at 2Hz) feels well-tuned.
+result: skipped
+reason: "User reported no pauses/stalls occurred during the whole episode (outputs/vla_episode_003, 300 steps) -- confirmed via episode.jsonl: 0 staleness-watchdog triggers, only 2 isolated (non-consecutive) stale-observation steps and 1 no-action step, never reaching the 10-in-a-row threshold. The watchdog's core recovery behavior was never exercised because no deadlock occurred -- this is a healthy outcome for the episode but leaves the fix's actual recovery-speed claim unverified against a real stall. Unit tests (12-04's automated coverage) already prove the mechanism triggers correctly in isolation; only the live end-to-end recovery-speed confirmation remains untested."
+
+### 4. Stereo calibration produces a plausible, real calibration file
+expected: Running the checkerboard calibration session against the real AR0144 and a physical checkerboard produces control/stereo_calibration.json with a plausible reprojection error (low, e.g. under ~1.0 px) and plausible K/D/R/T values (not NaN/degenerate).
+result: pass
+reported: "Took 3 calibration attempts to converge. Attempt 1 (15 views, mostly flat-on): reprojection_error_px=17.17, fx/fy mismatched 3-4x, huge distortion coefficients -- degenerate, caused by a frozen-camera bug discovered mid-session (see below). Attempt 2 (15 views, post camera-resolution-fix): 2.73px, sane fx/fy, but T (baseline) = 75mm. Attempt 3 (15 views, more angle variety): 2.42px, T=53mm -- baseline swung 30% between attempts 2 and 3, signaling real remaining instability. Attempt 4 (30 views, wide variety of angle/position/distance): 1.79px reprojection error, T=53.7mm -- baseline now agrees with attempt 3 to within 0.6%, fx/fy mismatched <0.5% on both cameras, distortion coefficients small and monotonically improving across attempts (k2/k3: -8.83/30.46 -> -0.86/2.25 -> -0.41/0.42). Baseline convergence across independent attempts is the key confirming signal this calibration is trustworthy, even though reprojection error (1.79px) is slightly above the original ~1.0px target. control/stereo_calibration.json is intentionally untracked (same convention as control/device_map.json -- hardware-specific, machine-local)."
+
+### 5. Colab Fast-FoundationStereo endpoint docs are legitimate and match the real client
+expected: Visiting github.com/NVlabs/Fast-FoundationStereo confirms it's the real NVIDIA org, README, and dependencies look legitimate (supply-chain check). The documented Colab install/serve/tunnel cells in policy_server_launch.md match depth_camera.py's actual request/response contract.
+result: [pending]
+
+### 6. Depth accuracy sanity check against a known real-world distance
+expected: With the Colab FastFS endpoint running, placing an object at a known, physically-measured distance and querying depth_camera.py's CLI/main() returns a depth value within a documented, reasonable tolerance of that measurement.
+result: [pending]
+
+### 7. Live episode depth recording works end-to-end without disrupting motion
+expected: During a live episode with the Colab depth endpoint running, depth_overhead/ fills in at the configured cadence, episode.jsonl's depth_frames field is correctly sparse (not every step), and robot motion/timing is unaffected by the added depth capture calls.
+result: [pending]
+
+### 8. force_bridge_recovery() drains the queue and sets must_go (automated)
+expected: force_bridge_recovery(client) drains client.action_queue to empty and sets client.must_go
+result: pass
+source: automated
+coverage_id: 12-04/D1
+
+### 9. Watchdog triggers at the configured consecutive-stale limit (automated)
+expected: BridgeActionSource.get_action() forces recovery after exactly N consecutive stale (growing-stale-action) results, not before
+result: pass
+source: automated
+coverage_id: 12-04/D2
+
+### 10. Watchdog also triggers on consecutive empty-queue results (automated)
+expected: The same watchdog also triggers on N consecutive empty-queue (no-action-available) results
+result: pass
+source: automated
+coverage_id: 12-04/D3
+
+### 11. Watchdog does not over-trigger; resets on fresh result (automated)
+expected: A single stale/empty result below the limit never triggers recovery; a genuine fresh result resets the counter to zero
+result: pass
+source: automated
+coverage_id: 12-04/D4
+
+### 12. Calibration math functions fully covered by hardware-free tests (automated)
+expected: build_object_points(), detect_checkerboard_corners(), calibrate_single_camera(), calibrate_stereo_pair(), save_calibration()/load_calibration(), and run_calibration_session() all implemented with deterministic test coverage
+result: pass
+source: automated
+coverage_id: 12-05/D1
+
+### 13. Calibration session enforces minimum valid views (automated)
+expected: run_calibration_session() never proceeds on fewer than 3 valid views (raises RuntimeError), correctly skips undetected-corner views without counting them
+result: pass
+source: automated
+coverage_id: 12-05/D2
+
+### 14. DepthCameraClient rectify/downsample/request pipeline (automated)
+expected: DepthCameraClient rectifies a live AR0144 stereo pair, downsamples to FastFS's input constraints (scaling intrinsics proportionally), and POSTs to a Colab-hosted FastFS endpoint, returning a metric depth map
+result: pass
+source: automated
+coverage_id: 12-06/D1
+
+### 15. Depth recording wiring is correct and isolated from the bridge observation path (automated)
+expected: Depth is recorded into episode.jsonl via IOLogger.capture_depth_map() at a configurable cadence, sourced from the SAME tick's stereo frame already used for diagnostic recording (object-identity verified), with zero references to depth in vla_bridge/robot_client.py
+result: pass
+source: automated
+coverage_id: 12-06/D4
 
 ## Summary
 
-total: 1
-passed: 0
-issues: 1
-pending: 0
-skipped: 0
+total: 15
+passed: 11
+issues: 0
+pending: 3
+skipped: 1
 blocked: 0
 
 ## Gaps
-
-- truth: "camera_overhead/*.png in episode output directories are real frames from the AR0144 stereo camera, matching what the policy actually receives as camera2/camera3"
-  status: failed
-  reason: "User observed outputs/vla_episode_002/camera_overhead/000216.png is a laptop FaceTime-camera selfie, not the AR0144 view. The policy's actual input (via StereoSplitCamera/ffmpeg, opened by device NAME 'CCB Camera') is unaffected -- this is a diagnostic-recording-only bug. User also wants the recorded overhead capture to store BOTH stereo lenses (left+right) as two separate images, not a single frame."
-  severity: major
-  test: 1
-  root_cause: "run_vla_episode.py's main() opens camera_overhead via a second, independent cv2.VideoCapture(device_map['cameras']['stereo_overhead']) numeric index (lines ~354-360), racing/colliding with connect_bridge()'s StereoSplitCamera, which already holds the SAME physical AR0144 device open via a separate ffmpeg/avfoundation subprocess (vla_bridge/robot_client.py:166, stereo_camera.py). stereo_camera.py's own docstring documents that the AR0144 does not tolerate concurrent opens -- the second (cv2) open silently landed on a different device (FaceTime) instead of erroring."
-  artifacts:
-    - path: "control/run_vla_episode.py"
-      issue: "IOLogger's camera_overhead cap is a second independent cv2.VideoCapture on the AR0144's numeric index, opened concurrently with StereoSplitCamera's ffmpeg-based open of the same physical device"
-    - path: "control/vla_bridge/robot_client.py"
-      issue: "connect_bridge() already exposes the shared StereoSplitCamera instance as client._stereo_camera (read_left()/read_right()) -- run_vla_episode.py does not reuse it for its own diagnostic recording"
-  missing:
-    - "Remove the separate cv2.VideoCapture open for the overhead/stereo camera in run_vla_episode.py's --server-address (bridge) path"
-    - "Wire IOLogger's recording step to read client._stereo_camera.read_left()/read_right() (the same shared StereoSplitCamera instance already feeding the policy) instead of a second capture"
-    - "Log two separate images per step (e.g. camera_overhead_left/, camera_overhead_right/) instead of one camera_overhead/ frame, matching what the checkpoint's camera2/camera3 inputs actually are"
-  debug_session: ""
-
-- truth: "Robot motion during policy execution is smooth, tracking the model's predicted trajectory continuously"
-  status: failed
-  reason: "User observed the robot moves in small jerks rather than smoothly during the live episode."
-  severity: major
-  test: 1
-  root_cause: "run_vla_episode.py's run_episode() control loop (lines ~189-238) runs at --control-hz (default 2.0 Hz) and calls robot.send_action() with a single absolute-position target every 0.5s tick, with zero interpolation between successive targets anywhere in the per-step loop. move_to_positions()'s P-control smoothing is only invoked for the start-of-episode/e-stop reset move, never per-tick during the episode. Each of a policy chunk's 50 predicted actions is a waypoint intended to be part of a continuous trajectory; sending them as discrete, 0.5s-apart absolute jumps with no path smoothing produces visible jerks. Since chunk playback pops from a locally-cached queue and does not require a network round-trip except at chunk boundaries, the per-tick execution rate can be raised (and/or waypoints interpolated) without adding server load."
-  artifacts:
-    - path: "control/run_vla_episode.py"
-      issue: "run_episode()'s per-tick loop sends raw absolute joint targets with no interpolation, gated only by --control-hz (default 2.0)"
-  missing:
-    - "Increase the effective per-tick execution/interpolation rate independent of --control-hz's observation-sending cadence (chunk playback doesn't need a network round trip per tick)"
-    - "Add waypoint interpolation between the previous sent position and the next target action before calling robot.send_action(), rather than jumping directly to each new absolute target"
-  debug_session: ""
-
-- truth: "Once the bridge experiences a transient stall, it recovers within one control-loop cycle -- not by waiting on an unbounded internal retry"
-  status: failed
-  reason: "User reported the robot got 'stuck' (not moving) mid-episode. Confirmed via Colab PolicyServer logs cross-referenced with episode.jsonl: after action chunk #192 was delivered (12:44:25 UTC), the server logged only repeating 'Starting receiver' lines for 6+ minutes with zero 'Running inference' lines, while the client's episode.jsonl showed obs_age_s/staleness growing unbounded (30s -> 227s) over steps ~192-241, before finally recovering at observation #241 (must_go: True)."
-  severity: blocker
-  test: 1
-  root_cause: "policy_server.py's _enqueue_observation() silently drops any observation (via observations_similar()) unless obs.must_go is True. Once the robot holds still for any reason (e.g. one slow round-trip), subsequent camera frames/joint state look near-identical to the last processed observation, so the server filters every observation out and never generates a new chunk -- a self-sustaining deadlock. Recovery depends entirely on lerobot's own must_go Event/action_queue.empty() logic (vendored site-packages, lerobot/async_inference/robot_client.py:337,403-437), which did not reliably re-trigger for 6+ minutes this run (action_queue pops kept returning a real-but-increasingly-stale timed_action rather than falling through to the empty-queue fallback that would set must_go). This project's own bridge wrapper (vla_bridge/robot_client.py's BridgeActionSource) has no independent watchdog and fully depends on this vendored-library recovery path."
-  artifacts:
-    - path: "control/vla_bridge/robot_client.py"
-      issue: "BridgeActionSource.get_action()/pop_validated_action() have no staleness watchdog of their own -- they rely entirely on lerobot's internal RobotClient.must_go/action_queue recovery, which stalled for 6+ minutes in this live run"
-    - path: "control/.venv/lib/python3.12/site-packages/lerobot/async_inference/policy_server.py"
-      issue: "_enqueue_observation()'s observations_similar() filter drops non-must_go observations once the robot is still, with no server-side staleness override (vendored dependency -- do not patch in place)"
-  missing:
-    - "Add a staleness watchdog inside vla_bridge/robot_client.py (this project's own code, not the vendored lerobot package): after N consecutive stale/no-action pop_validated_action() results (or obs_age_s exceeding a bound well under 6 minutes), force recovery -- e.g. directly set client.must_go and/or clear client.action_queue so the next control_loop_observation() call bypasses the server's similarity filter, instead of waiting on lerobot's internal event to fire on its own"
-    - "Add a test exercising this watchdog against a fake client whose action_queue simulates the observed stuck state (real, non-empty, but growing-stale timed_action being returned every pop)"
-  debug_session: ""
-
-- truth: "Computed depth from the AR0144 stereo pair is calibrated and its accuracy is confirmed against a human-verifiable, real-world known-distance measurement -- not consumed as an unvalidated third input."
-  status: scope_extension
-  reason: "User-requested extension raised directly in conversation during Phase 12 gap-closure plan-phase (2026-09-26), not from the original 12-UAT.md live-hardware diagnosis (the 3 gaps above, all from the same episode). Based on deep research into 'StereoPatch: Patch-Aligned RGB-Depth Fusion for Spatial Perception in Robot Manipulation' (arXiv 2609.15509) and its underlying depth model, NVIDIA's Fast-FoundationStereo (NVlabs/Fast-FoundationStereo, CVPR 2026). StereoPatch's own custom RGB-depth fusion architecture (DeFM depth encoder + cross-attention 'StereoPatch Tokens') has NO public code release -- explicitly out of scope, not planned. FastFS's depth-computation half IS real, open-source, and copyable: it turns a rectified stereo pair + a supplied calibration file (flattened 3x3 intrinsics + baseline in meters) into a depth map, but does NOT rectify internally, is CUDA-GPU-only (no CPU path), and requires input <1000px width with dimensions divisible by 32. This project's Mac client has no CUDA GPU -- only the Colab side does (already running the SmolVLA PolicyServer). The paper itself validates depth only indirectly (closed-loop task success rate: 89.2% with a stereo pair+FastFS vs 51.4% with a RealSense D405, unexplained) -- the user wants a real human-verifiable checkpoint (a known real-world distance measured against computed depth, within a documented tolerance), which is stricter than anything the paper itself does."
-  severity: enhancement
-  test: N/A (new scope, not part of the original 3-gap live-hardware episode)
-  root_cause: "N/A -- not a defect. No depth calibration/computation capability exists in this project prior to this addition."
-  artifacts:
-    - path: "control/vla_bridge/stereo_calibration.py"
-      issue: "Does not exist yet -- new module needed for checkerboard-based stereo calibration (cv2.stereoCalibrate/stereoRectify against the AR0144's live left/right split) producing a saved calibration file in Fast-FoundationStereo's required format"
-    - path: "control/vla_bridge/depth_camera.py"
-      issue: "Does not exist yet -- new module needed to rectify a live stereo pair, downsample it to FastFS's input constraints (scaling intrinsics proportionally), and request a depth map from a Colab-hosted FastFS endpoint"
-    - path: "control/vla_bridge/policy_server_launch.md"
-      issue: "Documents only the existing gRPC PolicyServer/tunnel setup -- needs a new section documenting the Colab-side FastFS install/serve/tunnel cells, analogous to the existing PolicyServerConfig/serve() cell pattern"
-  missing:
-    - "Checkerboard-based stereo calibration producing a saved calibration file, with a human-confirmed low reprojection error (Plan 12-05)"
-    - "A documented Colab-side Fast-FoundationStereo inference endpoint, reachable over a tunnel (Plan 12-06)"
-    - "A local depth_camera.py that rectifies+downsamples a live stereo pair, requests a depth map from that endpoint, and records it (path referenced in episode.jsonl via IOLogger) -- recording-only this phase, never added to the PolicyServer's observation dict (SmolVLA has no depth input feature; no fusion architecture exists yet to consume it) (Plan 12-06)"
-    - "A human-verifiable checkpoint: a known real-world distance measured against the computed depth value, within a documented tolerance -- stricter than the StereoPatch paper's own (indirect, task-success-only) validation (Plan 12-06)"
-  debug_session: ""
