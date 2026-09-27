@@ -1000,7 +1000,7 @@ def test_run_episode_sends_multiple_interpolated_waypoints_per_tick_when_executi
 def test_run_episode_default_execution_hz_sends_exactly_one_action_per_tick(
     tmp_path, mock_robot, mock_calibration_file, monkeypatch
 ):
-    """Regression: execution_hz omitted (default 60.0) with the existing
+    """Regression: execution_hz omitted (default 100.0) with the existing
     fast-test control_hz=100.0 convention (execution_hz <= control_hz) must
     send exactly ONE robot.send_action() call per tick -- identical to
     pre-this-plan behavior."""
