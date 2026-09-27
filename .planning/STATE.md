@@ -109,6 +109,7 @@ None yet for v2.1 — begin by planning Phase 12 (`/gsd-plan-phase 12`).
 | 260927-he3 | Fix AR0144 stereo camera resolution: switch from frozen 2560x720 (confirmed stuck via raw ffmpeg testing and a real episode's 300 identical recorded frames) to working 1280x360 | 2026-09-27 | caa85da | [260927-he3-fix-ar0144-stereo-camera-resolution-swit](./quick/260927-he3-fix-ar0144-stereo-camera-resolution-swit/) |
 | 260927-i3s | Upgrade AR0144 stereo camera resolution from 1280x360 to 1600x600 (800x600/eye) -- best available resolution after macOS's legacy-camera-plugins system override + reboot still failed to unstick the native 2560x720 mode | 2026-09-27 | 0545951 | [260927-i3s-upgrade-ar0144-stereo-camera-resolution-](./quick/260927-i3s-upgrade-ar0144-stereo-camera-resolution-/) |
 | 260927-ndz | Fix Phase 12 UAT test-5 gaps in the Colab depth-endpoint setup: wire real Fast-FoundationStereo run_demo.py CLI into the Flask depth cell, fix stale port-8080 refs, sync notebook camera-mapping + drop duplicate tunnel cell | 2026-09-27 | a9ab896 | [260927-ndz-fix-phase-12-uat-test-5-gaps-in-the-cola](./quick/260927-ndz-fix-phase-12-uat-test-5-gaps-in-the-cola/) |
+| fast-260927 | Add Colab checkpoint-upload helper cell (google.colab.files.upload) for Fast-FoundationStereo's model_best_bp2_serialize.pth, in both policy_server_launch.md and policy_server.ipynb | 2026-09-27 | f3ec70c | — |
 
 ## Deferred Items
 
