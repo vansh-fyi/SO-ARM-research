@@ -228,16 +228,35 @@ Colab runtime.
 !git clone https://github.com/NVlabs/Fast-FoundationStereo
 ```
 
-Then follow that repo's own README to install its dependencies and download
-its pretrained checkpoint. This file does NOT re-derive FastFS's own Python
-call signature/API -- research for this extension already confirmed FastFS's
-INPUT/OUTPUT contract (rectified pair + calibration in, depth map out), but
-not its exact function/class names -- so the human implementing this Colab
-cell should refer to the actual cloned repo's own README/examples for the
-precise inference call. This matches this file's own existing precedent for
-an unresolved implementation detail (see the `camera2`/`camera3` `type: <split-stereo-left/right>` placeholder note in the Camera mapping section
-above -- documented as a target contract, not a fully-resolved
-implementation).
+```python
+# Colab notebook cell -- gated by the same Fast-FoundationStereo legitimacy
+# check above (do not run before that check and before Step 7's clone cell).
+# FastFS's documented "Option 2: pip" environment setup (docs/Fast Foundation
+# Stereo Readme.md, "Environment setup" section), run inside the just-cloned
+# repo directory.
+%cd /content/Fast-FoundationStereo
+!pip install torch==2.6.0 torchvision==0.21.0 xformers --index-url https://download.pytorch.org/whl/cu124
+!pip install -r requirements.txt
+```
+
+Then manually download the `23-36-37` checkpoint from the README's Google
+Drive folder (https://drive.google.com/drive/folders/1HuTt7UIp7gQsMiDvJwVuWmKpvFzIIMap)
+and place `model_best_bp2_serialize.pth` at
+`/content/Fast-FoundationStereo/weights/23-36-37/model_best_bp2_serialize.pth`
+in the Colab runtime -- a manual human step (a gated/shared Google Drive
+folder isn't reliably scriptable inside a single Colab cell), not something
+this notebook automates.
+
+Step 8 below invokes FastFS's own documented `scripts/run_demo.py` CLI
+(README's "Run demo" section) directly, so the input/output CONTRACT (flags,
+intrinsic-file format) is fully documented there -- no fabricated
+function/class names. The one genuinely unresolved detail is
+`run_demo.py`'s exact output filename inside `--out_dir`, which the README
+does not state -- Step 8's `DEPTH_OUTPUT_GLOB` marks that spot for a human
+to correct after a first real Colab run, matching this file's own existing
+precedent for an honestly-unresolved implementation detail (see the
+`camera2`/`camera3` `type: <split-stereo-left/right>` placeholder note in the
+Camera mapping section above).
 
 ### Step 8 — Colab: serve the depth endpoint
 
@@ -247,13 +266,77 @@ implementation).
                      # legitimacy check needed, unlike pyngrok/FastFS above
 
 import base64
+import glob
 import io
+import subprocess
+import tempfile
+from pathlib import Path
 
 import cv2
 import numpy as np
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
+
+FASTFS_DIR = "/content/Fast-FoundationStereo"
+FASTFS_MODEL = f"{FASTFS_DIR}/weights/23-36-37/model_best_bp2_serialize.pth"
+
+# run_demo.py's README does not state its output filename inside --out_dir --
+# this glob picks the most plausible depth output file. Confirm the exact
+# filename by running once in Colab and inspecting out_dir; narrow this
+# pattern if more than one .npy file is written (e.g. an intermediate file).
+DEPTH_OUTPUT_GLOB = "*.npy"  # TODO: confirm exact filename by running once in Colab and inspecting out_dir
+
+
+def run_fastfs_inference(left_img, right_img, intrinsics_flat, baseline_m):
+    """Invokes Fast-FoundationStereo's documented `scripts/run_demo.py` CLI
+    (docs/Fast Foundation Stereo Readme.md, "Run demo" section) as a
+    subprocess, then loads the resulting depth map back into this process."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        left_path = str(Path(tmp_dir) / "left.png")
+        right_path = str(Path(tmp_dir) / "right.png")
+        intrinsic_path = str(Path(tmp_dir) / "K.txt")
+        out_dir = str(Path(tmp_dir) / "out")
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+        cv2.imwrite(left_path, left_img)
+        cv2.imwrite(right_path, right_img)
+
+        # README: line 1 = flattened 1x9 intrinsics matrix (space-separated),
+        # line 2 = baseline in meters.
+        with open(intrinsic_path, "w") as f:
+            f.write(" ".join(str(v) for v in intrinsics_flat) + "\n")
+            f.write(f"{baseline_m}\n")
+
+        subprocess.run(
+            [
+                "python", "scripts/run_demo.py",
+                "--model_dir", FASTFS_MODEL,
+                "--left_file", left_path,
+                "--right_file", right_path,
+                "--intrinsic_file", intrinsic_path,
+                "--out_dir", out_dir,
+                "--remove_invisible", "0",
+                "--denoise_cloud", "0",
+                "--scale", "1",
+                "--get_pc", "0",
+                "--valid_iters", "8",
+                "--max_disp", "192",
+                "--zfar", "100",
+            ],
+            cwd=FASTFS_DIR,
+            check=True,
+        )
+
+        npy_files = sorted(glob.glob(str(Path(out_dir) / DEPTH_OUTPUT_GLOB)))
+        if not npy_files:
+            raise RuntimeError(
+                f"No files matching {DEPTH_OUTPUT_GLOB!r} found in {out_dir} "
+                "after run_demo.py -- adjust DEPTH_OUTPUT_GLOB above."
+            )
+        # Picks the first alphabetical match if run_demo.py writes more than
+        # one .npy file -- narrow DEPTH_OUTPUT_GLOB above if this is wrong.
+        return np.load(npy_files[0])
 
 
 @app.route("/depth", methods=["POST"])
@@ -266,8 +349,6 @@ def depth():
     intrinsics_flat = body["intrinsics_flat"]
     baseline_m = body["baseline_m"]
 
-    # Call FastFS's own inference entry point here (per Step 7's own README
-    # reference) with left_img/right_img/intrinsics_flat/baseline_m.
     depth_map = run_fastfs_inference(left_img, right_img, intrinsics_flat, baseline_m)
 
     buf = io.BytesIO()
