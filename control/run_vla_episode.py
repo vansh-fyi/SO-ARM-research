@@ -239,7 +239,7 @@ def run_episode(
     control_hz: float,
     joint_limits_deg: dict[str, tuple[float, float]],
     stereo_camera=None,
-    execution_hz: float = 20.0,
+    execution_hz: float = 60.0,
     depth_client=None,
     depth_every_n_steps: int = 10,
 ) -> None:
@@ -264,7 +264,9 @@ def run_episode(
     capture of the same physical device. `None` (the default) reproduces
     pre-this-plan behavior exactly -- no such keys are recorded.
 
-    `execution_hz` (Gap 2 closure, default 20.0) decouples the local
+    `execution_hz` (Gap 2 closure, default 60.0 -- tuned live via Phase 12 UAT: 20.0
+    was still visibly jerky under a real multi-joint coordinated sweep, 60.0 was
+    confirmed smooth) decouples the local
     waypoint-send rate from `control_hz`'s observation-fetch cadence: each
     tick's target is reached via `_interpolate_waypoints()`'s intermediate
     waypoints sent at `execution_hz`, tracing a continuous path instead of a
@@ -423,7 +425,7 @@ def main():
     parser.add_argument(
         "--execution-hz",
         type=float,
-        default=20.0,
+        default=60.0,
         help="Local waypoint-interpolation send rate (Hz), decoupled from --control-hz's "
         "observation-fetch cadence -- chunk playback drains a local queue and needs no "
         "network round trip except at chunk boundaries (BridgeActionSource's LATENCY-01 "
