@@ -1,6 +1,27 @@
-"""Splits the AR0144 stereo camera's single 2560x720 physical frame into two
+"""Splits the AR0144 stereo camera's single 1280x360 physical frame into two
 independent real camera feeds (`camera2`=left half, `camera3`=right half),
 per Plan 11-03's split-stereo camera mapping (`policy_server_launch.md`).
+
+Capture resolution: 1280x360 total (640x360 per half), NOT the AR0144's
+higher-resolution 2560x720 mode. 2560x720 was found persistently
+stuck/frozen on this machine's camera+macOS combination, confirmed two
+independent ways: (1) raw ffmpeg CLI captures returned a byte-for-byte
+identical frame across multiple runs, both before and after a full OS
+reboot and camera replug; (2) a real prior episode's recorded frames
+(`outputs/vla_episode_003/camera_overhead_left/*.png`) were all
+byte-for-byte identical across 300 ticks even though `run_vla_episode.py`
+calls `read_left()`/`read_right()` fresh every tick (no caching bug on this
+project's side) -- proving the freeze is inside ffmpeg/AVFoundation's own
+capture pipe for that mode. 1280x360 was confirmed live via raw ffmpeg
+testing to capture genuinely changing frame-to-frame pixel data in the same
+correct side-by-side layout. This does not meaningfully affect VLA policy
+quality: the deployed checkpoint resizes all camera inputs to 256x256
+regardless of input resolution, and 640x360->256x256 is a smaller downsample
+ratio than 1280x720->256x256 would have been. It also fits FastFS's
+depth-input constraints (width <1000px, divisible by 32) more natively than
+1280 did. The one tradeoff is reduced calibration checkerboard-corner-
+detection precision -- compensate by holding the checkerboard closer to the
+camera during calibration sessions.
 
 Opens the AR0144 device (cv2 index 1 by default) exactly ONCE per process --
 most webcam drivers reject a second concurrent open of the same index -- and
@@ -13,30 +34,31 @@ triggers a fresh physical read.
 
 Capture backend: `ffmpeg` subprocess, NOT `cv2.VideoCapture`. Found live
 during 11-05 Task 3 prep: `cv2.VideoCapture`'s AVFoundation backend cannot be
-made to report this camera's true 2560x720 frame on macOS -- it silently
-serves whatever lower resolution (1920x1080, or 1280x720 once an explicit
-size is requested) the backend happens to default to, regardless of
+made to report this camera's true requested frame size on macOS -- it
+silently serves whatever lower resolution (1920x1080, or 1280x720 once an
+explicit size is requested) the backend happens to default to, regardless of
 `CAP_PROP_FRAME_WIDTH`/`HEIGHT`/`FOURCC` requests. This is a known unfixed
-OpenCV bug (opencv/opencv#23368), not a hardware or cable problem --
-AVFoundation itself confirms 2560x720 is a genuinely supported mode for this
-device (via `ffmpeg -video_size 9999x9999 ...`'s "Supported modes" error
-listing). `ffmpeg -f avfoundation -pixel_format uyvy422 -video_size
-2560x720` reliably captures the real frame where cv2 cannot, so this module
-shells out to it instead. Feeding the VLA a silently-wrong-resolution/cropped
-frame during a live episode (instead of failing loudly) would be a genuine
-safety risk -- the model would act on corrupted visual input while still
-commanding real robot motion.
+OpenCV bug (opencv/opencv#23368), not a hardware or cable problem -- ffmpeg
+reliably captures whatever `-video_size` is requested (now `1280x360`) where
+cv2 cannot, and AVFoundation's own "Supported modes" listing (via `ffmpeg
+-video_size 9999x9999 ...`'s error output) confirms both 2560x720 and
+1280x360 are genuinely supported modes for this device. This module shells
+out to ffmpeg instead of relying on cv2. Feeding the VLA a silently-wrong-
+resolution/cropped frame during a live episode (instead of failing loudly)
+would be a genuine safety risk -- the model would act on corrupted visual
+input while still commanding real robot motion.
 """
 
 import subprocess
 
 import numpy as np
 
-# AR0144 native side-by-side stereo resolution and the column split point,
-# per policy_server_launch.md's Camera mapping table.
-STEREO_WIDTH = 2560
-STEREO_HEIGHT = 720
-SPLIT_COL = 1280
+# AR0144 stereo capture resolution and the column split point, per
+# policy_server_launch.md's Camera mapping table. Changed from 2560x720 to
+# 1280x360 -- see this module's docstring above for the full rationale.
+STEREO_WIDTH = 1280
+STEREO_HEIGHT = 360
+SPLIT_COL = 640
 
 _FRAME_BYTES = STEREO_WIDTH * STEREO_HEIGHT * 3  # raw bgr24
 
@@ -44,7 +66,7 @@ _FRAME_BYTES = STEREO_WIDTH * STEREO_HEIGHT * 3  # raw bgr24
 class _FFmpegAVFoundationCapture:
     """Minimal `cv2.VideoCapture`-shaped wrapper (`isOpened()`/`read()`/
     `release()`) around an `ffmpeg` subprocess that streams the AR0144's real
-    2560x720 `uyvy422` frame, converted to raw `bgr24`, over stdout."""
+    1280x360 `uyvy422` frame, converted to raw `bgr24`, over stdout."""
 
     def __init__(self, index: int | str, framerate: int = 30):
         """`index` is the ffmpeg avfoundation `-i` target -- prefer the
@@ -109,7 +131,7 @@ def _open_stereo_capture(index: int):
 
 class StereoSplitCamera:
     """Wraps a single AR0144 capture device, exposing independent left/right
-    halves of its one physical 2560x720 frame as two feeds."""
+    halves of its one physical 1280x360 frame as two feeds."""
 
     def __init__(self, index: int | str = 1, warmup_frames: int = 15, capture_factory=None):
         self._index = index
@@ -154,7 +176,7 @@ class StereoSplitCamera:
         self._right = frame[:, SPLIT_COL:STEREO_WIDTH]
 
     def read_left(self) -> np.ndarray | None:
-        """Left half (columns [0:1280]) of the AR0144's 2560x720 frame, or
+        """Left half (columns [0:640]) of the AR0144's 1280x360 frame, or
         `None` if the device failed to open or the read failed."""
         self._read_and_split()
         frame = self._left
@@ -162,7 +184,7 @@ class StereoSplitCamera:
         return frame
 
     def read_right(self) -> np.ndarray | None:
-        """Right half (columns [1280:2560]) of the AR0144's 2560x720 frame,
+        """Right half (columns [640:1280]) of the AR0144's 1280x360 frame,
         or `None` if the device failed to open or the read failed."""
         self._read_and_split()
         frame = self._right
