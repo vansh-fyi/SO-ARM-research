@@ -146,6 +146,18 @@ None - no external service configuration required. This is a pure code/docs chan
 - `stereo_camera.py` now captures at the best available confirmed-stable resolution (1600x600) for the AR0144 stereo camera on this hardware, ready for the next live VLA episode or Phase 13's camera-resolution-unification work.
 - No blockers. `stereo_calibration.py`/`depth_camera.py` remain resolution-agnostic (runtime-shape-derived), so future resolution changes (if the frozen 2560x720 mode is ever unstuck) would similarly only require editing `stereo_camera.py`'s 3 constants + docs.
 
+## Self-Check: PASSED
+
+- FOUND: control/vla_bridge/stereo_camera.py
+- FOUND: control/test_stereo_camera.py
+- FOUND: control/vla_bridge/policy_server_launch.md
+- FOUND: control/detect_devices.py
+- FOUND: .planning/quick/260927-i3s-upgrade-ar0144-stereo-camera-resolution-/260927-i3s-SUMMARY.md
+- FOUND commit: 0545951 (Task 1)
+- FOUND commit: 1564049 (Task 2)
+- FOUND commit: acc99a3 (Task 3)
+- FOUND commit: a30b0f0 (SUMMARY.md)
+
 ---
 *Phase: quick-260927-i3s*
 *Completed: 2026-09-27*
