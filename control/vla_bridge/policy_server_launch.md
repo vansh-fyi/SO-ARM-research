@@ -26,23 +26,24 @@ inputs (`camera1`, `camera2`, `camera3` — none marked `empty_camera_*`).
 This project's real rig has only 2 physical cameras:
 
 - IMX335 wrist camera, cv2 index 0, native 1920x1080
-- AR0144 stereo camera, cv2 index 1, captured at 1280x360 (640x360 per
+- AR0144 stereo camera, cv2 index 1, captured at 1600x600 (800x600 per
   half) — **one physical side-by-side stereo frame, not two independent
   feeds** (confirmed in `diagnostics/UAT/function/basic/UAT.md`, Step 4).
-  The AR0144's higher-resolution 2560x720 mode was found persistently
-  stuck/frozen on this machine; 1280x360 is the confirmed-working
-  fallback — see `stereo_camera.py`'s module docstring for the full
-  diagnosis.
+  1600x600 was chosen over the previously-implemented 1280x360 for
+  meaningfully higher per-eye resolution while remaining confirmed stable;
+  the still-broken 2560x720 mode remains frozen even after exhausting the
+  last known macOS system-level fix — see `stereo_camera.py`'s module
+  docstring for the full diagnosis.
 
-Resolution: split the AR0144's single 1280x360 frame into left/right
+Resolution: split the AR0144's single 1600x600 frame into left/right
 halves, giving **3 genuinely distinct real camera views** (not a dummy or
 duplicated 3rd slot):
 
 | Checkpoint camera key | Real source                 | Crop                                         |
 | --------------------- | --------------------------- | -------------------------------------------- |
 | `camera1`           | IMX335 wrist                | as-is, full 1920x1080 frame                  |
-| `camera2`           | AR0144 stereo — LEFT half  | columns`[0:640]` of the 1280x360 frame    |
-| `camera3`           | AR0144 stereo — RIGHT half | columns`[640:1280]` of the 1280x360 frame |
+| `camera2`           | AR0144 stereo — LEFT half  | columns`[0:800]` of the 1600x600 frame    |
+| `camera3`           | AR0144 stereo — RIGHT half | columns`[800:1600]` of the 1600x600 frame |
 
 This is a better structural fit than an empty/dummy 3rd slot: all 3 of the
 checkpoint's expected inputs receive real image data during inference,
@@ -68,7 +69,7 @@ no built-in "crop a region of a wider frame" option. Two ways to produce
    device twice (most webcam drivers do not support concurrent opens of
    one index).
 2. **Fallback if (1) isn't scriptable in time:** open cv2 index 1 once in
-   the `RobotClient`'s local process, capture the full 1280x360 frame per
+   the `RobotClient`'s local process, capture the full 1600x600 frame per
    step, crop it into `camera2`/`camera3` numpy arrays in the observation
    dict before it's sent to the `PolicyServer` — this requires a small
    patch/subclass of the stock `robot_client.py` observation-building step
@@ -148,7 +149,7 @@ python -m lerobot.async_inference.robot_client \
     --robot.type=so101_follower \
     --robot.port=/dev/cu.usbmodem5B8E1139151 \
     --robot.id=soarm_follower_02 \
-    --robot.cameras="{ camera1: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 30}, camera2: {type: <split-stereo-left>, index_or_path: 1, width: 640, height: 360, fps: 30}, camera3: {type: <split-stereo-right>, index_or_path: 1, width: 640, height: 360, fps: 30} }" \
+    --robot.cameras="{ camera1: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 30}, camera2: {type: <split-stereo-left>, index_or_path: 1, width: 800, height: 600, fps: 30}, camera3: {type: <split-stereo-right>, index_or_path: 1, width: 800, height: 600, fps: 30} }" \
     --task="Pick up the red cube and place it in the bowl" \
     --policy_type=smolvla \
     --pretrained_name_or_path=victorvanhalst/smolvla_so101_cube \

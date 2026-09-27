@@ -32,7 +32,7 @@ Two independent detection problems, solved differently:
    to EXCLUDE the built-in camera by name ("FaceTime" in its name). Among the
    remaining candidates, the AR0144 stereo camera is identified by its distinctive
    capture resolution (the live `STEREO_WIDTH`/`STEREO_HEIGHT` constants imported
-   from `vla_bridge.stereo_camera`, currently 1280x360, unique on this rig); if a
+   from `vla_bridge.stereo_camera`, currently 1600x600, unique on this rig); if a
    second non-stereo candidate remains ambiguous after that, this script falls
    back to an interactive cover-the-lens brightness check -- the same manual
    technique used live this session -- rather than guessing. See `resolve_cameras()`.
@@ -303,7 +303,7 @@ def _disambiguate_by_brightness(candidates: list[dict], prompt_fn=input) -> int:
 def _verify_stereo_via_ffmpeg(index: int, timeout_s: float = 8.0) -> bool:
     """Confirms `index` is genuinely the AR0144 stereo camera via a real `ffmpeg`
     capture attempt at its currently-requested `STEREO_WIDTH`x`STEREO_HEIGHT`
-    (1280x360) `uyvy422` mode.
+    (1600x600) `uyvy422` mode.
 
     Needed as a fallback because `cv2.VideoCapture`'s reported resolution for
     this camera is UNRELIABLE on macOS: confirmed live during 11-05 Task 3 prep
@@ -311,7 +311,7 @@ def _verify_stereo_via_ffmpeg(index: int, timeout_s: float = 8.0) -> bool:
     regardless of `CAP_PROP_FRAME_WIDTH`/`HEIGHT`/`FOURCC` requests -- a known
     unfixed OpenCV bug (opencv/opencv#23368), not a hardware or cable problem.
     AVFoundation itself confirms whichever `-video_size` this project currently
-    requests (now 1280x360; 2560x720 was also confirmed supported but is
+    requests (now 1600x600; 2560x720 was also confirmed supported but is
     persistently frozen on this machine, see `stereo_camera.py`'s module
     docstring) IS a genuinely supported mode for this device (verified via
     `ffmpeg -video_size 9999x9999 ...`'s "Supported modes" error listing), and
@@ -352,7 +352,7 @@ def resolve_cameras(
     <name-or-idx>}` from probed camera `candidates`, excluding any built-in-named
     device first, then splitting the remainder by the AR0144's distinctive
     capture resolution (the live `STEREO_WIDTH`/`STEREO_HEIGHT` constants,
-    currently 1280x360). `stereo_overhead_name` is the identifier
+    currently 1600x600). `stereo_overhead_name` is the identifier
     `StereoSplitCamera`'s ffmpeg backend should actually be opened with -- see
     the inline comment above its construction for why the numeric index isn't
     safe to persist across process launches.
