@@ -1,8 +1,8 @@
-"""Splits the AR0144 stereo camera's single 1280x360 physical frame into two
+"""Splits the AR0144 stereo camera's single 1600x600 physical frame into two
 independent real camera feeds (`camera2`=left half, `camera3`=right half),
 per Plan 11-03's split-stereo camera mapping (`policy_server_launch.md`).
 
-Capture resolution: 1280x360 total (640x360 per half), NOT the AR0144's
+Capture resolution: 1600x600 total (800x600 per half), NOT the AR0144's
 higher-resolution 2560x720 mode. 2560x720 was found persistently
 stuck/frozen on this machine's camera+macOS combination, confirmed two
 independent ways: (1) raw ffmpeg CLI captures returned a byte-for-byte
@@ -12,16 +12,35 @@ reboot and camera replug; (2) a real prior episode's recorded frames
 byte-for-byte identical across 300 ticks even though `run_vla_episode.py`
 calls `read_left()`/`read_right()` fresh every tick (no caching bug on this
 project's side) -- proving the freeze is inside ffmpeg/AVFoundation's own
-capture pipe for that mode. 1280x360 was confirmed live via raw ffmpeg
-testing to capture genuinely changing frame-to-frame pixel data in the same
-correct side-by-side layout. This does not meaningfully affect VLA policy
-quality: the deployed checkpoint resizes all camera inputs to 256x256
-regardless of input resolution, and 640x360->256x256 is a smaller downsample
-ratio than 1280x720->256x256 would have been. It also fits FastFS's
-depth-input constraints (width <1000px, divisible by 32) more natively than
-1280 did. The one tradeoff is reduced calibration checkerboard-corner-
-detection precision -- compensate by holding the checkerboard closer to the
-camera during calibration sessions.
+capture pipe for that mode.
+
+Resolution history: an initial fix landed 1280x360 (640x360 per half),
+confirmed live via raw ffmpeg testing to capture genuinely changing
+frame-to-frame pixel data in the same correct side-by-side layout. This was
+then upgraded to the current 1600x600 (800x600 per half) because it is
+meaningfully higher resolution (800x600/eye vs 640x360/eye) while remaining
+confirmed stable: 1600x600 was confirmed live and stable via raw ffmpeg
+testing across 20 consecutive frames, all showing genuine non-zero
+frame-to-frame pixel differences (~4.9), with no freezing, and was visually
+confirmed via a saved test frame to be the correct side-by-side stereo
+layout -- robot workspace visible, correctly split into two 800x600 halves,
+with visible parallax between them. The still-broken 2560x720 mode was
+re-tested after applying macOS's legacy-camera-plugins-without-sw-camera-
+indication system override (a recovery-mode fix) and a fresh reboot, and
+remained frozen -- all known software-level fixes for that mode are now
+exhausted. 1600x600 is the best available resolution on this hardware: the
+camera's advertised mode list jumps directly from 1600x600 to the broken
+2560x720 with no smaller intermediate step. Two other intermediate modes,
+1280x480 and 1280x712, were also tested but ruled out as single-lens crops
+(not the stereo pair), so they are not usable candidates.
+
+This does not meaningfully affect VLA policy quality: the deployed
+checkpoint resizes all camera inputs to 256x256 regardless of input
+resolution, and 800x600->256x256 remains a smaller downsample ratio than a
+native 1920x1080->256x256 feed would be. The one tradeoff is calibration
+checkerboard-corner-detection precision, which now IMPROVES relative to the
+1280x360 stepping stone (800x600/eye gives more pixels for corner detection
+than 640x360/eye did) -- no compensating workaround is needed.
 
 Opens the AR0144 device (cv2 index 1 by default) exactly ONCE per process --
 most webcam drivers reject a second concurrent open of the same index -- and
@@ -39,11 +58,12 @@ silently serves whatever lower resolution (1920x1080, or 1280x720 once an
 explicit size is requested) the backend happens to default to, regardless of
 `CAP_PROP_FRAME_WIDTH`/`HEIGHT`/`FOURCC` requests. This is a known unfixed
 OpenCV bug (opencv/opencv#23368), not a hardware or cable problem -- ffmpeg
-reliably captures whatever `-video_size` is requested (now `1280x360`) where
+reliably captures whatever `-video_size` is requested (now `1600x600`) where
 cv2 cannot, and AVFoundation's own "Supported modes" listing (via `ffmpeg
--video_size 9999x9999 ...`'s error output) confirms both 2560x720 and
-1280x360 are genuinely supported modes for this device. This module shells
-out to ffmpeg instead of relying on cv2. Feeding the VLA a silently-wrong-
+-video_size 9999x9999 ...`'s error output) confirms 1600x600, 1280x360, and
+2560x720 are all genuinely supported modes for this device (1280x480 and
+1280x712 are also supported but are single-lens crops, not stereo pairs).
+This module shells out to ffmpeg instead of relying on cv2. Feeding the VLA a silently-wrong-
 resolution/cropped frame during a live episode (instead of failing loudly)
 would be a genuine safety risk -- the model would act on corrupted visual
 input while still commanding real robot motion.
@@ -54,11 +74,11 @@ import subprocess
 import numpy as np
 
 # AR0144 stereo capture resolution and the column split point, per
-# policy_server_launch.md's Camera mapping table. Changed from 2560x720 to
-# 1280x360 -- see this module's docstring above for the full rationale.
-STEREO_WIDTH = 1280
-STEREO_HEIGHT = 360
-SPLIT_COL = 640
+# policy_server_launch.md's Camera mapping table. Upgraded from 1280x360 to
+# 1600x600 -- see this module's docstring above for the full rationale.
+STEREO_WIDTH = 1600
+STEREO_HEIGHT = 600
+SPLIT_COL = 800
 
 _FRAME_BYTES = STEREO_WIDTH * STEREO_HEIGHT * 3  # raw bgr24
 
@@ -66,7 +86,7 @@ _FRAME_BYTES = STEREO_WIDTH * STEREO_HEIGHT * 3  # raw bgr24
 class _FFmpegAVFoundationCapture:
     """Minimal `cv2.VideoCapture`-shaped wrapper (`isOpened()`/`read()`/
     `release()`) around an `ffmpeg` subprocess that streams the AR0144's real
-    1280x360 `uyvy422` frame, converted to raw `bgr24`, over stdout."""
+    1600x600 `uyvy422` frame, converted to raw `bgr24`, over stdout."""
 
     def __init__(self, index: int | str, framerate: int = 30):
         """`index` is the ffmpeg avfoundation `-i` target -- prefer the
@@ -131,7 +151,7 @@ def _open_stereo_capture(index: int):
 
 class StereoSplitCamera:
     """Wraps a single AR0144 capture device, exposing independent left/right
-    halves of its one physical 1280x360 frame as two feeds."""
+    halves of its one physical 1600x600 frame as two feeds."""
 
     def __init__(self, index: int | str = 1, warmup_frames: int = 15, capture_factory=None):
         self._index = index
@@ -176,7 +196,7 @@ class StereoSplitCamera:
         self._right = frame[:, SPLIT_COL:STEREO_WIDTH]
 
     def read_left(self) -> np.ndarray | None:
-        """Left half (columns [0:640]) of the AR0144's 1280x360 frame, or
+        """Left half (columns [0:800]) of the AR0144's 1600x600 frame, or
         `None` if the device failed to open or the read failed."""
         self._read_and_split()
         frame = self._left
@@ -184,7 +204,7 @@ class StereoSplitCamera:
         return frame
 
     def read_right(self) -> np.ndarray | None:
-        """Right half (columns [640:1280]) of the AR0144's 1280x360 frame,
+        """Right half (columns [800:1600]) of the AR0144's 1600x600 frame,
         or `None` if the device failed to open or the read failed."""
         self._read_and_split()
         frame = self._right

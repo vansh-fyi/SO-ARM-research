@@ -13,12 +13,12 @@ from vla_bridge.stereo_camera import STEREO_WIDTH, StereoSplitCamera
 
 
 def _synthetic_stereo_frame() -> np.ndarray:
-    """A 360x1280 frame with distinguishable left/right halves: left half is
+    """A 600x1600 frame with distinguishable left/right halves: left half is
     all 10s, right half is all 200s -- lets tests assert the split lands on
     the correct side, not swapped or overlapping."""
-    frame = np.zeros((360, STEREO_WIDTH, 3), dtype=np.uint8)
-    frame[:, :640] = 10
-    frame[:, 640:] = 200
+    frame = np.zeros((600, STEREO_WIDTH, 3), dtype=np.uint8)
+    frame[:, :800] = 10
+    frame[:, 800:] = 200
     return frame
 
 
@@ -111,8 +111,8 @@ def test_read_left_and_read_right_return_correct_non_swapped_halves(monkeypatch)
     left = cam.read_left()
     right = cam.read_right()
 
-    assert left.shape == (360, 640, 3)
-    assert right.shape == (360, 640, 3)
+    assert left.shape == (600, 800, 3)
+    assert right.shape == (600, 800, 3)
     assert np.all(left == 10)
     assert np.all(right == 200)
 
