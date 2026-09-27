@@ -7,8 +7,8 @@ current_phase_name: Bridge Tick-Latency Fix
 status: executing
 stopped_at: Phase 12 context gathered
 last_updated: "2026-09-26T18:02:58.746Z"
-last_activity: 2026-09-26
-last_activity_desc: Phase 12 execution resumed (wave continue)
+last_activity: 2026-09-27
+last_activity_desc: Quick task 260927-he3 - fixed frozen AR0144 stereo camera resolution (2560x720 -> 1280x360)
 progress:
   total_phases: 17
   completed_phases: 9
@@ -106,6 +106,7 @@ None yet for v2.1 — begin by planning Phase 12 (`/gsd-plan-phase 12`).
 | 260919-h8v | Fix Phase 10 TWIN-07 gap: flip gripper_left/gripper_right axis polarity in soarm_gripper.xml, regenerate URDF, update test expectations (hardware re-test still required) | 2026-09-19 | 5fa8e62 | [260919-h8v-fix-phase-10-twin-07-gap-flip-gripper-le](./quick/260919-h8v-fix-phase-10-twin-07-gap-flip-gripper-le/) |
 | 260924-e3d | Loosen safety_validator.py caps (per-step 5→40deg, velocity 30→240deg/s, staleness 1s/3s→10s/30s) so the real 11-05 VLA episode can produce visible motion despite Colab round-trip latency -- user explicitly deprioritized safety margin in the empty test environment | 2026-09-24 | 9d664b7 | [260924-e3d-loosen-safety-validator-py-caps-displace](./quick/260924-e3d-loosen-safety-validator-py-caps-displace/) |
 | 260924-gih | Fix pop_validated_action() silently dropping every real bridge action to `{}` -- lerobot's `.pos`-suffixed action_features keys never matched safety_validator's plain JOINT_ORDER names, crashing the first live 11-05 episode | 2026-09-24 | 41b6a0e | [260924-gih-fix-pop-validated-action-dropping-every-](./quick/260924-gih-fix-pop-validated-action-dropping-every-/) |
+| 260927-he3 | Fix AR0144 stereo camera resolution: switch from frozen 2560x720 (confirmed stuck via raw ffmpeg testing and a real episode's 300 identical recorded frames) to working 1280x360 | 2026-09-27 | caa85da | [260927-he3-fix-ar0144-stereo-camera-resolution-swit](./quick/260927-he3-fix-ar0144-stereo-camera-resolution-swit/) |
 
 ## Deferred Items
 
