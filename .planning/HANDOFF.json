@@ -1,47 +1,56 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-27T11:03:43.885Z",
+  "timestamp": "2026-09-27T16:07:56.467Z",
   "phase": "12",
-  "phase_name": "bridge-tick-latency-fix",
+  "phase_name": "12-bridge-tick-latency-fix",
   "phase_dir": ".planning/phases/12-bridge-tick-latency-fix",
   "plan": null,
-  "task": null,
-  "total_tasks": null,
+  "task": "uat-test-7",
+  "total_tasks": 15,
   "status": "paused",
-  "context": "uat",
-  "uat_file": ".planning/phases/12-bridge-tick-latency-fix/12-UAT.md",
   "completed_tasks": [
-    {"id": "gap-closure-12-03", "name": "Camera diagnostic collision fix + waypoint interpolation", "status": "done", "commit": "e7ff126"},
-    {"id": "gap-closure-12-04", "name": "Stale-deadlock watchdog", "status": "done", "commit": "086970d"},
-    {"id": "gap-closure-12-05", "name": "Stereo calibration module (stereo_calibration.py)", "status": "done", "commit": "d8e79bf"},
-    {"id": "gap-closure-12-06", "name": "Depth capture module + Colab FastFS docs", "status": "done", "commit": "deca078"},
-    {"id": "uat-test-1", "name": "Camera-overhead recording shows real AR0144 workspace", "status": "done_pass"},
-    {"id": "uat-test-2", "name": "Motion smoothness (--execution-hz tuning)", "status": "done_pass", "commit": "58ab5b0 (tuned to 100.0)"},
-    {"id": "uat-test-3", "name": "Stale-deadlock watchdog live confirmation", "status": "done_skipped", "note": "no stall occurred during test episode, mechanism unexercised live (unit tests already cover it)"},
-    {"id": "quick-260927-he3", "name": "Fix frozen 2560x720 stereo capture -> 1280x360", "status": "done", "commit": "caa85da"},
-    {"id": "quick-260927-i3s", "name": "Upgrade stereo capture 1280x360 -> 1600x600", "status": "done", "commit": "0545951"},
-    {"id": "uat-test-4", "name": "Stereo calibration produces plausible calibration file", "status": "done_pass", "note": "converged after 4 attempts, 1.79px reprojection error, baseline consistent across last 2 attempts"}
+    { "id": 1, "name": "Camera-overhead recording shows real AR0144 workspace", "status": "done" },
+    { "id": 2, "name": "Robot motion is visibly smooth during policy execution", "status": "done" },
+    { "id": 3, "name": "Stale-deadlock watchdog breaks a real multi-minute stall", "status": "skipped (no stall occurred)" },
+    { "id": 4, "name": "Stereo calibration produces a plausible, real calibration file", "status": "done" },
+    { "id": 5, "name": "Colab FastFS endpoint docs legitimate and match depth_camera.py contract", "status": "done (gap found and fixed earlier session, commits 8d3ae5a/a9ab896/daf48b8)" },
+    { "id": 6, "name": "Depth accuracy sanity check against known real-world distance", "status": "done", "commit": "37a5aef" },
+    { "id": 7, "name": "Live episode depth recording works end-to-end without disrupting motion", "status": "in_progress, blocked", "progress": "Full run_vla_episode.py attempted 3x (L4, A100 x2) -- PolicyServer connects, model loads (~30-40s), then gRPC connection refused right as inference starts, every time. Depth endpoint 404s the whole session (Flask /depth route never actually responded). Root cause NOT yet confirmed -- see blockers." }
   ],
   "remaining_tasks": [
-    {"id": "uat-test-5", "name": "Colab Fast-FoundationStereo endpoint docs legitimacy + contract match", "status": "not_started"},
-    {"id": "uat-test-6", "name": "Depth accuracy sanity check against known real-world distance", "status": "not_started", "depends_on": "Colab FastFS endpoint must be running (human-owned setup, D-06)"},
-    {"id": "uat-test-7", "name": "Live episode depth recording end-to-end", "status": "not_started", "depends_on": "uat-test-6"}
+    { "id": 7, "name": "Live episode depth recording end-to-end", "status": "blocked, needs log-redirect fix first (see blockers)" }
   ],
   "blockers": [
-    {"description": "Tests 5-7 require the Colab-side Fast-FoundationStereo endpoint to actually be stood up (install NVlabs/Fast-FoundationStereo, serve it, tunnel it) -- this is human-owned per CONTEXT.md D-06 (Claude does not run physical hardware or a live Colab GPU runtime).", "type": "human_action", "workaround": "none -- user must set up the Colab depth endpoint before these tests can proceed"}
+    {
+      "description": "Test 7 (live episode with depth recording): run_vla_episode.py connects to the Colab PolicyServer, sends policy instructions, model loads successfully (~30-40s), then the gRPC tunnel gives 'Connection refused' right as real inference is about to start. Reproduced identically 3x tonight: once on L4 GPU, twice on A100 GPU, across different Colab regions/VMs, different ngrok tunnel addresses. Root cause NOT confirmed -- the actual Python traceback is unrecoverable after the fact because Step 3's serve() call runs in a background thread (threading.Thread(target=serve, ...)), and Jupyter only captures stdout/stderr for whichever cell is synchronously executing at the time a background thread prints -- once that cell (in practice, whichever tunnel/depth cell happened to be running) finishes, later thread output is NOT captured into any saved cell output, so the real error is lost even after saving the notebook.",
+      "type": "technical",
+      "workaround": "None yet applied. NEXT SESSION MUST FIRST modify Step 3's cell to redirect the serve() thread's stdout/stderr to a file (e.g. contextlib.redirect_stdout/stderr to '/content/policy_server.log', or Python logging to a FileHandler) BEFORE attempting Test 7 again -- otherwise we will hit the exact same 'lost error' wall a 4th time. This is the single highest-priority action for the next session."
+    },
+    {
+      "description": "Depth endpoint 404'd for the entire Test 7 session (both A100 attempts) -- the Flask /depth route was reachable (tunnel healthy) but returned 404 Not Found on every request, meaning the route wasn't actually registered/serving. Separate bug from the gRPC crash above; not yet diagnosed.",
+      "type": "technical",
+      "workaround": "Check whether Step 8's Flask cell actually completed its route registration before Step 9's tunnel was opened this session -- may just need to re-verify cell execution order, or may be a real bug. Not investigated yet."
+    }
   ],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "Stand up the Colab Fast-FoundationStereo endpoint per control/vla_bridge/policy_server_launch.md's depth section, then run the depth accuracy sanity check (place an object at a known measured distance, compare against depth_camera.py's computed depth)", "context": "Required for UAT tests 5, 6, 7 -- the last 3 pending items in Phase 12's UAT", "blocking": true}
+    {
+      "action": "Re-run Steps 1-9 of policy_server.ipynb on a fresh Colab VM, with the log-redirect fix applied first, then re-attempt the full run_vla_episode.py command for Test 7.",
+      "context": "Requires live Colab GPU runtime + physical robot hardware -- human-owned per this project's CONTEXT.md D-06.",
+      "blocking": true
+    }
   ],
   "decisions": [
-    {"decision": "AR0144 stereo capture resolution changed from 2560x720 to 1600x600 (800x600 per eye)", "rationale": "2560x720 confirmed persistently frozen (byte-identical frames) via raw ffmpeg testing AND direct inspection of a real episode's 300 recorded frames -- confirmed a real, not-our-code bug. Exhausted all fixes: process cleanup, VDCAssistant restart, camera replug, full OS reboot, and macOS's legacy-camera-plugins-without-sw-camera-indication recovery-mode system override -- none restored 2560x720. 1600x600 confirmed live/stable (20+ consecutive frames with genuine non-zero diffs) and is the best available resolution (next mode up jumps straight to the broken 2560x720; intermediate 1280x480/1280x712 are single-lens crops, not stereo pairs).", "phase": "12"},
-    {"decision": "Stereo calibration required 30 views with deliberately varied angle/position/distance to converge", "rationale": "First 2-3 attempts (15 views each, low variety) produced inconsistent baseline (T) estimates between independent runs (75mm vs 53mm, a 30% swing) despite low-ish reprojection error -- a red flag that reprojection error alone doesn't guarantee a trustworthy calibration. 30 views with real angle/position/distance variety converged: baseline agreed to within 0.6% between the last two attempts, reprojection error dropped to 1.79px, distortion coefficients shrank monotonically toward physically sane values.", "phase": "12"},
-    {"decision": "Built 3 new hardware-debugging/calibration tools this session, committed to control/: preview_checkerboard.py, calibrate_with_preview.py, tune_execution_hz.py", "rationale": "The production stereo_calibration.py's capture loop is headless (input()-prompt, no visual feedback) -- these tools add live preview to make manual calibration/tuning practical. tune_execution_hz.py exercises run_episode()'s real interpolation code against a scripted multi-joint sweep without needing the Colab bridge, used to tune --execution-hz from 20.0 to 100.0.", "phase": "12"}
+    { "decision": "Fixed 3 real bugs in policy_server.ipynb's FastFS depth pipeline: (1) scripts/run_demo.py's unconditional cv2.imshow/waitKey and Open3D viewer calls hang forever headless -- patched via sed in Step 7. (2) run_demo.py only writes depth_meter.npy when --get_pc 1, but Step 8's Flask handler passed --get_pc 0 -- fixed to --get_pc 1, and DEPTH_OUTPUT_GLOB narrowed from '*.npy' to the confirmed 'depth_meter.npy'.", "rationale": "Confirmed live during Test 6 UAT debugging -- discovered by systematically isolating FastFS's own bundled demo command from our wrapper.", "phase": "12" },
+    { "decision": "Test 6's accuracy check uses HSV red-color-threshold cube detection (project's own target is 'the red cube') sampling median depth over the detected region, instead of the originally-planned frame-center-pixel reading.", "rationale": "User correctly rejected the naive center-pixel approach as uninformative -- the depth model has no object semantics, so the center pixel could land on the robot arm, mat, or cube depending on framing. Cube-anchored detection ties the accuracy check to something concrete.", "phase": "12" },
+    { "decision": "Added GRPC_DNS_RESOLVER=native env var when invoking run_vla_episode.py.", "rationale": "grpc's bundled c-ares DNS resolver failed ('DNS query cancelled') on an ngrok TCP tunnel address that plain `dig`/`nc` proved was genuinely reachable -- a known class of macOS-specific grpc resolver bug, unrelated to tunnel health.", "phase": "12" },
+    { "decision": "Added a permanent `!pip uninstall -y torchaudio` cell to policy_server.ipynb right before Step 3.", "rationale": "lerobot's installs pull in a torchaudio build whose CUDA version doesn't reliably match Colab's preinstalled torch, crashing Step 3's serve() import 2x tonight with a cascading ModuleNotFoundError. torchaudio isn't used by anything in this notebook.", "phase": "12" },
+    { "decision": "Cleaned up policy_server.ipynb: removed ~15 live-debugging scratch cells (Xvfb setup, ad-hoc run_demo.py test invocations, sed/grep inspection commands) added during Test 6 diagnosis, folding the durable fixes into Steps 7/8 permanently.", "rationale": "Notebook is meant to be reusable across sessions; scratch diagnostic cells from one debugging session shouldn't accumulate permanently.", "phase": "12" }
   ],
   "uncommitted_files": [
-    ".planning/phases/12-bridge-tick-latency-fix/12-UAT.md (test 4 marked pass, current test advanced to 5 -- part of this handoff commit)"
+    ".planning/phases/12-bridge-tick-latency-fix/12-UAT.md",
+    "control/vla_bridge/policy_server.ipynb"
   ],
-  "next_action": "Run /gsd-verify-work 12 to resume the UAT session at test 5 (Colab FastFS endpoint legitimacy check) -- this requires the user to have the Colab FastFS endpoint documentation open to cross-check against depth_camera.py, and eventually a live Colab GPU runtime with the endpoint actually running for tests 6-7.",
-  "context_notes": "This session covered: (1) executing all 4 of Phase 12's gap-closure plans (12-03/04/05/06) via /gsd-execute-phase --gaps-only, (2) resuming UAT with a fresh session against the 4 new SUMMARYs, (3) live-hardware testing that surfaced a real, persistent camera-driver bug (2560x720 frozen) requiring two follow-up quick tasks to resolve (1280x360 then upgraded to 1600x600), (4) building 3 new calibration/tuning support scripts, (5) iterating stereo calibration through 4 attempts until the baseline estimate converged. Tests 1-4 of 15 are now genuinely passed (not just claimed) -- test 1 required correcting an earlier incomplete verification (originally only checked left-vs-right parallax within one frozen frame, not frame-to-frame liveness over an episode -- this was caught by the user pushing back, not by my own diligence, and is worth remembering: parallax alone does NOT prove a live feed). Tests 5-7 remain and are gated on Colab-side setup work only the user can do."
+  "next_action": "1. Add stdout/stderr log-redirect to Step 3's serve() cell in policy_server.ipynb (write to a file, not relying on cell capture). 2. Re-run Steps 1-9 on a fresh Colab VM. 3. Re-attempt run_vla_episode.py for Test 7 with GRPC_DNS_RESOLVER=native set. 4. If it fails again, THIS TIME the log file will have the real traceback -- read it before forming any new theory. 5. Also check why the depth Flask route 404'd all of last session (separate bug).",
+  "context_notes": "Test 6 (depth accuracy) is a genuine, well-verified pass after a long debugging arc (3 real bugs fixed: headless-GUI hang, missing --get_pc flag, stale camera index). Test 7 has failed 3x tonight in a way that looks environmental at first (network blip theory, then 'too much load' theory, then 'parallel tunnels' theory) but none of those theories survived scrutiny against the actual evidence (same failure on L4 AND A100 with much more VRAM; depth tunnel stayed healthy while gRPC tunnel's backing process specifically died; ngrok's own logs showed clean tunnel opens both times). The user and I converged on: this is very likely a software bug inside the serve() background thread that crashes silently on the first real observation, and we currently have NO way to see the actual error because of how Jupyter captures (or fails to capture) background-thread output after its originating cell finishes. Also flagged and recovered from a real mistake this session: I ran `git checkout --` on policy_server.ipynb without checking git status first, discarding the user's live in-progress Colab edits from earlier in the session -- recovered via VS Code's local file history (~/Library/Application Support/Code/User/History/), verified content matched before restoring. No permanent damage, but worth remembering: always check git status/diff before any checkout/reset on a file being actively edited outside the git workflow (e.g. a notebook open in another editor)."
 }
