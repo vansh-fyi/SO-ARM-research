@@ -27,3 +27,7 @@ experiment-design/
 /orientation/
 # Superseded Coppelia export, archived independently; not a runtime model.
 /So-101-coppelia/
+
+# Fast-FoundationStereo checkpoint, staged locally only for upload into the
+# Colab runtime -- large binary, never runs from this local path.
+control/vla_bridge/weights/
