@@ -372,7 +372,7 @@ and parses -- keep them in sync if either side changes.
 # Colab notebook cell
 from pyngrok import ngrok
 
-# A DIFFERENT local port than Step 3's gRPC server (8080), and a plain HTTP
+# A DIFFERENT local port than Step 3's gRPC server (5173), and a plain HTTP
 # tunnel type -- unlike Step 4's gRPC tunnel, which specifically needs "tcp"
 # for HTTP/2 semantics, this is a plain JSON-over-HTTP POST endpoint, so
 # ngrok's default HTTP tunnel type works fine here.
@@ -409,7 +409,7 @@ not left listening after the tunnel is torn down.
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Checkpoint       | `victorvanhalst/smolvla_so101_cube`                                                                                            |
 | Task instruction | "Pick the red cube and place it in the bowl"                                                                                     |
-| Tunnel type      | TCP (`ngrok.connect(8080, "tcp")`) — not HTTP                                                                                 |
+| Tunnel type      | TCP (`ngrok.connect(5173, "tcp")`) — not HTTP                                                                                 |
 | Camera mapping   | `camera1`=wrist, `camera2`=AR0144 stereo-left, `camera3`=AR0144 stereo-right                                               |
 | Fallback tunnel  | `cloudflared` + configured Zero Trust tunnel (heavier setup)                                                                   |
 | Fallback policy  | ACT or pi0/pi05 (`lerobot.policies`, already installed) if this checkpoint underperforms                                       |
