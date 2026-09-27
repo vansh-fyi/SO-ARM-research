@@ -247,6 +247,30 @@ in the Colab runtime -- a manual human step (a gated/shared Google Drive
 folder isn't reliably scriptable inside a single Colab cell), not something
 this notebook automates.
 
+Colab: upload the downloaded checkpoint (run this cell after downloading
+`model_best_bp2_serialize.pth` to your own computer from the Drive link
+above):
+
+```python
+# Colab notebook cell -- run this AFTER downloading model_best_bp2_serialize.pth
+# from the README's Google Drive folder to your own computer:
+# https://drive.google.com/drive/folders/1HuTt7UIp7gQsMiDvJwVuWmKpvFzIIMap
+# This opens a file picker; select model_best_bp2_serialize.pth from your machine.
+import os
+import shutil
+
+from google.colab import files
+
+_weights_dir = "/content/Fast-FoundationStereo/weights/23-36-37"
+os.makedirs(_weights_dir, exist_ok=True)
+
+_uploaded = files.upload()
+_uploaded_name = next(iter(_uploaded.keys()))
+_dest_path = f"{_weights_dir}/model_best_bp2_serialize.pth"
+shutil.move(_uploaded_name, _dest_path)
+print(f"Checkpoint saved to {_dest_path}")
+```
+
 Step 8 below invokes FastFS's own documented `scripts/run_demo.py` CLI
 (README's "Run demo" section) directly, so the input/output CONTRACT (flags,
 intrinsic-file format) is fully documented there -- no fabricated
