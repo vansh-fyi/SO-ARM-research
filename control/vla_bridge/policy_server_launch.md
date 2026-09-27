@@ -108,7 +108,7 @@ Legitimacy Audit as a required transitive dependency of `lerobot`'s own
 from lerobot.async_inference.configs import PolicyServerConfig
 from lerobot.async_inference.policy_server import serve
 
-config = PolicyServerConfig(host="0.0.0.0", port=8080)
+config = PolicyServerConfig(host="0.0.0.0", port=5173)
 serve(config)
 ```
 
@@ -124,7 +124,7 @@ from pyngrok import ngrok
 
 # Explicitly request a TCP tunnel — gRPC needs HTTP/2 semantics that a
 # default HTTP tunnel silently breaks (Pitfall 5 in 11-RESEARCH.md).
-tunnel = ngrok.connect(8080, "tcp")
+tunnel = ngrok.connect(5173, "tcp")
 print(f"PolicyServer reachable at: {tunnel.public_url}")
 # public_url looks like tcp://0.tcp.ngrok.io:12345 — strip the "tcp://"
 # prefix; the local RobotClient's --server_address flag wants host:port.
@@ -234,8 +234,7 @@ INPUT/OUTPUT contract (rectified pair + calibration in, depth map out), but
 not its exact function/class names -- so the human implementing this Colab
 cell should refer to the actual cloned repo's own README/examples for the
 precise inference call. This matches this file's own existing precedent for
-an unresolved implementation detail (see the `camera2`/`camera3` `type:
-<split-stereo-left/right>` placeholder note in the Camera mapping section
+an unresolved implementation detail (see the `camera2`/`camera3` `type: <split-stereo-left/right>` placeholder note in the Camera mapping section
 above -- documented as a target contract, not a fully-resolved
 implementation).
 
@@ -277,7 +276,7 @@ def depth():
 
 
 # Run in the background, same convention as Step 3's PolicyServerConfig/serve() cell.
-app.run(host="0.0.0.0", port=8081)
+app.run(host="0.0.0.0", port=3000)
 ```
 
 This exact request/response shape (`left_png_b64`/`right_png_b64`/
@@ -295,7 +294,7 @@ from pyngrok import ngrok
 # tunnel type -- unlike Step 4's gRPC tunnel, which specifically needs "tcp"
 # for HTTP/2 semantics, this is a plain JSON-over-HTTP POST endpoint, so
 # ngrok's default HTTP tunnel type works fine here.
-depth_tunnel = ngrok.connect(8081, "http")
+depth_tunnel = ngrok.connect(3000, "http")
 print(f"Depth endpoint reachable at: {depth_tunnel.public_url}/depth")
 ```
 
@@ -324,12 +323,12 @@ not left listening after the tunnel is torn down.
 
 ## Summary
 
-| Item             | Value                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------ |
-| Checkpoint       | `victorvanhalst/smolvla_so101_cube`                                                      |
-| Task instruction | "Pick the red cube and place it in the bowl"                                               |
-| Tunnel type      | TCP (`ngrok.connect(8080, "tcp")`) — not HTTP                                           |
-| Camera mapping   | `camera1`=wrist, `camera2`=AR0144 stereo-left, `camera3`=AR0144 stereo-right         |
-| Fallback tunnel  | `cloudflared` + configured Zero Trust tunnel (heavier setup)                             |
-| Fallback policy  | ACT or pi0/pi05 (`lerobot.policies`, already installed) if this checkpoint underperforms |
+| Item             | Value                                                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Checkpoint       | `victorvanhalst/smolvla_so101_cube`                                                                                            |
+| Task instruction | "Pick the red cube and place it in the bowl"                                                                                     |
+| Tunnel type      | TCP (`ngrok.connect(8080, "tcp")`) — not HTTP                                                                                 |
+| Camera mapping   | `camera1`=wrist, `camera2`=AR0144 stereo-left, `camera3`=AR0144 stereo-right                                               |
+| Fallback tunnel  | `cloudflared` + configured Zero Trust tunnel (heavier setup)                                                                   |
+| Fallback policy  | ACT or pi0/pi05 (`lerobot.policies`, already installed) if this checkpoint underperforms                                       |
 | Depth endpoint   | Fast-FoundationStereo (NVlabs/Fast-FoundationStereo), served via Flask, HTTP tunnel (separate from the gRPC PolicyServer tunnel) |
