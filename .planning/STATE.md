@@ -8,7 +8,7 @@ status: executing
 stopped_at: Phase 12 context gathered
 last_updated: "2026-09-26T18:02:58.746Z"
 last_activity: 2026-09-27
-last_activity_desc: Quick task 260927-i3s - upgraded AR0144 stereo camera resolution (1280x360 -> 1600x600)
+last_activity_desc: Quick task 260927-ndz - fixed Phase 12 UAT test-5 gaps in Colab depth-endpoint docs/notebook
 progress:
   total_phases: 17
   completed_phases: 9
@@ -108,6 +108,7 @@ None yet for v2.1 — begin by planning Phase 12 (`/gsd-plan-phase 12`).
 | 260924-gih | Fix pop_validated_action() silently dropping every real bridge action to `{}` -- lerobot's `.pos`-suffixed action_features keys never matched safety_validator's plain JOINT_ORDER names, crashing the first live 11-05 episode | 2026-09-24 | 41b6a0e | [260924-gih-fix-pop-validated-action-dropping-every-](./quick/260924-gih-fix-pop-validated-action-dropping-every-/) |
 | 260927-he3 | Fix AR0144 stereo camera resolution: switch from frozen 2560x720 (confirmed stuck via raw ffmpeg testing and a real episode's 300 identical recorded frames) to working 1280x360 | 2026-09-27 | caa85da | [260927-he3-fix-ar0144-stereo-camera-resolution-swit](./quick/260927-he3-fix-ar0144-stereo-camera-resolution-swit/) |
 | 260927-i3s | Upgrade AR0144 stereo camera resolution from 1280x360 to 1600x600 (800x600/eye) -- best available resolution after macOS's legacy-camera-plugins system override + reboot still failed to unstick the native 2560x720 mode | 2026-09-27 | 0545951 | [260927-i3s-upgrade-ar0144-stereo-camera-resolution-](./quick/260927-i3s-upgrade-ar0144-stereo-camera-resolution-/) |
+| 260927-ndz | Fix Phase 12 UAT test-5 gaps in the Colab depth-endpoint setup: wire real Fast-FoundationStereo run_demo.py CLI into the Flask depth cell, fix stale port-8080 refs, sync notebook camera-mapping + drop duplicate tunnel cell | 2026-09-27 | a9ab896 | [260927-ndz-fix-phase-12-uat-test-5-gaps-in-the-cola](./quick/260927-ndz-fix-phase-12-uat-test-5-gaps-in-the-cola/) |
 
 ## Deferred Items
 
