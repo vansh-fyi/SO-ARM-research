@@ -31,15 +31,16 @@ Two independent detection problems, solved differently:
    (confirmed to hold on this rig this session with all cameras connected), used only
    to EXCLUDE the built-in camera by name ("FaceTime" in its name). Among the
    remaining candidates, the AR0144 stereo camera is identified by its distinctive
-   2560x720 capture resolution (unique on this rig); if a second non-stereo
-   candidate remains ambiguous after that, this script falls back to an interactive
-   cover-the-lens brightness check -- the same manual technique used live this
-   session -- rather than guessing. See `resolve_cameras()`.
+   capture resolution (the live `STEREO_WIDTH`/`STEREO_HEIGHT` constants imported
+   from `vla_bridge.stereo_camera`, currently 1280x360, unique on this rig); if a
+   second non-stereo candidate remains ambiguous after that, this script falls
+   back to an interactive cover-the-lens brightness check -- the same manual
+   technique used live this session -- rather than guessing. See `resolve_cameras()`.
    (Found live during 11-05 Task 3 prep: `cv2.VideoCapture`'s reported resolution
    for the AR0144 is UNRELIABLE on macOS -- a known unfixed OpenCV AVFoundation-
    backend bug, opencv/opencv#23368 -- so when no cv2-probed candidate matches
-   2560x720, `resolve_cameras()` falls back to a real `ffmpeg`-based capture
-   check per candidate. See `_verify_stereo_via_ffmpeg()`.)
+   `STEREO_WIDTH`x`STEREO_HEIGHT`, `resolve_cameras()` falls back to a real
+   `ffmpeg`-based capture check per candidate. See `_verify_stereo_via_ffmpeg()`.)
 
 Usage:
     python detect_devices.py [--out device_map.json] [--max-camera-index 6]
@@ -301,17 +302,22 @@ def _disambiguate_by_brightness(candidates: list[dict], prompt_fn=input) -> int:
 
 def _verify_stereo_via_ffmpeg(index: int, timeout_s: float = 8.0) -> bool:
     """Confirms `index` is genuinely the AR0144 stereo camera via a real `ffmpeg`
-    capture attempt at its native 2560x720 `uyvy422` mode.
+    capture attempt at its currently-requested `STEREO_WIDTH`x`STEREO_HEIGHT`
+    (1280x360) `uyvy422` mode.
 
     Needed as a fallback because `cv2.VideoCapture`'s reported resolution for
     this camera is UNRELIABLE on macOS: confirmed live during 11-05 Task 3 prep
     that cv2's AVFoundation backend serves 1920x1080 or 1280x720 for this device
     regardless of `CAP_PROP_FRAME_WIDTH`/`HEIGHT`/`FOURCC` requests -- a known
     unfixed OpenCV bug (opencv/opencv#23368), not a hardware or cable problem.
-    AVFoundation itself confirms 2560x720 IS a genuinely supported mode for this
-    device (verified via `ffmpeg -video_size 9999x9999 ...`'s "Supported modes"
-    error listing), and `ffmpeg -f avfoundation -pixel_format uyvy422
-    -video_size 2560x720` reliably captures the real frame where cv2 cannot.
+    AVFoundation itself confirms whichever `-video_size` this project currently
+    requests (now 1280x360; 2560x720 was also confirmed supported but is
+    persistently frozen on this machine, see `stereo_camera.py`'s module
+    docstring) IS a genuinely supported mode for this device (verified via
+    `ffmpeg -video_size 9999x9999 ...`'s "Supported modes" error listing), and
+    `ffmpeg -f avfoundation -pixel_format uyvy422 -video_size
+    {STEREO_WIDTH}x{STEREO_HEIGHT}` reliably captures the real frame where cv2
+    cannot.
 
     Never raises; returns False on any failure (wrong camera, ffmpeg missing,
     timeout, non-stereo device that can't produce this frame shape).
@@ -345,7 +351,8 @@ def resolve_cameras(
     """Resolves `{"wrist": <idx>, "stereo_overhead": <idx>, "stereo_overhead_name":
     <name-or-idx>}` from probed camera `candidates`, excluding any built-in-named
     device first, then splitting the remainder by the AR0144's distinctive
-    2560x720 resolution. `stereo_overhead_name` is the identifier
+    capture resolution (the live `STEREO_WIDTH`/`STEREO_HEIGHT` constants,
+    currently 1280x360). `stereo_overhead_name` is the identifier
     `StereoSplitCamera`'s ffmpeg backend should actually be opened with -- see
     the inline comment above its construction for why the numeric index isn't
     safe to persist across process launches.
@@ -353,8 +360,9 @@ def resolve_cameras(
     `verify_stereo_fn(index) -> bool` is injectable (defaults to
     `_verify_stereo_via_ffmpeg`) so tests never spawn a real ffmpeg subprocess.
     It's only consulted as a FALLBACK when no candidate's cv2-reported
-    resolution matches 2560x720 -- see `_verify_stereo_via_ffmpeg`'s docstring
-    for why cv2's reported resolution can't always be trusted for this camera.
+    resolution matches `STEREO_WIDTH`x`STEREO_HEIGHT` -- see
+    `_verify_stereo_via_ffmpeg`'s docstring for why cv2's reported resolution
+    can't always be trusted for this camera.
     """
     non_builtin = [c for c in candidates if not _is_builtin_name(names_by_index.get(c["index"]))]
 
