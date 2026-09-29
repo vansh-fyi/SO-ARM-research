@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-27T16:07:56.467Z",
+  "timestamp": "2026-09-29T11:16:22.905Z",
   "phase": "12",
   "phase_name": "12-bridge-tick-latency-fix",
   "phase_dir": ".planning/phases/12-bridge-tick-latency-fix",
@@ -13,44 +13,89 @@
     { "id": 2, "name": "Robot motion is visibly smooth during policy execution", "status": "done" },
     { "id": 3, "name": "Stale-deadlock watchdog breaks a real multi-minute stall", "status": "skipped (no stall occurred)" },
     { "id": 4, "name": "Stereo calibration produces a plausible, real calibration file", "status": "done" },
-    { "id": 5, "name": "Colab FastFS endpoint docs legitimate and match depth_camera.py contract", "status": "done (gap found and fixed earlier session, commits 8d3ae5a/a9ab896/daf48b8)" },
-    { "id": 6, "name": "Depth accuracy sanity check against known real-world distance", "status": "done", "commit": "37a5aef" },
-    { "id": 7, "name": "Live episode depth recording works end-to-end without disrupting motion", "status": "in_progress, blocked", "progress": "Full run_vla_episode.py attempted 3x (L4, A100 x2) -- PolicyServer connects, model loads (~30-40s), then gRPC connection refused right as inference starts, every time. Depth endpoint 404s the whole session (Flask /depth route never actually responded). Root cause NOT yet confirmed -- see blockers." }
+    { "id": 5, "name": "Colab FastFS endpoint docs legitimate and match depth_camera.py contract", "status": "done (gap found and fixed earlier session)" },
+    { "id": 6, "name": "Depth accuracy sanity check against known real-world distance", "status": "done" },
+    {
+      "id": 7,
+      "name": "Live episode depth recording works end-to-end without disrupting motion",
+      "status": "in_progress, root-cause chain fully resolved down to a new architectural blocker",
+      "progress": "Three real, stacked bugs found and fixed this session (see decisions/anti-patterns). PolicyServer no longer crashes -- confirmed clean on a fresh L4 Colab runtime, past the point of every prior failure. BUT the test's own literal success criterion ('depth recording... without disrupting motion') is currently FALSE: depth_client.compute_depth() runs synchronously in the main control loop and FastFS takes 15-70s per call (architectural: full process+model reload from disk on every single request, not a GPU-compute limit), so the robot visibly freezes every depth_every_n_steps ticks. Tonight's pragmatic workaround was to omit --depth-endpoint/--depth-calibration entirely for the retry to validate the crash fix in isolation -- that produces a clean RGB-only episode but does NOT satisfy Test 7's actual pass criteria (which requires depth AND smooth motion together). Do not mark Test 7 pass until the persistent-depth-server fix (see remaining_tasks) lands and a real depth+motion episode is observed clean."
+    }
   ],
   "remaining_tasks": [
-    { "id": 7, "name": "Live episode depth recording end-to-end", "status": "blocked, needs log-redirect fix first (see blockers)" }
+    {
+      "id": 7,
+      "name": "Live episode depth recording end-to-end without disrupting motion",
+      "status": "blocked on persistent-depth-server architecture fix, not yet started",
+      "detail": "Confirm on resume whether the user actually ran and completed the RGB-only retry (outputs/vla_episode_test7_retry3 or similar) end-to-end (60/60 steps) -- that's evidence the crash fix holds, but is a SEPARATE, narrower claim than Test 7's full pass condition. Test 7 itself cannot pass until depth is re-enabled AND motion stays smooth, which requires the persistent depth server fix below."
+    },
+    {
+      "id": "new-architecture-item",
+      "name": "Persistent, model-resident FastFS depth server (not yet scoped as a phase/plan)",
+      "status": "not_started",
+      "detail": "Step 8's run_fastfs_inference() currently shells out via subprocess.run() to scripts/run_demo.py fresh on EVERY depth request -- full process spawn + torch/cv2 re-import + full model-checkpoint reload from disk into GPU VRAM, every single call, with zero persistence across requests. This is the actual, confirmed root cause of the 15-70s per-call latency (verified: torch.cuda.is_available() == True inside the fastfs_venv, GPU is NOT the bottleneck -- ruled out CPU-fallback explicitly). The fix is to refactor the Flask handler to load the FastFS model ONCE at startup (same pattern PolicyServer already uses for SmolVLA) and call inference in-process as a plain Python function, not a per-request CLI subprocess. This is now the ACTUAL blocker for the user's stated next-phase goal: feeding depth as a real, per-tick input alongside RGB into the model (not just optional recording) -- at 15-70s/call this is unusable regardless of GPU tier; L4 vs A100 will NOT fix it since the bottleneck is process/import/checkpoint-reload overhead, not GPU compute (confirmed: actual inference step is fast, sub-second)."
+    }
   ],
   "blockers": [
     {
-      "description": "Test 7 (live episode with depth recording): run_vla_episode.py connects to the Colab PolicyServer, sends policy instructions, model loads successfully (~30-40s), then the gRPC tunnel gives 'Connection refused' right as real inference is about to start. Reproduced identically 3x tonight: once on L4 GPU, twice on A100 GPU, across different Colab regions/VMs, different ngrok tunnel addresses. Root cause NOT confirmed -- the actual Python traceback is unrecoverable after the fact because Step 3's serve() call runs in a background thread (threading.Thread(target=serve, ...)), and Jupyter only captures stdout/stderr for whichever cell is synchronously executing at the time a background thread prints -- once that cell (in practice, whichever tunnel/depth cell happened to be running) finishes, later thread output is NOT captured into any saved cell output, so the real error is lost even after saving the notebook.",
+      "description": "Test 7's literal pass criterion (depth + smooth motion together) is not yet met. depth_client.compute_depth() in control/run_vla_episode.py's main control loop (~line 355-362) blocks synchronously, and FastFS's per-call latency (15-70s, architectural not GPU-bound) makes every depth_every_n_steps tick freeze the robot.",
       "type": "technical",
-      "workaround": "None yet applied. NEXT SESSION MUST FIRST modify Step 3's cell to redirect the serve() thread's stdout/stderr to a file (e.g. contextlib.redirect_stdout/stderr to '/content/policy_server.log', or Python logging to a FileHandler) BEFORE attempting Test 7 again -- otherwise we will hit the exact same 'lost error' wall a 4th time. This is the single highest-priority action for the next session."
+      "workaround": "For crash-fix validation only: omit --depth-endpoint/--depth-calibration to run RGB-only. Does NOT satisfy Test 7's actual criteria -- the persistent-depth-server fix must land before Test 7 can genuinely pass."
     },
     {
-      "description": "Depth endpoint 404'd for the entire Test 7 session (both A100 attempts) -- the Flask /depth route was reachable (tunnel healthy) but returned 404 Not Found on every request, meaning the route wasn't actually registered/serving. Separate bug from the gRPC crash above; not yet diagnosed.",
+      "description": "An async/background-thread fix to depth_client.compute_depth() was considered but deliberately NOT applied live tonight -- control/test_run_vla_episode.py and control/test_depth_camera.py have existing test coverage asserting synchronous, exactly-once-per-tick depth behavior (per 12-06-SUMMARY.md). Changing this behavior without running/updating that suite risks introducing a new bug into safety-critical control-loop code while actively testing on real hardware.",
       "type": "technical",
-      "workaround": "Check whether Step 8's Flask cell actually completed its route registration before Step 9's tunnel was opened this session -- may just need to re-verify cell execution order, or may be a real bug. Not investigated yet."
+      "workaround": "Treat the persistent-depth-server refactor as a proper planning/phase item with test updates, not a live hot-patch."
     }
   ],
   "async_jobs": [],
   "human_actions_pending": [
     {
-      "action": "Re-run Steps 1-9 of policy_server.ipynb on a fresh Colab VM, with the log-redirect fix applied first, then re-attempt the full run_vla_episode.py command for Test 7.",
-      "context": "Requires live Colab GPU runtime + physical robot hardware -- human-owned per this project's CONTEXT.md D-06.",
+      "action": "Confirm whether the RGB-only Test 7 retry actually completed 60/60 steps cleanly, and record that result accurately in 12-UAT.md (as evidence the crash fix holds, NOT as a Test 7 pass, since depth was disabled for that run).",
+      "context": "User was mid-retry when this session paused; last visible log showed the episode running and returning to start position, but final step count/outcome wasn't confirmed in this conversation.",
+      "blocking": false
+    },
+    {
+      "action": "Decide priority: scope the persistent-depth-server architecture (Step 8 refactor: load FastFS model once, serve in-process) as a proper phase/plan item before any depth+RGB fused-input pipeline work begins.",
+      "context": "User's stated intent: depth will be a REQUIRED input (with images) to the next pipeline stage, not just optional recording. At current 15-70s/call latency this is unusable regardless of GPU tier -- this is now a real architectural prerequisite, not a nice-to-have.",
       "blocking": true
     }
   ],
   "decisions": [
-    { "decision": "Fixed 3 real bugs in policy_server.ipynb's FastFS depth pipeline: (1) scripts/run_demo.py's unconditional cv2.imshow/waitKey and Open3D viewer calls hang forever headless -- patched via sed in Step 7. (2) run_demo.py only writes depth_meter.npy when --get_pc 1, but Step 8's Flask handler passed --get_pc 0 -- fixed to --get_pc 1, and DEPTH_OUTPUT_GLOB narrowed from '*.npy' to the confirmed 'depth_meter.npy'.", "rationale": "Confirmed live during Test 6 UAT debugging -- discovered by systematically isolating FastFS's own bundled demo command from our wrapper.", "phase": "12" },
-    { "decision": "Test 6's accuracy check uses HSV red-color-threshold cube detection (project's own target is 'the red cube') sampling median depth over the detected region, instead of the originally-planned frame-center-pixel reading.", "rationale": "User correctly rejected the naive center-pixel approach as uninformative -- the depth model has no object semantics, so the center pixel could land on the robot arm, mat, or cube depending on framing. Cube-anchored detection ties the accuracy check to something concrete.", "phase": "12" },
-    { "decision": "Added GRPC_DNS_RESOLVER=native env var when invoking run_vla_episode.py.", "rationale": "grpc's bundled c-ares DNS resolver failed ('DNS query cancelled') on an ngrok TCP tunnel address that plain `dig`/`nc` proved was genuinely reachable -- a known class of macOS-specific grpc resolver bug, unrelated to tunnel health.", "phase": "12" },
-    { "decision": "Added a permanent `!pip uninstall -y torchaudio` cell to policy_server.ipynb right before Step 3.", "rationale": "lerobot's installs pull in a torchaudio build whose CUDA version doesn't reliably match Colab's preinstalled torch, crashing Step 3's serve() import 2x tonight with a cascading ModuleNotFoundError. torchaudio isn't used by anything in this notebook.", "phase": "12" },
-    { "decision": "Cleaned up policy_server.ipynb: removed ~15 live-debugging scratch cells (Xvfb setup, ad-hoc run_demo.py test invocations, sed/grep inspection commands) added during Test 6 diagnosis, folding the durable fixes into Steps 7/8 permanently.", "rationale": "Notebook is meant to be reusable across sessions; scratch diagnostic cells from one debugging session shouldn't accumulate permanently.", "phase": "12" }
+    {
+      "decision": "Launch PolicyServer as a genuine OS subprocess (subprocess.Popen), not a threading.Thread inside the notebook kernel.",
+      "rationale": "A crash inside a background thread in the SAME process as the Jupyter/Colab kernel silently kills the ENTIRE kernel with zero traceback ('Kernel crashed' only) -- confirmed this was exactly what happened on every prior Test 7 attempt. A separate subprocess isolates the blast radius and gives a real, file-backed log that survives even a hard native crash.",
+      "phase": "12"
+    },
+    {
+      "decision": "Give Fast-FoundationStereo's torch/cuDNN install (Step 7) its own fully isolated Python environment, never touching the shared site-packages PolicyServer's subprocess reads from.",
+      "rationale": "ROOT CAUSE, confirmed via exact policy_server.log timeline correlation + `pip show torch nvidia-cudnn-cu12` diagnostic + `policy_server_process.poll()` returning -6 (SIGABRT): cuDNN 9.x splits into plugin .so files (libcudnn_graph.so, etc.) that PyTorch dlopen's LAZILY on first real use, not at import time. Step 7's `pip install torch==2.6.0 ... cu124` overwrites the shared on-disk cuDNN files WHILE PolicyServer's subprocess is already running and hasn't yet lazy-loaded that plugin. When it finally does (at the very first real inference call), it loads the NEW, mismatched file and hits an unresolved symbol -- a native, uncatchable abort. Process-level isolation (the subprocess fix above) does NOT protect against this on its own, since both processes still share one filesystem.",
+      "phase": "12"
+    },
+    {
+      "decision": "Use `virtualenv` (pip-installed) for Fast-FoundationStereo's isolated environment, NOT the stdlib `venv` module.",
+      "rationale": "First attempt using `venv` + `apt-get install python3-venv` FAILED live: Colab's OS-level `apt` `python3` alias resolves to 3.10, while the actual active interpreter is 3.12 -- apt tried to fetch the wrong package (`python3.10-venv`), which 404'd from the Ubuntu mirror, leaving `venv`'s bundled `ensurepip` broken ('No module named pip'). `virtualenv` bundles its own pip/setuptools/wheel and needs no OS package at all, so this class of failure can't recur.",
+      "phase": "12"
+    },
+    {
+      "decision": "Set KMP_DUPLICATE_LIB_OK=TRUE / OMP_NUM_THREADS=1 globally and in both the PolicyServer and FastFS subprocess environments.",
+      "rationale": "Defensive guard against Colab's classic duplicate-OpenMP-runtime crash (OMP: Error #15), which manifests identically to what was initially observed (abrupt, tracebackless kernel death right as a new library's compute path first runs). Note: the ACTUAL root cause found tonight was the cuDNN lazy-load race above, not confirmed to be an OMP conflict -- this guard remains a reasonable defensive addition, not the fix that resolved the crash.",
+      "phase": "12"
+    },
+    {
+      "decision": "For tonight's retry, skip depth capture entirely (omit --depth-endpoint/--depth-calibration) rather than live-patch depth_client.compute_depth() into an async call.",
+      "rationale": "The synchronous-blocking design has dedicated existing test coverage (test_run_vla_episode.py, test_depth_camera.py per 12-06-SUMMARY.md) asserting synchronous, exactly-once-per-tick behavior. Changing it live, without running/updating that suite, risks a new bug in safety-critical control-loop code while actively testing on real hardware. This is a workaround to validate the crash fix in isolation, NOT a fix for Test 7's actual pass criteria.",
+      "phase": "12"
+    },
+    {
+      "decision": "GPU tier: L4 is sufficient; explicitly do NOT move to A100 to fix the depth latency.",
+      "rationale": "Confirmed via `torch.cuda.is_available()` returning True with 'NVIDIA L4' correctly reported inside the fastfs_venv -- ruling out CPU-fallback. The 15-70s/call latency is dominated by process-spawn + torch/cv2 re-import + full model-checkpoint-reload-from-disk overhead on EVERY single request (Step 8's subprocess.run()-per-call design, zero model persistence), not GPU compute -- the actual inference step is fast (sub-second) once a model is loaded. A faster GPU only speeds up the already-fast part. The real fix is a persistent, model-resident depth server (same pattern PolicyServer already uses), not more powerful hardware.",
+      "phase": "12"
+    }
   ],
   "uncommitted_files": [
-    ".planning/phases/12-bridge-tick-latency-fix/12-UAT.md",
     "control/vla_bridge/policy_server.ipynb"
   ],
-  "next_action": "1. Add stdout/stderr log-redirect to Step 3's serve() cell in policy_server.ipynb (write to a file, not relying on cell capture). 2. Re-run Steps 1-9 on a fresh Colab VM. 3. Re-attempt run_vla_episode.py for Test 7 with GRPC_DNS_RESOLVER=native set. 4. If it fails again, THIS TIME the log file will have the real traceback -- read it before forming any new theory. 5. Also check why the depth Flask route 404'd all of last session (separate bug).",
-  "context_notes": "Test 6 (depth accuracy) is a genuine, well-verified pass after a long debugging arc (3 real bugs fixed: headless-GUI hang, missing --get_pc flag, stale camera index). Test 7 has failed 3x tonight in a way that looks environmental at first (network blip theory, then 'too much load' theory, then 'parallel tunnels' theory) but none of those theories survived scrutiny against the actual evidence (same failure on L4 AND A100 with much more VRAM; depth tunnel stayed healthy while gRPC tunnel's backing process specifically died; ngrok's own logs showed clean tunnel opens both times). The user and I converged on: this is very likely a software bug inside the serve() background thread that crashes silently on the first real observation, and we currently have NO way to see the actual error because of how Jupyter captures (or fails to capture) background-thread output after its originating cell finishes. Also flagged and recovered from a real mistake this session: I ran `git checkout --` on policy_server.ipynb without checking git status first, discarding the user's live in-progress Colab edits from earlier in the session -- recovered via VS Code's local file history (~/Library/Application Support/Code/User/History/), verified content matched before restoring. No permanent damage, but worth remembering: always check git status/diff before any checkout/reset on a file being actively edited outside the git workflow (e.g. a notebook open in another editor)."
+  "next_action": "1. Re-read control/vla_bridge/policy_server.ipynb fresh from disk (do not trust any cached/prior-session state) -- confirmed as of this handoff to correctly contain the virtualenv-based Step 7 fix and the FASTFS_PYTHON-based Step 8 fix, but re-verify since the user was editing it directly in their IDE. 2. Ask the user whether the RGB-only retry (crash-fix validation) completed cleanly, and update 12-UAT.md's Test 7 entry accurately (it must stay 'pending'/'issue', not 'pass', until depth+motion work together). 3. Scope the persistent-depth-server refactor (Step 8: load FastFS model once at startup, serve in-process, no more subprocess.run()-per-request) as a proper phase/plan item -- this is now a hard prerequisite for the user's stated next-phase goal of feeding depth+RGB together into the model, and needs test-suite updates (test_depth_camera.py) alongside it, not a live patch.",
+  "context_notes": "This was a long, multi-message live-hardware debugging session (Test 7 UAT, attempted 3x the prior night, all crashing the Colab kernel with zero diagnostic info). Tonight's work systematically peeled back TWO stacked bugs to get past the crash entirely: (1) PolicyServer-as-thread-not-subprocess meant a crash took the whole kernel down with no log; fixed by subprocess isolation + file-backed logging. (2) Once real logs were visible, found a genuine, confirmed root cause: cuDNN's lazy-plugin-loading race against Step 7's mid-session torch/cuDNN reinstall on shared disk, causing a native SIGABRT the instant real inference started. Fixed via full environment isolation (virtualenv) for Fast-FoundationStereo's install. First isolation attempt (stdlib venv + apt) failed live due to a Python-version/apt-alias mismatch on Colab; corrected to virtualenv. Final retest on a FRESH L4 runtime confirmed: crash is GONE, PolicyServer survives past every prior failure point. This is real, hard-won, verified progress -- do not re-litigate or second-guess the subprocess-isolation or virtualenv-isolation fixes; both are confirmed working via live evidence (log timelines, poll() exit codes, and a clean run past the crash point). A NEW, separate, smaller issue then surfaced: depth capture blocking the control loop and taking 15-70s/call due to a pre-existing (not tonight's-fix-caused) architectural flaw -- FastFS reloads its whole model from disk on every single request instead of staying resident. This was correctly NOT patched live (test-coverage risk on safety-critical code), and instead reframed as the real next planning priority, since the user's actual next-phase goal (depth+RGB fused model input) cannot work at all with 15-70s/call latency, regardless of GPU tier -- explicitly confirmed this is NOT a GPU-power problem (L4 already runs CUDA fine; A100 would not fix the bottleneck, which is process/import/checkpoint-reload overhead, not compute). The user explicitly asked me to write extremely detailed notes so the depth-server architecture fix can be implemented correctly, in one pass, without gaps next time -- the remaining_tasks and human_actions_pending entries above are written with that level of detail deliberately."
 }
