@@ -35,7 +35,7 @@ def test_open_cameras_plain_indices(monkeypatch):
         opened.append(index)
         return FakeCapture(index, opened=index != 8)
     monkeypatch.setattr(recorder.cv2, "VideoCapture", capture)
-    assert list(recorder.open_cameras([3, 8])) == [3]
+    assert list(recorder.open_cameras([3, 8], {}, None)) == [3]
     assert opened == [3, 8]
 
 
@@ -76,3 +76,44 @@ def test_load_device_map_stale_warns_and_returns_map(monkeypatch, tmp_path, caps
 ])
 def test_build_camera_roles(device_map, expected):
     assert recorder._build_camera_roles([3, 4, 9], device_map) == expected
+
+
+class FakeStereo:
+    def __init__(self, index, opened=True):
+        self.index = index
+        self.is_opened = opened
+        self.released = False
+
+    def release(self):
+        self.released = True
+
+
+@pytest.mark.parametrize("device_map", [None, {"cameras": {"wrist": 3, "stereo_overhead": 4}}])
+def test_open_cameras_resolves_roles_once(monkeypatch, device_map):
+    opened, stereo, resolved = [], [], []
+    def resolve(role, mapping):
+        assert mapping is device_map
+        resolved.append(role)
+        return "CCB Camera" if role == "stereo_overhead" else 7
+    def capture(index):
+        opened.append(index)
+        return FakeCapture(index)
+    def split(index):
+        stereo.append(index)
+        return FakeStereo(index)
+    monkeypatch.setattr(recorder.detect_devices, "resolve_camera_identifier", resolve)
+    monkeypatch.setattr(recorder.cv2, "VideoCapture", capture)
+    monkeypatch.setattr(recorder, "StereoSplitCamera", split)
+    caps = recorder.open_cameras([3, 4, 4, 9], {3: "wrist", 4: "overhead"}, device_map)
+    assert list(caps) == [3, 4, 9]
+    assert opened == ([7, 9] if device_map else [3, 9])
+    assert stereo == (["CCB Camera"] if device_map else [4])
+    assert resolved == (["wrist", "stereo_overhead"] if device_map else [])
+
+
+def test_open_cameras_failed_overhead_is_released(monkeypatch, capsys):
+    cap = FakeStereo(4, opened=False)
+    monkeypatch.setattr(recorder, "StereoSplitCamera", lambda index: cap)
+    assert recorder.open_cameras([4], {4: "overhead"}, None) == {}
+    assert cap.released
+    assert "overhead camera did not open" in capsys.readouterr().out
