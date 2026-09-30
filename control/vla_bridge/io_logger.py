@@ -12,6 +12,7 @@ readable, valid `episode.jsonl` containing every step written before the
 crash -- no buffering, no "finalize" step required.
 """
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -170,14 +171,25 @@ class IOLogger:
         `__init__`) so names never declared in `__init__`'s `camera_names`
         argument (e.g. `"overhead_left"`/`"overhead_right"`) still get a
         subdirectory on first write.
+
+        The sha256 hash attests only to this process's local frame bytes at
+        capture time. It cannot prove what Colab's PolicyServer received or
+        used: there is no round-trip confirmation mechanism. This disclosure
+        belongs only in this docstring, never in episode.jsonl or any other
+        output file.
         """
         import cv2  # local import: keeps this module importable without cv2 for pure-logic tests
 
         (self.out_dir / f"camera_{camera_name}").mkdir(parents=True, exist_ok=True)
         rel_path = Path(f"camera_{camera_name}") / f"{step:06d}.png"
+        result = {"path": str(rel_path), "captured_at_utc": captured_at_utc}
+        try:
+            result["sha256"] = hashlib.sha256(frame.tobytes()).hexdigest()
+        except Exception:
+            pass  # Optional provenance must not prevent recording the frame.
         if not cv2.imwrite(str(self.out_dir / rel_path), frame):
             raise OSError(f"Failed to write camera frame: {rel_path}")
-        return {"path": str(rel_path), "captured_at_utc": captured_at_utc}
+        return result
 
 
 __all__ = ["IOLogger"]
