@@ -5,16 +5,16 @@ milestone_name: MLLM Raw-Autonomy Benchmark
 current_phase: 13
 current_phase_name: Camera Device Resolution Unification
 status: verifying
-stopped_at: All Phase 13 plans complete; fresh live overhead and wrist verification pending
-last_updated: "2026-09-30T14:03:40.524Z"
+stopped_at: Phase 14 context gathered; backend scope expanded 4->12
+last_updated: "2026-09-30T17:54:20.454Z"
 last_activity: 2026-09-30
-last_activity_desc: Phase 13 implementation verified; fresh live camera UAT pending
+last_activity_desc: 4/4 plans reconciled; 208 tests pass; verification human_needed (18/19)
 progress:
   total_phases: 17
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 48
   completed_plans: 48
-  percent: 59
+  percent: 65
 ---
 
 # Project State
@@ -141,9 +141,9 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 
 ## Session Continuity
 
-Last session: 2026-09-30T14:03:40.518Z
-Stopped at: All Phase 13 plans complete; fresh live overhead and wrist verification pending
-Resume file: .planning/phases/13-camera-device-resolution-unification/13-UAT.md
+Last session: 2026-09-30T17:54:20.449Z
+Stopped at: Phase 14 context gathered; backend scope expanded 4->12
+Resume file: .planning/phases/14-vla-style-pipeline-backends/14-CONTEXT.md
 
 Phase 12 closed 2026-09-30 with 15/15 UAT tests passing (12-UAT.md has full
 per-test evidence). Summary of the day's work, across a long multi-session
