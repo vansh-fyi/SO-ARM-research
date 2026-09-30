@@ -193,7 +193,7 @@ def test_builtin_camera_never_assigned_wrist_or_stereo_even_if_only_extra_candid
 
     result = resolve_cameras(candidates, names_by_index)
 
-    assert result == {"wrist": 1, "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
+    assert result == {"wrist": 1, "wrist_name": "USB Camera", "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
     assert result["wrist"] != 2
     assert result["stereo_overhead"] != 2
 
@@ -270,7 +270,7 @@ def test_ambiguous_wrist_candidates_fall_back_to_interactive_brightness_check(mo
 
     result = resolve_cameras(candidates, names_by_index, prompt_fn=stub_prompt)
 
-    assert result == {"wrist": 2, "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
+    assert result == {"wrist": 2, "wrist_name": "USB Camera B", "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
     assert len(prompts) == 1
 
 
@@ -303,7 +303,7 @@ def test_ffmpeg_fallback_used_when_no_cv2_candidate_matches_stereo_resolution():
 
     result = resolve_cameras(candidates, names_by_index, verify_stereo_fn=verify_stereo_fn)
 
-    assert result == {"wrist": 2, "stereo_overhead": 1, "stereo_overhead_name": "CCB Camera"}
+    assert result == {"wrist": 2, "wrist_name": "USB Camera", "stereo_overhead": 1, "stereo_overhead_name": "CCB Camera"}
 
 
 def test_ffmpeg_fallback_not_consulted_when_cv2_already_found_a_stereo_candidate():
@@ -320,7 +320,7 @@ def test_ffmpeg_fallback_not_consulted_when_cv2_already_found_a_stereo_candidate
 
     result = resolve_cameras(candidates, names_by_index, verify_stereo_fn=verify_stereo_fn)
 
-    assert result == {"wrist": 1, "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
+    assert result == {"wrist": 1, "wrist_name": "USB Camera", "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
 
 
 def test_ffmpeg_fallback_finding_no_match_raises_same_as_no_stereo_candidate():
@@ -539,7 +539,7 @@ def test_detect_devices_resolves_follower_leader_and_cameras(monkeypatch):
 
     assert result["follower"] == {"port": "/dev/cu.follower_port", "id": "soarm_follower_02"}
     assert result["leader"] == {"port": "/dev/cu.leader_port", "id": "soarm_leader_01"}
-    assert result["cameras"] == {"wrist": 1, "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
+    assert result["cameras"] == {"wrist": 1, "wrist_name": "USB Camera", "stereo_overhead": 0, "stereo_overhead_name": "CCB Camera"}
     assert "detected_at" in result
 
 
@@ -647,7 +647,7 @@ def test_main_writes_device_map_json_to_out_path(monkeypatch, tmp_path):
             "detected_at": "2026-09-22T10:00:00Z",
             "follower": {"port": "/dev/cu.fake", "id": "soarm_follower_02"},
             "leader": None,
-            "cameras": {"wrist": 1, "stereo_overhead": 0},
+            "cameras": {"wrist": 1, "wrist_name": "USB Camera", "stereo_overhead": 0},
         }
 
     monkeypatch.setattr(detect_devices, "detect_devices", fake_detect_devices)
@@ -657,7 +657,7 @@ def test_main_writes_device_map_json_to_out_path(monkeypatch, tmp_path):
 
     written = json.loads(out_path.read_text())
     assert written["follower"]["port"] == "/dev/cu.fake"
-    assert written["cameras"] == {"wrist": 1, "stereo_overhead": 0}
+    assert written["cameras"] == {"wrist": 1, "wrist_name": "USB Camera", "stereo_overhead": 0}
 
 
 def test_main_exits_nonzero_on_device_detection_error(monkeypatch, tmp_path):
@@ -669,3 +669,12 @@ def test_main_exits_nonzero_on_device_detection_error(monkeypatch, tmp_path):
 
     with pytest.raises(SystemExit):
         detect_devices.main()
+
+
+def test_wrist_name_falls_back_to_raw_index_when_no_name_correlates():
+    candidates = [
+        {"index": 0, "width": STEREO_WIDTH, "height": STEREO_HEIGHT},
+        {"index": 3, "width": 1920, "height": 1080},
+    ]
+    result = resolve_cameras(candidates, {0: "CCB Camera", 3: None})
+    assert result["wrist_name"] == result["wrist"] == 3
