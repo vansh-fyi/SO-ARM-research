@@ -427,7 +427,7 @@ Plans:
   2. A live re-verification episode's saved `camera_overhead/*.png` frames are visually confirmed by a human to show the robot workspace, not the laptop webcam
   3. The bridge logs a hash/thumbnail of the frame it actually sent to Colab per step, with an explicit disclosure that this is client-side-only provenance, not proof of what Colab received/used
 
-**Plans**: 2/4 plans executed
+**Plans**: 3/4 plans executed
 
 Plans:
 **Wave 1**
@@ -437,7 +437,7 @@ Plans:
 
 **Wave 2** *(blocked on 13-01)*
 
-- [ ] 13-03-PLAN.md — Wire the shared resolver into the live --server-address bridge path in run_vla_episode.py; carries the phase's live re-verification human-check (CAMFIX-01, CAMFIX-02)
+- [x] 13-03-PLAN.md — Wire the shared resolver into the live --server-address bridge path in run_vla_episode.py; carries the phase's live re-verification human-check (CAMFIX-01, CAMFIX-02)
 - [ ] 13-04-PLAN.md — Route record_episode.py through the shared resolver with AR0144 stereo support for the first time; new test_record_episode.py (CAMFIX-01)
 
 ### Phase 14: VLA-Style Pipeline & Backends
@@ -548,7 +548,7 @@ Plans:
 | 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
 | 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
-| 13. Safety-Validator Cap Re-Tightening | 2/4 | In Progress|  |
+| 13. Safety-Validator Cap Re-Tightening | 3/4 | In Progress|  |
 | 14. Camera Device Resolution Unification | 0/TBD | Not started | - |
 | 15. VLA-Style Pipeline & Backends | 0/TBD | Not started | - |
 | 16. MLLM-Style Pipeline & Backends | 0/TBD | Not started | - |
