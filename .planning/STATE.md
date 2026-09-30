@@ -5,10 +5,10 @@ milestone_name: MLLM Raw-Autonomy Benchmark
 current_phase: 12
 current_phase_name: Bridge Tick-Latency Fix
 status: executing
-stopped_at: Phase 12 UAT test 7 restored; awaiting next-action selection
-last_updated: "2026-09-26T18:02:58.746Z"
-last_activity: 2026-09-27
-last_activity_desc: Quick task 260927-ndz - fixed Phase 12 UAT test-5 gaps in Colab depth-endpoint docs/notebook
+stopped_at: Phase 12 UAT test 7 passed live on real hardware; test 5's major issue is the only open item left in 12-UAT.md
+last_updated: "2026-09-30T12:15:00.000Z"
+last_activity: 2026-09-30
+last_activity_desc: Live-hardware retest passed Phase 12 UAT test 7 (resident FastFS depth server + observation-downsize fix); full 60/60-step episode, depth 6/6 complete/0 failed
 progress:
   total_phases: 17
   completed_phases: 9
@@ -190,9 +190,52 @@ and passing locally, uncommitted:
   `control/requirements.txt` — it's only a local test double for the resident
   service; Colab installs its own copy into the isolated `fastfs_venv` per
   Step 7, so this pin does not change what ships to Colab.
-- **Not yet done:** none of this is committed. Test 7 in `12-UAT.md` is
-  correctly still `[pending]` — nothing here has been run against live
-  Colab + real hardware yet, which is the only way to confirm depth capture
-  and smooth motion actually coexist (the original failure mode). That live
-  run is the next concrete action, and it needs the user's Colab session and
-  physical rig — not something verifiable from this environment.
+- This was committed and pushed to origin/master and origin/main same day
+  (commits `dddf7dd`, `11267ca`).
+
+Live verification (2026-09-30, after the above): first live retest on real
+Colab + hardware stalled 15+ min with the robot stationary and 0% Colab GPU
+utilization. Root-caused via the Colab `policy_server.log` timestamps (not
+guessed): the observation *did* arrive and process fast (2.97s cold,
+0.52s warm) — the delay was between observations, not inference. The
+client sends the full observation as a raw, uncompressed pickle
+(`lerobot.async_inference.robot_client.RobotClient.send_observation()`,
+vendored, not this project's code) — ~9MB/observation (1920x1080 wrist +
+two 800x600 stereo halves) — over gRPC's small per-stream flow-control
+window through a real ngrok tunnel with `networkQuality`-confirmed
+bufferbloat on one tested network path. Fixed client-side (the only seam
+this project owns, since `send_observation()` itself is vendored): added
+`vla_bridge.robot_client._downsize_for_transport()`, applied inside the
+existing `get_observation_with_stereo_split()` monkeypatch, capping every
+observation frame's long edge at 640px before pickling. 640 was chosen with
+margin above `victorvanhalst/smolvla_so101_cube`'s own
+`SmolVLAConfig.resize_imgs_with_padding=(512,512)` (confirmed by reading the
+installed checkpoint's config) — the model pads/resizes every image to
+512x512 itself regardless of input size, so nothing sent above that
+resolution is fidelity the model actually uses; JPEG compression was
+considered and rejected (round-tripping through JPEG and decoding back to
+the same-shaped array would not reduce the wire payload at all, since the
+vendored `send_observation()` pickles whatever array `get_observation()`
+returns). 3 new tests added to `control/test_robot_client.py` (170/170
+total passing); one pre-existing test that used string doubles for
+camera2/camera3 was updated to use real arrays.
+
+**Live retest result: Phase 12 UAT Test 7 now passes.** Full 60/60-step
+episode (`control/outputs/vla_episode_20260930_121123`,
+`max_steps_reached`), depth `{submitted: 6, complete: 6, failed: 0,
+skipped_busy: 0}`, whole episode ~74s wall-clock (previously: a single
+observation alone took 2-4 minutes; a full episode was not completable).
+Motion has 3 brief (2.6-4.2s) pauses at the expected chunk-refetch points
+(`actions_per_chunk=50`, `chunk_size_threshold=0.5`, refetch every ~25
+steps) — not watchdog/staleness events, not worse near the end than the
+start, user confirmed acceptable as-is. See `12-UAT.md` Test 7 for full
+detail. **Not yet committed** — this fix (`robot_client.py` +
+`test_robot_client.py` changes) is uncommitted in the working tree as of
+this note.
+
+**Remaining open item:** `12-UAT.md`'s only other non-automated test, Test
+5 (major severity: notebook's stale AR0144 2560x720/1280x1280 camera
+mapping doc, a misleading "port 8080" comment, duplicate tunnel cells) —
+unclear whether it survived the 2026-09-30 resident-depth-server notebook
+rewrite. Needs a fresh read of the current notebook before it can be marked
+pass. Nothing else in Phase 12's UAT is open.

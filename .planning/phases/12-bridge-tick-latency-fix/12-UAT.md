@@ -3,18 +3,20 @@ status: testing
 phase: 12-bridge-tick-latency-fix
 source: [12-03-SUMMARY.md, 12-04-SUMMARY.md, 12-05-SUMMARY.md, 12-06-SUMMARY.md]
 started: 2026-09-27T04:38:00Z
-updated: 2026-09-27T13:30:00Z
+updated: 2026-09-30T12:15:00Z
 ---
 
 ## Current Test
 
-number: 7
-name: Live episode depth recording works end-to-end without disrupting motion
-expected: |
-  During a live episode with the Colab depth endpoint running, depth_overhead/ fills in at
-  the configured cadence, episode.jsonl's depth_frames field is correctly sparse (not every
-  step), and robot motion/timing is unaffected by the added depth capture calls.
-awaiting: user response
+number: 5
+name: Colab Fast-FoundationStereo endpoint docs are legitimate and match the real client
+status: open issue (major, not yet re-verified)
+note: |
+  Test 7 (below) is now resolved. The only remaining open item is Test 5's major-severity
+  finding (notebook's stale AR0144 2560x720/1280x1280 camera-mapping doc, the misleading
+  "port 8080" comment, and the duplicate tunnel-open cells) -- unclear whether these survived
+  the Step 7/8 resident-depth-server rewrite (2026-09-30). Needs a fresh read of the current
+  notebook against the real 1600x600 rig before this can be marked pass.
 
 ## Tests
 
@@ -50,7 +52,28 @@ reported: "Getting a real reading required fixing 3 live bugs first: (1) scripts
 
 ### 7. Live episode depth recording works end-to-end without disrupting motion
 expected: During a live episode with the Colab depth endpoint running, depth_overhead/ fills in at the configured cadence, episode.jsonl's depth_frames field is correctly sparse (not every step), and robot motion/timing is unaffected by the added depth capture calls.
-result: [pending]
+result: pass
+reported: "Resolved by the 2026-09-30 resident-FastFS-server fix (see STATE.md) plus a
+  same-day client-side fix: the observation gRPC payload was raw, uncompressed pixels
+  (~9MB/observation -- wrist 1920x1080 + two 800x600 stereo halves), which took 2-4
+  minutes per observation over the real ngrok tunnel regardless of the depth-server fix,
+  stalling the control loop. `vla_bridge.robot_client._downsize_for_transport()` now caps
+  every observation frame's long edge at 640px before it's pickled and sent -- above
+  `victorvanhalst/smolvla_so101_cube`'s own SmolVLAConfig.resize_imgs_with_padding=(512,512),
+  so no fidelity the model actually uses is lost; confirmed via the installed checkpoint's
+  own config, not assumed. Live retest (control/outputs/vla_episode_20260930_121123,
+  2026-09-30 ~12:11-12:13 local): full 60/60 steps completed (`max_steps_reached`), depth
+  depth_summary.json = {submitted: 6, complete: 6, failed: 0, skipped_busy: 0} -- every
+  depth_every_n_steps=10 tick succeeded, zero drops. Whole episode ran in ~74s wall-clock
+  (previously: single observations alone took 2-4 minutes each; a full episode was not
+  completable). Motion has 3 brief (2.6-4.2s) pauses at steps ~0-1, ~26-27, ~51-52 --
+  these are BridgeActionSource's normal chunk-refetch cadence (actions_per_chunk=50,
+  chunk_size_threshold=0.5, refetch every ~25 steps), now taking seconds instead of the
+  multi-minute stalls that made Test 7 fail before -- not jitter, not a watchdog/staleness
+  event (validator_flags empty at every one of those steps), and not worse near the end of
+  the episode than at the start. User confirmed acceptable as-is; optional future tuning
+  (raise --actions-per-chunk or lower the refetch threshold to prefetch earlier) noted but
+  not applied."
 
 ### 8. force_bridge_recovery() drains the queue and sets must_go (automated)
 expected: force_bridge_recovery(client) drains client.action_queue to empty and sets client.must_go

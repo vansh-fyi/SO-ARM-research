@@ -39,7 +39,9 @@ import threading
 import time
 from typing import Any
 
+import cv2
 import grpc
+import numpy as np
 
 from lerobot.async_inference.configs import RobotClientConfig
 from lerobot.async_inference.robot_client import RobotClient
@@ -59,6 +61,43 @@ from vla_bridge.stereo_camera import StereoSplitCamera
 # project's own code forces the bridge out of the stuck state directly,
 # rather than waiting on the vendored library's internal timing.
 STALE_WATCHDOG_CONSECUTIVE_LIMIT = 10
+
+# `victorvanhalst/smolvla_so101_cube`'s own SmolVLAConfig.resize_imgs_with_padding
+# is (512, 512) (control/.venv/.../lerobot/policies/smolvla/configuration_smolvla.py)
+# -- every observation image is aspect-preserving-padded to 512x512 by the model
+# itself before it ever reaches the vision encoder, server-side, regardless of
+# what resolution the client sends. Sending anything with a longer edge above
+# this constant is therefore pure wire-transport waste, not preserved fidelity:
+# the model discards it. Chosen with margin above 512 (not clamped exactly to
+# it) so this stays correct if a future checkpoint's native input resolution
+# grows, and so this project's own resize never becomes the tighter of the two
+# resamplings. Confirmed live (2026-09-30): the raw, unresized observation
+# (~9MB pickled: 1920x1080 wrist + two 800x600 stereo halves) took 2-4 minutes
+# per observation over a real gRPC/ngrok tunnel, stalling the control loop for
+# many minutes at a time -- this is the fix, not JPEG compression, which would
+# not reduce the wire payload at all here (the vendored RobotClient.send_observation()
+# pickles whatever array `robot.get_observation()` returns; round-tripping
+# through JPEG and decoding back to the same-shaped array changes pixel values,
+# not byte count).
+OBSERVATION_MAX_SIDE = 640
+
+
+def _downsize_for_transport(image, max_side: int = OBSERVATION_MAX_SIDE):
+    """Shrink `image`'s longer edge to `max_side`, preserving aspect ratio.
+
+    Never upscales (a `stereo_camera_index` frame smaller than `max_side`
+    already, or a non-array value such as a test double, passes through
+    unchanged). `cv2.INTER_AREA` is the recommended OpenCV interpolation for
+    shrinking -- correctly area-averages source pixels instead of point-sampling.
+    """
+    if not isinstance(image, np.ndarray) or image.ndim < 2:
+        return image
+    height, width = image.shape[:2]
+    scale = min(1.0, max_side / max(height, width))
+    if scale >= 1.0:
+        return image
+    new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    return cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
 
 
 def connect_bridge(
@@ -180,8 +219,10 @@ def _wire_stereo_split_cameras(client, stereo_camera_index: int | str = 1, stere
 
     def get_observation_with_stereo_split():
         obs = original_get_observation()
-        obs["camera2"] = stereo.read_left()
-        obs["camera3"] = stereo.read_right()
+        if "camera1" in obs:
+            obs["camera1"] = _downsize_for_transport(obs["camera1"])
+        obs["camera2"] = _downsize_for_transport(stereo.read_left())
+        obs["camera3"] = _downsize_for_transport(stereo.read_right())
         return obs
 
     client.robot.get_observation = get_observation_with_stereo_split

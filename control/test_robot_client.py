@@ -10,9 +10,34 @@ import threading
 import time
 
 import grpc
+import numpy as np
 
 from vla_bridge import action_contract, robot_client, safety_validator
 from vla_bridge.action_contract import JOINT_ORDER
+
+
+# --- _downsize_for_transport --------------------------------------------------
+
+
+def test_downsize_for_transport_shrinks_long_edge_preserving_aspect_ratio():
+    # 1920x1080 wrist frame -- real shape from policy_server_launch.md's
+    # camera mapping. Long edge (1920) must land at exactly OBSERVATION_MAX_SIDE.
+    image = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    result = robot_client._downsize_for_transport(image, max_side=640)
+    assert result.shape[1] == 640
+    assert result.shape[0] == round(1080 * (640 / 1920))
+
+
+def test_downsize_for_transport_never_upscales_a_small_image():
+    image = np.full((100, 200, 3), 7, dtype=np.uint8)
+    result = robot_client._downsize_for_transport(image, max_side=640)
+    assert result is image
+
+
+def test_downsize_for_transport_passes_through_non_array_values():
+    # Defensive: a test double or malformed observation value must not crash.
+    assert robot_client._downsize_for_transport("not-an-image", max_side=640) == "not-an-image"
+    assert robot_client._downsize_for_transport(None, max_side=640) is None
 
 
 class FakeTimedAction:
@@ -225,16 +250,21 @@ class FakeRobotWithObservation:
 
 
 class FakeStereoSplitCamera:
-    """Stand-in for `StereoSplitCamera` -- never opens a real cv2 device."""
+    """Stand-in for `StereoSplitCamera` -- never opens a real cv2 device.
+
+    Returns real, distinguishable-by-value arrays (not strings) so
+    `_downsize_for_transport()` -- which requires a real `ndarray` -- runs
+    against these exactly as it would against a genuine AR0144 frame.
+    """
 
     def __init__(self, index=1):
         self.index = index
 
     def read_left(self):
-        return "fake-left-frame"
+        return np.full((600, 800, 3), 11, dtype=np.uint8)
 
     def read_right(self):
-        return "fake-right-frame"
+        return np.full((600, 800, 3), 22, dtype=np.uint8)
 
 
 class FakeRobotClientHandshakeFails:
@@ -300,10 +330,14 @@ def test_connect_bridge_returns_connected_client_on_success(monkeypatch):
     assert isinstance(result, FakeRobotClientHandshakeSucceeds)
     assert result.stopped is False
     # connect_bridge() must wire camera2/camera3 from the split-stereo feed --
-    # never two independent cv2.VideoCapture(1) opens.
+    # never two independent cv2.VideoCapture(1) opens. Values are downsized
+    # (800x600 exceeds OBSERVATION_MAX_SIDE=640) but must still be
+    # distinguishable by content and correctly identified as left vs right.
     obs = result.robot.get_observation()
-    assert obs["camera2"] == "fake-left-frame"
-    assert obs["camera3"] == "fake-right-frame"
+    assert max(obs["camera2"].shape[:2]) <= robot_client.OBSERVATION_MAX_SIDE
+    assert max(obs["camera3"].shape[:2]) <= robot_client.OBSERVATION_MAX_SIDE
+    assert obs["camera2"][0, 0, 0] == 11
+    assert obs["camera3"][0, 0, 0] == 22
 
 
 def test_connect_bridge_starts_receive_actions_thread_on_success(monkeypatch):
