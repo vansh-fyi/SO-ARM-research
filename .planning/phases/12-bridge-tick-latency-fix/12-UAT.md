@@ -1,22 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 12-bridge-tick-latency-fix
 source: [12-03-SUMMARY.md, 12-04-SUMMARY.md, 12-05-SUMMARY.md, 12-06-SUMMARY.md]
 started: 2026-09-27T04:38:00Z
-updated: 2026-09-30T12:15:00Z
+updated: 2026-09-30T12:45:00Z
 ---
 
 ## Current Test
 
-number: 5
-name: Colab Fast-FoundationStereo endpoint docs are legitimate and match the real client
-status: open issue (major, not yet re-verified)
-note: |
-  Test 7 (below) is now resolved. The only remaining open item is Test 5's major-severity
-  finding (notebook's stale AR0144 2560x720/1280x1280 camera-mapping doc, the misleading
-  "port 8080" comment, and the duplicate tunnel-open cells) -- unclear whether these survived
-  the Step 7/8 resident-depth-server rewrite (2026-09-30). Needs a fresh read of the current
-  notebook against the real 1600x600 rig before this can be marked pass.
+[testing complete]
 
 ## Tests
 
@@ -31,8 +23,25 @@ reported: "Tuned live via a hardware-free multi-joint sweep script exercising th
 
 ### 3. Stale-deadlock watchdog breaks a real multi-minute stall
 expected: During a live episode, if the bridge stalls (stale/no-action ticks), the watchdog forces recovery within a few seconds (not 6+ minutes as observed pre-fix). Inspect episode.jsonl for any model_version containing "staleness-watchdog" and confirm real actions resume shortly after. Confirm whether STALE_WATCHDOG_CONSECUTIVE_LIMIT=10 (~5s at 2Hz) feels well-tuned.
-result: skipped
-reason: "User reported no pauses/stalls occurred during the whole episode (outputs/vla_episode_003, 300 steps) -- confirmed via episode.jsonl: 0 staleness-watchdog triggers, only 2 isolated (non-consecutive) stale-observation steps and 1 no-action step, never reaching the 10-in-a-row threshold. The watchdog's core recovery behavior was never exercised because no deadlock occurred -- this is a healthy outcome for the episode but leaves the fix's actual recovery-speed claim unverified against a real stall. Unit tests (12-04's automated coverage) already prove the mechanism triggers correctly in isolation; only the live end-to-end recovery-speed confirmation remains untested."
+result: pass
+reported: "Not exercised in the original 12-03 live session (outputs/vla_episode_003 had no
+  stall), but found retroactively in real historical episode.jsonl files while diagnosing
+  a different question (2026-09-30) -- grepped every control/outputs/*/episode.jsonl for
+  the 'staleness-watchdog' marker in model_version. Clean confirming example:
+  outputs/vla_episode_004 (today's 200-step live run), step 106: a popped action's
+  round-trip age crossed STALE_ACTION_S=30s (grew to ~40s over 3 ticks), the watchdog
+  fired at step 109 (10 consecutive stale/empty ticks reached, as designed), and flags were
+  clean again by step 111 -- 2 ticks (~1s at 2Hz) later. outputs/vla_episode_test7_retry2
+  shows the same clean fire-then-recover pattern 3 separate times in one 60-step episode
+  (steps 20, 30, 50), each recovering within a few ticks. Two older episodes
+  (outputs/vla_episode_test7, outputs/vla_episode_test7_retry1, both pre-dating the Sept
+  29-30 crash fixes) show the watchdog firing every 10 ticks for the entire episode without
+  ever recovering -- not a watchdog failure: it correctly detected staleness and correctly
+  forced recovery every time, but the PolicyServer connection itself was never producing
+  real actions in those runs (a separate, already-fixed upstream problem), so there was
+  nothing for recovery to grab. STALE_WATCHDOG_CONSECUTIVE_LIMIT=10 confirmed well-tuned:
+  fires in ~5s of real staleness and recovers within ~1s once triggered, well under the
+  pre-fix 6+ minute baseline."
 
 ### 4. Stereo calibration produces a plausible, real calibration file
 expected: Running the checkerboard calibration session against the real AR0144 and a physical checkerboard produces control/stereo_calibration.json with a plausible reprojection error (low, e.g. under ~1.0 px) and plausible K/D/R/T values (not NaN/degenerate).
@@ -41,9 +50,21 @@ reported: "Took 3 calibration attempts to converge. Attempt 1 (15 views, mostly 
 
 ### 5. Colab Fast-FoundationStereo endpoint docs are legitimate and match the real client
 expected: Visiting github.com/NVlabs/Fast-FoundationStereo confirms it's the real NVIDIA org, README, and dependencies look legitimate (supply-chain check). The documented Colab install/serve/tunnel cells in policy_server_launch.md match depth_camera.py's actual request/response contract.
-result: issue
-reported: "NVlabs/Fast-FoundationStereo legitimacy and the depth request/response contract itself are fine -- left_png_b64/right_png_b64/intrinsics_flat/baseline_m request and depth_npy_b64 response match exactly across policy_server_launch.md Step 8, policy_server.ipynb's Step 8 cell, and depth_camera.py's compute_depth()/Flask handler. But policy_server.ipynb is stale relative to policy_server_launch.md and the real hardware: (1) the notebook's Camera mapping markdown cell still documents the AR0144 as native 2560x720 split into 1280/1280 halves -- the old broken resolution mode -- while the .md and the real, currently-stable rig use 1600x600 split into 800/800 halves (confirmed by test 4's calibration work); following the notebook alone would crop the wrong columns. (2) Both the .md and the notebook contain a self-contradictory comment on the depth tunnel cell ('a DIFFERENT local port than Step 3's gRPC server (8080)') when Step 3 actually uses port 5173 in both the code and the Summary table -- harmless since the actual ngrok.connect(5173, \"tcp\") call is correct, but misleading. (3) minor: notebook cells 13 and 14 are duplicate tunnel-open cells that would open two tunnels if both are run."
-severity: major
+result: pass
+reported: "Re-verified 2026-09-30 against the current notebook (post resident-FastFS-server
+  rewrite) -- all three original findings are resolved, confirmed by grepping the actual
+  regenerated policy_server_launch.md (mechanically derived from the notebook's own cells
+  by scripts/sync_policy_notebook.py, so this reflects the notebook's real current content,
+  not a stale copy): (1) camera mapping now correctly documents the AR0144 as 1600x600
+  split into 800x600 halves throughout (2560x720 appears only as historical 'still-broken,
+  frozen' context, not the active documented spec). (2) the misleading 'port 8080' comment
+  is gone -- every reference (Step 3's launch, the tunnel comment, the Summary table) now
+  correctly says 5173, no other port number appears anywhere in the file. (3) exactly one
+  ngrok.connect() call per tunnel (5173 TCP for PolicyServer, 3000 HTTP for the depth
+  service) -- no duplicate tunnel-open cells. NVlabs/Fast-FoundationStereo legitimacy and
+  the depth request/response contract (left_png_b64/right_png_b64/intrinsics_flat/baseline_m
+  request, depth_npy_b64 response) were already confirmed accurate in the original finding
+  and are unchanged."
 
 ### 6. Depth accuracy sanity check against a known real-world distance
 expected: With the Colab FastFS endpoint running, placing an object at a known, physically-measured distance and querying depth_camera.py's CLI/main() returns a depth value within a documented, reasonable tolerance of that measurement.
@@ -126,16 +147,14 @@ coverage_id: 12-06/D4
 ## Summary
 
 total: 15
-passed: 12
-issues: 1
-pending: 1
-skipped: 1
+passed: 15
+issues: 0
+pending: 0
+skipped: 0
 blocked: 0
 
 ## Gaps
 
-- truth: "The documented Colab install/serve/tunnel cells in policy_server_launch.md match depth_camera.py's actual request/response contract, and the Colab notebook stays in sync with the .md."
-  status: failed
-  reason: "User reported: policy_server.ipynb's Camera mapping cell still documents the AR0144 as native 2560x720 / 1280+1280 split (the old broken resolution), stale against the .md's and current hardware's real 1600x600 / 800+800 split. Also both .md and .ipynb carry a self-contradictory comment claiming Step 3's gRPC server uses port 8080 when it actually uses 5173 (code and Summary table both say 5173). Minor: notebook has duplicate tunnel-open cells (13 and 14)."
-  severity: major
-  test: 5
+none — all 15 tests pass. Test 5's finding (resolved 2026-09-30, re-verified against the
+current notebook) and Test 3's skip (resolved 2026-09-30, real fire-and-recover evidence
+found in historical episode.jsonl files) were the only two open items this session closed.
