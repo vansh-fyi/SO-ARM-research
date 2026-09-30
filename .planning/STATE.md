@@ -5,8 +5,8 @@ milestone_name: MLLM Raw-Autonomy Benchmark
 current_phase: 13
 current_phase_name: Camera Device Resolution Unification
 status: executing
-stopped_at: Phase 12 complete (15/15 UAT pass); ready to plan Phase 13
-last_updated: "2026-09-30T07:14:54.451Z"
+stopped_at: Phase 13 context gathered
+last_updated: "2026-09-30T07:40:47.326Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 12 complete, transitioned to Phase 13
 progress:
@@ -81,6 +81,7 @@ Recent decisions affecting current work:
   recovered by step 111 — ~1s, well under the pre-fix 6+ minute baseline).
   Test 5's stale-notebook-docs finding also confirmed resolved by re-reading
   the current notebook. See `12-UAT.md` for full evidence per test.
+
 - **v2.1 roadmap (2026-09-24):** Phases 12-17 derived from the 26 v2.1 requirements (LATENCY ×4, SAFETY ×1, CAMFIX ×3, PIPE ×2, VLAB ×4, MLLM ×7, EVAL ×2, DEBT ×3). Phase 12 (latency fix + 2 debt items) → Phase 13 (camera resolution unification) form a chain. Phases 14 (VLA-style pipeline + 4 backends) and 15 (MLLM-style pipeline + 3 backends) are **independent and parallel-capable** — different `ActionSource` pattern, different backend set — both gated on Phase 13's trustworthy camera pipeline, with Phase 15 additionally gated on Phase 12's real latency data for chunk sizing. Phase 16 (8-backend Pen Transfer comparison) depends on both 14 and 15. Phase 17 (safety-cap re-tightening + wrist_roll debt pin) is deliberately sequenced LAST — resequenced 2026-09-24 per explicit user decision to keep loosened soft-margin caps in place through the whole experiment so they don't mask genuine model behavior; hard limits (absolute joint clamping, NaN/inf rejection, e-stop) stay on unmodified throughout regardless. Full rationale in ROADMAP.md Overview.
 - **Requirement-ID collision found during roadmap creation, fixed same session (2026-09-24):** v2.1's VLA Backends requirements (Phase 14) originally reused v1's `VLA-01..04` IDs (VLA Inference Pipeline, Phase 3) — unintentional authoring duplication, not a re-scoping. Renamed to `VLAB-01..04` in REQUIREMENTS.md/ROADMAP.md to remove the collision.
 - **Phase 10 established model (2026-09-20):** User accepted the complete
@@ -135,9 +136,9 @@ None open — Phase 12 closed 2026-09-30. Next: plan Phase 13 (`/gsd-plan-phase 
 
 ## Session Continuity
 
-Last session: 2026-09-30T12:45:00Z
-Stopped at: Phase 12 complete, ready to plan Phase 13
-Resume file: None
+Last session: 2026-09-30T07:40:47.319Z
+Stopped at: Phase 13 context gathered
+Resume file: .planning/phases/13-camera-device-resolution-unification/13-CONTEXT.md
 
 Phase 12 closed 2026-09-30 with 15/15 UAT tests passing (12-UAT.md has full
 per-test evidence). Summary of the day's work, across a long multi-session
@@ -146,12 +147,14 @@ arc from the September 29 handoff:
 - **Root cause #1 (LATENCY-01, fixed in 12-01/02):** `control_loop_observation()`
   wasn't gated on queue-empty, resending a full observation every control
   tick — only 1/60 real actions in Phase 11's baseline episode.
+
 - **Root cause #2 (fixed 2026-09-30, commits `dddf7dd`/`11267ca`):** FastFS
   reloaded its whole model from disk on every depth request (15-70s/call).
   Fixed with a resident Flask service (`vla_bridge/fastfs_server.py`) that
   loads the model once at startup; `vla_bridge/depth_recorder.py` moved
   depth submission off the control-loop thread. 14 new tests
   (`control/test_depth_pipeline.py`).
+
 - **Root cause #3 (fixed 2026-09-30, commit `0ab0c96`):** even with the
   depth fix, a live retest still stalled 15+ min — the observation itself
   was a raw, uncompressed ~9MB pickle (vendored `lerobot`
@@ -160,12 +163,14 @@ arc from the September 29 handoff:
   capping every frame at 640px (above the checkpoint's own 512x512 resize
   target, so no fidelity lost — confirmed via the installed config, not
   assumed). 3 new tests (`control/test_robot_client.py`).
+
 - **Live verification:** a real 200-step episode
   (`control/outputs/vla_episode_004`) completed cleanly end to end,
   including a genuine watchdog fire-and-recover cycle (stale detected at
   step 106, recovered by step 111 — ~1s, vs. the pre-fix 6+ minute
   baseline) and clean depth heatmaps confirming the FastFS output is
   coherent (`control/render_depth_heatmaps.py`, new).
+
 - Test 5 (notebook doc staleness) and Test 3 (watchdog live-recovery, found
   retroactively in historical `episode.jsonl` files rather than a fresh
   forced stall) were both re-verified and closed the same session.
