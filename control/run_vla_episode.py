@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Protocol
 
 import cv2
+import detect_devices
 from lerobot.robots.so_follower.config_so_follower import SOFollowerRobotConfig
 from lerobot.robots.so_follower.so_follower import SO101Follower
 
@@ -486,9 +487,9 @@ def main():
         "index -- confirmed live (11-05 Task 3) that BOTH cv2's and ffmpeg's own AVFoundation "
         "device index numbering can drift between separate process launches on macOS, making a "
         "persisted numeric index unsafe to reuse. Independent of --camera (which only controls "
-        "this script's own IOLogger recording caps, still cv2-index-based). If omitted, read "
-        "from control/device_map.json's cameras.stereo_overhead_name (falling back to "
-        "cameras.stereo_overhead, then to 1, if device_map.json or that field is unavailable).",
+        "this script's own IOLogger recording caps). If omitted, the live bridge uses the "
+        "shared name-first camera resolver with control/device_map.json; numeric indices "
+        "are fallback values. Defaults to 1 when the device map is unavailable.",
     )
     parser.add_argument(
         "--depth-endpoint",
@@ -549,17 +550,25 @@ def main():
                 "--camera not given and control/device_map.json is unavailable -- "
                 "run detect_devices.py first, or pass --camera explicitly (repeatable)."
             )
-        args.camera = [device_map["cameras"]["wrist"], device_map["cameras"]["stereo_overhead"]]
+        wrist = (
+            detect_devices.resolve_camera_identifier("wrist", device_map)
+            if args.server_address else device_map["cameras"]["wrist"]
+        )
+        args.camera = [wrist, device_map["cameras"]["stereo_overhead"]]
         print(
-            f"Using cameras from device_map.json: wrist={args.camera[0]}, "
+            f"Using cameras from device_map.json (name-resolved for live bridge): wrist={args.camera[0]}, "
             f"stereo_overhead={args.camera[1]}"
         )
 
     if args.stereo_camera_index is None:
         if device_map is not None and "cameras" in device_map:
             cameras = device_map["cameras"]
-            args.stereo_camera_index = cameras.get("stereo_overhead_name", cameras["stereo_overhead"])
-            print(f"Using stereo-camera-index from device_map.json: {args.stereo_camera_index!r}")
+            args.stereo_camera_index = (
+                detect_devices.resolve_camera_identifier("stereo_overhead", device_map)
+                if args.server_address
+                else cameras.get("stereo_overhead_name", cameras["stereo_overhead"])
+            )
+            print(f"Using stereo-camera-index from device_map.json (name-resolved for live bridge): {args.stereo_camera_index!r}")
         else:
             args.stereo_camera_index = 1
             print("Using default --stereo-camera-index=1 (device_map.json unavailable)")
