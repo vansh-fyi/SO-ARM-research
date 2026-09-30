@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import run_vla_episode
+import detect_devices
 from run_vla_episode import (
     ScriptedActionSource,
     _build_camera_names,
@@ -41,6 +42,70 @@ class FakeCamera:
 
 
 CAMERA_NAMES = {0: "wrist", 1: "overhead"}
+
+
+def _run_resolved_bridge_main(monkeypatch, tmp_path, resolver, cli_args=()):
+    device_map = {"cameras": {"wrist": 3, "stereo_overhead": 4}}
+    calls = {}
+    monkeypatch.setattr(run_vla_episode, "_load_device_map", lambda: device_map)
+    monkeypatch.setattr(detect_devices, "resolve_camera_identifier", resolver)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", _TrackingCapture)
+    _TrackingCapture.constructed_indices = []
+
+    class Client:
+        robot = object()
+        _stereo_camera = object()
+
+        def stop(self):
+            calls["stopped"] = True
+
+    client = Client()
+
+    def connect(*args, **kwargs):
+        calls.update(kwargs)
+        return client
+
+    def episode(*args, **kwargs):
+        calls["recording_caps"] = args[1]
+        calls["recording_stereo"] = kwargs["stereo_camera"]
+
+    monkeypatch.setattr(run_vla_episode, "connect_bridge", connect)
+    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a: None)
+    monkeypatch.setattr(run_vla_episode, "run_episode", episode)
+    monkeypatch.setattr("sys.argv", [
+        "run_vla_episode.py", "/dev/fake", "fake_robot", "--out", str(tmp_path),
+        "--server-address", "example.test:1234", "--checkpoint", "fake/checkpoint",
+        *cli_args,
+    ])
+    run_vla_episode.main()
+    return calls, client
+
+
+def test_device_map_defaults_use_shared_resolved_identifiers(monkeypatch, tmp_path):
+    roles = []
+
+    def resolve(role, device_map):
+        roles.append(role)
+        assert device_map["cameras"] == {"wrist": 3, "stereo_overhead": 4}
+        return {"wrist": 8, "stereo_overhead": "Resolved stereo"}[role]
+
+    calls, _ = _run_resolved_bridge_main(monkeypatch, tmp_path, resolve)
+    assert calls["wrist_camera_index"] == 8
+    assert calls["stereo_camera_index"] == "Resolved stereo"
+    assert roles == ["wrist", "stereo_overhead"]
+
+
+def test_explicit_camera_identifiers_bypass_shared_resolver(monkeypatch, tmp_path):
+    def forbidden(*args):
+        raise AssertionError("Explicit camera identifiers must bypass resolution")
+
+    calls, _ = _run_resolved_bridge_main(
+        monkeypatch, tmp_path, forbidden,
+        ["--camera", "5", "--camera", "7", "--stereo-camera-index", "Explicit stereo"],
+    )
+    assert calls["wrist_camera_index"] == 5
+    assert calls["stereo_camera_index"] == "Explicit stereo"
 
 
 def _fake_caps():
