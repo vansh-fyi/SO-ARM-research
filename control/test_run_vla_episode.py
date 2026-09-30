@@ -108,6 +108,25 @@ def test_explicit_camera_identifiers_bypass_shared_resolver(monkeypatch, tmp_pat
     assert calls["stereo_camera_index"] == "Explicit stereo"
 
 
+@pytest.mark.parametrize("wrist_index", [8, 4])
+def test_resolved_bridge_records_wrist_and_reuses_single_stereo(
+    monkeypatch, tmp_path, wrist_index,
+):
+    # A resolved wrist index may equal the stale overhead index after USB replug.
+    calls, client = _run_resolved_bridge_main(
+        monkeypatch, tmp_path,
+        lambda role, device_map: {
+            "wrist": wrist_index, "stereo_overhead": "Resolved stereo",
+        }[role],
+    )
+    assert _TrackingCapture.constructed_indices == [wrist_index]
+    assert list(calls["recording_caps"]) == [wrist_index]
+    assert calls["wrist_camera_index"] == wrist_index
+    assert calls["stereo_camera_index"] == "Resolved stereo"
+    assert calls["recording_stereo"] is client._stereo_camera
+    assert calls["stopped"] is True
+
+
 def _fake_caps():
     return {0: FakeCamera(), 1: FakeCamera()}
 
