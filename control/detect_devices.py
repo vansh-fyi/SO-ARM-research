@@ -263,6 +263,35 @@ def _is_builtin_name(name: str | None) -> bool:
     return any(marker in lowered for marker in BUILT_IN_NAME_MARKERS)
 
 
+def _live_correlate_names(max_camera_index: int = 6) -> dict[int, str | None]:
+    """Take a fresh best-effort snapshot of camera names by current cv2 index."""
+    candidates = probe_camera_candidates(max_camera_index)
+    names = get_camera_names()
+    return _correlate_names(candidates, names)
+
+
+def resolve_camera_identifier(role: str, device_map: dict | None, correlate_fn=None) -> int | str:
+    """Resolve a wrist or stereo_overhead identifier, preferring device names.
+
+    Stereo capture accepts an AVFoundation name directly. Wrist capture needs
+    a current cv2 index, so re-correlate its persisted name on each resolution.
+    Missing names or a live correlation miss retain the raw-index fallback.
+    Numeric name fields are detection's fallback values, not device names.
+    Callers must supply a map containing the cameras section and role index.
+    """
+    cameras = device_map["cameras"]
+    name = cameras.get(f"{role}_name")
+    if name is not None:
+        if role == "stereo_overhead":
+            return name
+        if isinstance(name, str):
+            correlate = correlate_fn if correlate_fn is not None else _live_correlate_names
+            for index, current_name in correlate().items():
+                if current_name == name:
+                    return index
+    return cameras[role]
+
+
 def _mean_brightness(cap) -> float | None:
     ok, frame = cap.read()
     if not ok or frame is None:
