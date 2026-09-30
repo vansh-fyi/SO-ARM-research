@@ -5,6 +5,8 @@ never a real `cv2.VideoCapture` -- and `tmp_path` for all file I/O, matching
 `control/conftest.py`'s no-real-hardware convention.
 """
 
+import hashlib
+import inspect
 import json
 
 import numpy as np
@@ -174,6 +176,7 @@ def test_capture_depth_map_saves_npy_and_returns_path_shape_dtype(tmp_path):
     assert "captured_at_utc" in result
     assert result["shape"] == [4, 4]
     assert result["dtype"] == "float32"
+    assert "sha256" not in result
 
     loaded = np.load(tmp_path / result["path"])
     np.testing.assert_array_equal(loaded, depth_map)
@@ -225,3 +228,47 @@ def test_write_step_records_explicit_depth_frames_dict(tmp_path):
     lines = (tmp_path / "episode.jsonl").read_text().splitlines()
     record = json.loads(lines[0])
     assert record["depth_frames"] == {"overhead": {"path": "depth_overhead/000000.npy"}}
+
+
+@pytest.mark.parametrize("camera_name", ["policy_camera1", "policy_camera2", "policy_camera3"])
+def test_stereo_frame_hashes_raw_bytes_and_logs_only_frame_metadata(tmp_path, camera_name):
+    frame = np.arange(48, dtype=np.uint8).reshape(4, 4, 3)
+    expected = hashlib.sha256(frame.tobytes()).hexdigest()
+    with IOLogger(tmp_path, {}) as logger:
+        result = logger.capture_stereo_frame(frame, camera_name, step=0)
+        assert result["sha256"] == expected
+        assert set(result) == {"path", "captured_at_utc", "sha256"}
+        logger.write_step(0, "test", {}, {}, {}, {}, [], {}, {}, "test",
+                          action_details={"policy_observation_frames": {camera_name: result}})
+    record = json.loads((tmp_path / "episode.jsonl").read_text())
+    assert record["action_details"]["policy_observation_frames"][camera_name] == result
+    assert {p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()} == {
+        "episode.jsonl", result["path"]}
+
+
+def test_camera_frame_hashes_captured_raw_bytes(tmp_path):
+    camera = FakeCamera()
+    with IOLogger(tmp_path, CAMERA_NAMES) as logger:
+        result = logger.capture_camera_frame(camera, "wrist", step=0)
+    assert result["sha256"] == hashlib.sha256(np.zeros((4, 4, 3), dtype=np.uint8).tobytes()).hexdigest()
+    assert camera.calls == 1
+
+
+def test_frame_provenance_disclosure_is_in_record_frame_docstring():
+    doc = inspect.getdoc(IOLogger._record_frame)
+    assert "PolicyServer" in doc
+    assert "cannot" in doc
+    assert "local" in doc
+    assert "round-trip" in doc
+    assert "docstring" in doc and "episode.jsonl" in doc
+
+
+def test_hash_failure_still_saves_frame_without_hash(tmp_path, monkeypatch):
+    def fail_hash(*args, **kwargs):
+        raise ValueError("hash unavailable")
+
+    monkeypatch.setattr(hashlib, "sha256", fail_hash)
+    with IOLogger(tmp_path, {}) as logger:
+        result = logger.capture_stereo_frame(np.zeros((4, 4, 3), dtype=np.uint8), "policy_camera1", 0)
+    assert set(result) == {"path", "captured_at_utc"}
+    assert (tmp_path / result["path"]).is_file()
