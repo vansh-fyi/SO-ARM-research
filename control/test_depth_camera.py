@@ -91,7 +91,7 @@ def test_compute_depth_round_trips_array_and_sends_expected_payload(monkeypatch)
     left_frame = np.random.randint(0, 255, (720, 1280, 3), dtype=np.uint8)
     right_frame = np.random.randint(0, 255, (720, 1280, 3), dtype=np.uint8)
 
-    original_depth = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+    original_depth = np.full((544, 992), 1.25, dtype=np.float32)
     depth_b64 = _encode_depth_array(original_depth)
 
     captured = {}

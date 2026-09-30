@@ -70,6 +70,9 @@ input while still commanding real robot motion.
 """
 
 import subprocess
+import threading
+import time
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -94,6 +97,11 @@ class _FFmpegAVFoundationCapture:
         index, since that numbering has been confirmed to drift between
         process launches on macOS (see this module's docstring)."""
         self._index = index
+        self._condition = threading.Condition()
+        self._latest = None
+        self._closed = False
+        self._sequence = 0
+        self.last_frame_metadata = {}
         cmd = [
             "ffmpeg", "-loglevel", "error",
             "-f", "avfoundation",
@@ -111,18 +119,43 @@ class _FFmpegAVFoundationCapture:
         except OSError as e:
             print(f"WARNING: _FFmpegAVFoundationCapture: failed to start ffmpeg for index {index}: {e}")
             self._proc = None
+        self._reader = threading.Thread(target=self._drain_frames, name="stereo-capture", daemon=True)
+        if self._proc is not None:
+            self._reader.start()
 
     def isOpened(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
 
+    def _drain_frames(self):
+        # Drain at the camera rate even while inference/control is slow. Keeping
+        # only the latest complete frame prevents accumulated pipe latency.
+        try:
+            while not self._closed:
+                raw = self._read_exact(_FRAME_BYTES)
+                if raw is None:
+                    break
+                frame = np.frombuffer(raw, dtype=np.uint8).reshape((STEREO_HEIGHT, STEREO_WIDTH, 3))
+                with self._condition:
+                    self._sequence += 1
+                    self._latest = (frame, time.monotonic(), dict(
+                        frame_id=self._sequence,
+                        received_at_utc=datetime.now(timezone.utc).isoformat()))
+                    self._condition.notify_all()
+        finally:
+            with self._condition:
+                self._closed = True
+                self._condition.notify_all()
+
     def read(self):
-        if not self.isOpened():
-            return False, None
-        raw = self._read_exact(_FRAME_BYTES)
-        if raw is None:
-            return False, None
-        frame = np.frombuffer(raw, dtype=np.uint8).reshape((STEREO_HEIGHT, STEREO_WIDTH, 3))
-        return True, frame
+        with self._condition:
+            self._condition.wait_for(lambda: self._latest is not None or self._closed, timeout=2.0)
+            if self._closed or self._latest is None:
+                return False, None
+            frame, received, metadata = self._latest
+            if time.monotonic() - received > 1.0:
+                return False, None
+            self.last_frame_metadata = dict(metadata)
+            return True, frame
 
     def _read_exact(self, n: int) -> bytes | None:
         buf = bytearray()
@@ -136,11 +169,16 @@ class _FFmpegAVFoundationCapture:
     def release(self) -> None:
         if self._proc is None:
             return
+        self._closed = True
         self._proc.terminate()
         try:
             self._proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             self._proc.kill()
+            self._proc.wait(timeout=2)
+        if self._reader.is_alive():
+            self._reader.join(timeout=2)
+        self._proc.stdout.close()
 
 
 def _open_stereo_capture(index: int):
@@ -170,6 +208,7 @@ class StereoSplitCamera:
 
         self._left: np.ndarray | None = None
         self._right: np.ndarray | None = None
+        self.last_pair_metadata = {}
 
     @property
     def is_opened(self) -> bool:
@@ -192,6 +231,7 @@ class StereoSplitCamera:
             print(f"WARNING: StereoSplitCamera: camera index {self._index} read failed, skipping")
             return
 
+        self.last_pair_metadata = dict(getattr(self._cap, "last_frame_metadata", {}))
         self._left = frame[:, 0:SPLIT_COL]
         self._right = frame[:, SPLIT_COL:STEREO_WIDTH]
 

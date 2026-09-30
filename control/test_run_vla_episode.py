@@ -1094,7 +1094,9 @@ def test_run_episode_records_depth_frame_when_depth_client_given(tmp_path, mock_
 
     lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
     record = json.loads(lines[0])
-    depth_path = record["depth_frames"]["overhead"]["path"]
+    manifest = json.loads((tmp_path / record["depth_frames"]["overhead"]["result_path"]).read_text())
+    assert manifest["status"] == "complete"
+    depth_path = manifest["depth"]["path"]
     assert depth_path is not None
     loaded = np.load(tmp_path / depth_path)
     np.testing.assert_array_equal(loaded, depth_map)
@@ -1195,8 +1197,10 @@ def test_run_episode_reads_stereo_camera_exactly_once_per_tick_and_shares_frame_
     assert stereo_camera.read_right_calls == 1
     assert len(depth_client.compute_depth_calls) == 1
     called_left, called_right = depth_client.compute_depth_calls[0]
-    assert called_left is left_frame
-    assert called_right is right_frame
+    np.testing.assert_array_equal(called_left, left_frame)
+    np.testing.assert_array_equal(called_right, right_frame)
+    assert not np.shares_memory(called_left, left_frame)
+    assert not np.shares_memory(called_right, right_frame)
 
 
 def test_main_constructs_and_threads_depth_client_when_both_depth_flags_given(monkeypatch, tmp_path):
@@ -1245,6 +1249,11 @@ def test_main_constructs_and_threads_depth_client_when_both_depth_flags_given(mo
         return fake_calibration
 
     class FakeDepthCameraClient:
+        calibration_metadata = {}
+
+        def check_ready(self):
+            calls["depth_ready"] = True
+
         def __init__(self, calibration, endpoint_url):
             calls["depth_camera_client_calibration"] = calibration
             calls["depth_camera_client_endpoint"] = endpoint_url
@@ -1285,6 +1294,7 @@ def test_main_constructs_and_threads_depth_client_when_both_depth_flags_given(mo
     assert calls["depth_camera_client_endpoint"] == "https://fake.ngrok.io/depth"
     assert isinstance(calls["depth_client"], FakeDepthCameraClient)
     assert calls["depth_every_n_steps"] == 10
+    assert calls["depth_ready"]
 
 
 def test_main_errors_when_only_depth_endpoint_given_without_calibration(monkeypatch, tmp_path):

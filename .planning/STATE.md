@@ -5,7 +5,7 @@ milestone_name: MLLM Raw-Autonomy Benchmark
 current_phase: 12
 current_phase_name: Bridge Tick-Latency Fix
 status: executing
-stopped_at: Phase 12 context gathered
+stopped_at: Phase 12 UAT test 7 restored; awaiting next-action selection
 last_updated: "2026-09-26T18:02:58.746Z"
 last_activity: 2026-09-27
 last_activity_desc: Quick task 260927-ndz - fixed Phase 12 UAT test-5 gaps in Colab depth-endpoint docs/notebook
@@ -123,19 +123,76 @@ None yet for v2.1 — begin by planning Phase 12 (`/gsd-plan-phase 12`).
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/12-bridge-tick-latency-fix/12-CONTEXT.md
+Last session: 2026-09-30T02:40:48Z
+Stopped at: Session resumed at Phase 12 UAT test 7 of 15; awaiting next-action selection.
+Resume file: .planning/phases/12-bridge-tick-latency-fix/.continue-here.md
+Structured handoff: .planning/HANDOFF.json (retained until routing into resumed work).
 
-Last session: 2026-09-25T06:46:33.850Z
-Stopped at: Phase 12 context gathered
+All six Phase 12 plans have summaries, but live UAT is incomplete. The older
+Current Position and roadmap completion/progress text above do not reflect the
+September 29 handoff. Test 7 remains pending: depth recording must work together
+with smooth motion before it can pass.
 
-Phases 1-6 (milestone v1.0), Phase 7 (v1.1), and Phases 10-11 (v2.0) are all
-complete. Phases 8-9 (v1.1) remain defined but PAUSED (not cancelled).
+Confirmed from the current notebook: PolicyServer uses subprocess isolation;
+FastFS uses its own virtualenv and interpreter. Preserve these crash fixes.
+The depth handler still launches run_demo.py per request, and the local control
+loop waits synchronously for depth. The previous live session reported 15-70s
+calls and motion freezes. Next recommended work: scope a persistent FastFS
+server that loads its model once, with appropriate regression coverage and
+live depth-plus-motion verification. User confirmed on 2026-09-30 that the RGB-only retry was NOT run and is not
+the requested scope. Depth integration and reliable episode recording are required;
+do not request an RGB-only retry as acceptance work.
 
-Next: user reviews/approves the v2.1 roadmap draft, then `/gsd-plan-phase 12`
-to begin Phase 12 (Bridge Tick-Latency Fix) — research flags this as a
-standard/mechanical pattern (skip a dedicated research sub-phase), root cause
-already fully diagnosed in `control/vla_bridge/FINDINGS.md` §5.
+Handoff divergence: policy_server.ipynb is now committed, not modified as the
+handoff reported. Five unrelated untracked entries remain untouched. No
+interrupted agents, outstanding async-job manifests, incomplete phase plans,
+or pending todo files were found.
 
-NOTE (repo sync): the outer repo has repeatedly drifted commits-ahead of
-`origin/main` without being pushed — before telling the user to `git pull` on
-Colab, always check `git status -sb` for an "ahead" count first.
+Phases 8-9 remain paused. Keep safety-cap re-tightening last in v2.1, consistent
+with the explicit resequencing decision; the roadmap progress table has stale
+phase labels that need reconciliation before advancing.
+
+NOTE (repo sync): local master is 84 commits ahead of origin/main at resume.
+Check synchronization before instructing a Colab git pull.
+
+Context review (2026-09-30): see `.planning/notes/2026-09-30-context-review.md`
+for reconciled history, active runtime/data contracts, recording gaps, and the
+117 passing focused control tests at that point. This was exploration only; no
+implementation or live hardware/Colab verification was performed in that pass.
+The user correction above supersedes HANDOFF.json's old RGB-only retry question.
+
+Persistent-depth-server implementation (2026-09-30, after the context review,
+continued across two model sessions): the architecture fix scoped in the
+September 29 handoff's `remaining_tasks`/`new-architecture-item` is now built
+and passing locally, uncommitted:
+- `control/vla_bridge/fastfs_server.py` (new): resident Flask service, loads
+  the FastFS model once at startup, warms it, then serves `/health` and
+  `/depth` in-process (no more per-request `subprocess.run()` to
+  `run_demo.py`). Single-flight via a non-blocking lock (429 on overlap, not
+  queuing). Embedded into `policy_server.ipynb`'s `resident-fastfs-source`
+  cell verbatim via `scripts/sync_policy_notebook.py` (new), which also
+  regenerates `policy_server_launch.md` from the notebook so the two can't
+  drift again.
+- `control/vla_bridge/depth_recorder.py` (new): submits depth requests off
+  the main control-loop thread and drains the latest result; motion no
+  longer blocks on FastFS latency.
+- `control/run_vla_episode.py`, `depth_camera.py`, `stereo_camera.py`,
+  `io_logger.py`, `robot_client.py`: wired to the above; notebook Step 8's
+  startup cell now polls `/health` with a 600s warmup deadline before
+  reporting ready.
+- `control/test_depth_pipeline.py` (new, 14 tests): covers resident-model
+  reuse, request-identity echo, busy/429 rejection, malformed/failed
+  responses, real HTTP client-server roundtrip with pixel-aligned RGB
+  recording, motion continuing while depth is in flight, shutdown/drain, and
+  a guard test that the notebook's embedded server source and generated
+  launch guide stay in sync with `fastfs_server.py`.
+- Full suite: 167/167 pass locally (`control/.venv`). Added `flask==3.1.3` to
+  `control/requirements.txt` — it's only a local test double for the resident
+  service; Colab installs its own copy into the isolated `fastfs_venv` per
+  Step 7, so this pin does not change what ships to Colab.
+- **Not yet done:** none of this is committed. Test 7 in `12-UAT.md` is
+  correctly still `[pending]` — nothing here has been run against live
+  Colab + real hardware yet, which is the only way to confirm depth capture
+  and smooth motion actually coexist (the original failure mode). That live
+  run is the next concrete action, and it needs the user's Colab session and
+  physical rig — not something verifiable from this environment.

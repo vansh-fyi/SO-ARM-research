@@ -38,6 +38,7 @@ from lerobot.robots.so_follower.so_follower import SO101Follower
 from keyboard_joint_control import move_to_positions, read_positions
 from vla_bridge import action_contract, safety_validator
 from vla_bridge.depth_camera import DepthCameraClient
+from vla_bridge.depth_recorder import DepthRecorder
 from vla_bridge.io_logger import IOLogger
 from vla_bridge.robot_client import BridgeActionSource, connect_bridge
 from vla_bridge.stereo_calibration import load_calibration
@@ -274,22 +275,15 @@ def run_episode(
     waypoint (the target itself) is sent per tick -- identical to
     pre-this-plan behavior.
 
-    `depth_client` (Plan 12-06, DEPTH-CAL-03, default `None`) is an optional
-    `DepthCameraClient`-shaped object exposing `compute_depth(left, right) ->
-    np.ndarray | None`. When given (and `stereo_camera` is also given), a
-    depth map is computed from the SAME tick's stereo frame already read for
-    the `overhead_left`/`overhead_right` diagnostic recording above -- never
-    a second, freshly-read frame -- and recorded via
-    `io_logger.capture_depth_map()`, referenced under `depth_frames` in that
-    tick's `episode.jsonl` record. `depth_every_n_steps` (default 10)
-    rate-limits how often this happens: a full network round-trip to a
-    Colab-hosted GPU inference server is far too slow to run on every 2Hz
-    control tick without dominating episode timing, and depth is
-    recording-only (D-08) -- it does not need per-tick freshness the way the
-    policy's own observation does. `None` (the default) produces
-    `depth_frames == {}` for every step and creates no `depth_overhead/`
-    directory at all -- identical to pre-this-plan behavior.
+    `depth_client` enables background depth recording. At most one request is
+    outstanding; busy cadence ticks are logged as skipped. Each episode row
+    references an immutable per-request result manifest, completed asynchronously
+    and drained at shutdown. Raw and aligned RGB, metric depth and calibration
+    provenance remain associated with the original source step.
     """
+    if control_hz <= 0 or execution_hz <= 0 or depth_every_n_steps < 1 or max_steps < 1:
+        raise ValueError("rates, depth cadence and max_steps must be positive")
+    depth_recorder = DepthRecorder(depth_client, io_logger) if depth_client is not None else None
     control_period = 1.0 / control_hz
     execution_period = 1.0 / execution_hz
     num_substeps = max(1, round(control_period / execution_period))
@@ -301,9 +295,14 @@ def run_episode(
 
     try:
         for i in range(max_steps):
+            if depth_recorder is not None:
+                depth_recorder.drain()
             current = read_positions(robot)
             t0 = time.monotonic()
             raw_action, model_version = action_source.get_action(current, instruction)
+            details = dict(getattr(action_source, "last_details", {}))
+            policy_observation = details.pop("observation", None)
+            original_action = details.pop("raw_model_output", raw_action)
             t1 = time.monotonic()
             validated_action, flags = safety_validator.validate_action(
                 raw_action,
@@ -315,15 +314,39 @@ def run_episode(
             )
             interpolation_start = last_sent_action if last_sent_action is not None else current
             waypoints = _interpolate_waypoints(interpolation_start, validated_action, num_substeps)
+            send_outcomes = []
+            executed_action = {}
             for wp_idx, waypoint in enumerate(waypoints):
                 try:
-                    robot.send_action({f"{j}.pos": v for j, v in waypoint.items()})
+                    returned = robot.send_action({f"{j}.pos": v for j, v in waypoint.items()})
+                    executed_action = ({k.removesuffix(".pos"): v for k, v in returned.items()}
+                                       if isinstance(returned, dict) else dict(waypoint))
+                    send_outcomes.append(dict(target=waypoint, sent_action=executed_action,
+                                              timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                                              status="sent", driver_reported=isinstance(returned, dict)))
                 except (ConnectionError, RuntimeError) as e:
+                    send_outcomes.append(dict(target=waypoint, status="failed", error=str(e),
+                                              timestamp_utc=datetime.now(timezone.utc).isoformat()))
                     print(f"Write failed, skipping this tick: {e}")
+                    break
                 if wp_idx < len(waypoints) - 1:
                     time.sleep(execution_period)
             t2 = time.monotonic()
 
+            details["waypoint_sends"] = send_outcomes
+            details["execution_semantics"] = "driver send outcome; not measured physical arrival"
+            details["bridge_flags"] = details.get("bridge_flags", [])
+            if policy_observation is not None:
+                policy_frames = {}
+                for camera in ("camera1", "camera2", "camera3"):
+                    frame = policy_observation.get(camera)
+                    if frame is not None:
+                        # LeRobot wrist defaults to RGB; stereo wrapper provides BGR.
+                        if camera == "camera1":
+                            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                        policy_frames[camera] = io_logger.capture_stereo_frame(frame, "policy_" + camera, step=i)
+                details["policy_observation_frames"] = policy_frames
+                details["policy_observation_joint_state"] = {k: v for k, v in policy_observation.items() if k.endswith(".pos")}
             camera_frames = {
                 name: io_logger.capture_camera_frame(caps[idx], name, step=i)
                 for idx, name in camera_names.items()
@@ -345,39 +368,37 @@ def run_episode(
                 camera_frames["overhead_right"] = io_logger.capture_stereo_frame(
                     stereo_right_frame, "overhead_right", step=i
                 )
+                for name in ('overhead_left', 'overhead_right'):
+                    camera_frames[name].update(getattr(stereo_camera, 'last_pair_metadata', {}))
 
             depth_frames = {}
-            # Cadence-gated: a full network round-trip to a Colab-hosted GPU
-            # inference server is far too slow to run on every 2Hz control
-            # tick without dominating episode timing -- depth is
-            # recording-only (D-08) and does not need per-tick freshness the
-            # way the policy's own observation does.
-            if (
-                depth_client is not None
-                and stereo_left_frame is not None
-                and stereo_right_frame is not None
-                and i % depth_every_n_steps == 0
-            ):
-                depth_map = depth_client.compute_depth(stereo_left_frame, stereo_right_frame)
-                depth_frames["overhead"] = io_logger.capture_depth_map(depth_map, "overhead", step=i)
+            if depth_recorder is not None and i % depth_every_n_steps == 0:
+                if stereo_left_frame is None or stereo_right_frame is None:
+                    depth_frames['overhead'] = dict(status='capture_failed', source_step=i)
+                else:
+                    depth_frames['overhead'] = depth_recorder.submit(
+                        stereo_left_frame, stereo_right_frame, i,
+                        {name: camera_frames[name] for name in ('overhead_left', 'overhead_right')})
 
             io_logger.write_step(
                 step=i,
                 instruction=instruction,
                 camera_frames=camera_frames,
                 joint_state=current,
-                raw_model_output=raw_action,
+                raw_model_output=original_action,
                 validated_action=validated_action,
-                validator_flags=flags,
-                executed_action=validated_action,
+                validator_flags=details["bridge_flags"] + flags,
+                executed_action=executed_action,
                 latency_ms={
                     "observation_to_action": (t1 - t0) * 1000,
                     "action_to_execution": (t2 - t1) * 1000,
                 },
                 model_version=model_version,
                 depth_frames=depth_frames,
+                action_details=details,
             )
-            last_sent_action = validated_action
+            if executed_action:
+                last_sent_action = executed_action
             steps_completed = i + 1
             time.sleep(final_sleep)
     except KeyboardInterrupt:
@@ -390,8 +411,17 @@ def run_episode(
         # E-stop (D-03): return-to-start strictly before disconnect, in every
         # exit path -- max-steps, KeyboardInterrupt, or any other exception
         # (disconnect() itself happens in main()'s outer try/finally).
-        move_to_positions(robot, start_positions, kp=0.2, control_freq=30, max_seconds=5.0)
-        _write_termination(io_logger.out_dir, reason, steps_completed)
+        try:
+            move_to_positions(robot, start_positions, kp=0.2, control_freq=30, max_seconds=5.0)
+        finally:
+            try:
+                if depth_recorder is not None:
+                    stats = depth_recorder.close()
+                    (io_logger.out_dir / 'depth_summary.json').write_text(json.dumps(stats))
+                    if stats['complete'] == 0:
+                        print('DEPTH RECORDING FAILED: no valid depth maps saved; see depth.jsonl')
+            finally:
+                _write_termination(io_logger.out_dir, reason, steps_completed)
 
 
 def main():
@@ -534,6 +564,17 @@ def main():
             args.stereo_camera_index = 1
             print("Using default --stereo-camera-index=1 (device_map.json unavailable)")
 
+    if args.control_hz <= 0 or args.execution_hz <= 0 or args.depth_every_n_steps < 1 or args.max_steps < 1:
+        parser.error('rates, depth cadence and max_steps must be positive')
+    if (args.out / 'episode.jsonl').exists():
+        parser.error('output directory already contains an episode; choose a new --out path')
+    depth_client = None
+    if args.depth_endpoint:
+        depth_client = DepthCameraClient(load_calibration(args.depth_calibration), args.depth_endpoint)
+        depth_client.check_ready()
+        args.out.mkdir(parents=True, exist_ok=True)
+        (args.out / 'depth_calibration.json').write_text(json.dumps(depth_client.calibration_metadata, indent=2))
+
     camera_names = _build_camera_names(args.camera)
 
     # Gap 1: in the bridge path, the "overhead" index is never opened here --
@@ -550,67 +591,64 @@ def main():
     joint_limits_deg = action_contract.load_joint_limits_deg()
 
     stereo_camera = None
-    depth_client = None
 
-    if args.server_address:
-        # Real, network-bridged SmolVLA path (Plan 11-04). `connect_bridge()`
-        # constructs AND connects the physical robot internally -- its
-        # returned client's `.robot` is the one true robot handle; do NOT
-        # also construct a separate local SO101Follower here.
-        robot_config = SOFollowerRobotConfig(
-            port=args.port,
-            id=args.robot_id,
-            max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG,
-        )
-        # camera1 (wrist) wiring gap found live this session (Plan 11-05 Task 2):
-        # `connect_bridge()` only wired camera2/camera3 (the AR0144 stereo split),
-        # never camera1 -- silently starving the VLA checkpoint of its wrist view.
-        # `_build_camera_names()` assigns the FIRST `--camera`/device_map index to
-        # "wrist" positionally, so recover that same index here rather than
-        # re-deriving it a second way.
-        wrist_camera_index = next((idx for idx, name in camera_names.items() if name == "wrist"), None)
-        client = connect_bridge(
-            args.server_address,
-            args.checkpoint,
-            robot_config=robot_config,
-            task=args.instruction,
-            policy_device="cuda",
-            stereo_camera_index=args.stereo_camera_index,
-            wrist_camera_index=wrist_camera_index,
-        )
-        if client is None:
-            print(f"Bridge unreachable at {args.server_address}, aborting before touching the robot.")
-            args.out.mkdir(parents=True, exist_ok=True)
-            _write_termination(args.out, "bridge_unreachable", 0)
-            for cap in caps.values():
-                cap.release()
-            return
-        robot = client.robot
-        action_source = BridgeActionSource(client, args.checkpoint, joint_limits_deg)
-        # Gap 1: reuse the SAME StereoSplitCamera instance already feeding
-        # the policy for the camera_overhead diagnostic recording below --
-        # never a second, colliding open of the AR0144.
-        stereo_camera = client._stereo_camera
-        depth_client = (
-            DepthCameraClient(load_calibration(args.depth_calibration), args.depth_endpoint)
-            if args.depth_endpoint
-            else None
-        )
-    else:
-        # Plan 11-02's scripted dry-run path, unchanged.
-        robot = SO101Follower(
-            SOFollowerRobotConfig(
+    client = None
+    robot = None
+    try:
+        if args.server_address:
+            # Real, network-bridged SmolVLA path (Plan 11-04). `connect_bridge()`
+            # constructs AND connects the physical robot internally -- its
+            # returned client's `.robot` is the one true robot handle; do NOT
+            # also construct a separate local SO101Follower here.
+            robot_config = SOFollowerRobotConfig(
                 port=args.port,
                 id=args.robot_id,
                 max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG,
             )
-        )
-        robot.connect(calibrate=False)
-        with robot.bus.torque_disabled():
-            robot.bus.write_calibration(robot.calibration)
-        action_source = ScriptedActionSource()
+            # camera1 (wrist) wiring gap found live this session (Plan 11-05 Task 2):
+            # `connect_bridge()` only wired camera2/camera3 (the AR0144 stereo split),
+            # never camera1 -- silently starving the VLA checkpoint of its wrist view.
+            # `_build_camera_names()` assigns the FIRST `--camera`/device_map index to
+            # "wrist" positionally, so recover that same index here rather than
+            # re-deriving it a second way.
+            wrist_camera_index = next((idx for idx, name in camera_names.items() if name == "wrist"), None)
+            client = connect_bridge(
+                args.server_address,
+                args.checkpoint,
+                robot_config=robot_config,
+                task=args.instruction,
+                policy_device="cuda",
+                stereo_camera_index=args.stereo_camera_index,
+                wrist_camera_index=wrist_camera_index,
+            )
+            if client is None:
+                print(f"Bridge unreachable at {args.server_address}, aborting before touching the robot.")
+                args.out.mkdir(parents=True, exist_ok=True)
+                _write_termination(args.out, "bridge_unreachable", 0)
+                for cap in caps.values():
+                    cap.release()
+                return
+            robot = client.robot
+            action_source = BridgeActionSource(client, args.checkpoint, joint_limits_deg)
+            # Gap 1: reuse the SAME StereoSplitCamera instance already feeding
+            # the policy for the camera_overhead diagnostic recording below --
+            # never a second, colliding open of the AR0144.
+            stereo_camera = client._stereo_camera
 
-    try:
+        else:
+            # Plan 11-02's scripted dry-run path, unchanged.
+            robot = SO101Follower(
+                SOFollowerRobotConfig(
+                    port=args.port,
+                    id=args.robot_id,
+                    max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG,
+                )
+            )
+            robot.connect(calibrate=False)
+            with robot.bus.torque_disabled():
+                robot.bus.write_calibration(robot.calibration)
+            action_source = ScriptedActionSource()
+
         # The "overhead" index is never in `caps` in the bridge path (see
         # `_open_cameras(..., skip_names=...)` above), so this comprehension
         # naturally excludes it from `IOLogger`'s pre-declared camera_names
@@ -635,9 +673,13 @@ def main():
     finally:
         for cap in caps.values():
             cap.release()
-        if args.server_address:
-            client.stop()
-        else:
+        if client is not None:
+            try:
+                client.stop()
+            finally:
+                if stereo_camera is not None and hasattr(stereo_camera, "release"):
+                    stereo_camera.release()
+        elif robot is not None:
             robot.disconnect()
 
 

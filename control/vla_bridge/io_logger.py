@@ -33,7 +33,7 @@ class IOLogger:
         self.out_dir.mkdir(parents=True, exist_ok=True)
         for name in camera_names.values():
             (self.out_dir / f"camera_{name}").mkdir(parents=True, exist_ok=True)
-        self._file = open(self.out_dir / "episode.jsonl", "a")
+        self._file = open(self.out_dir / "episode.jsonl", "x")
 
     def __enter__(self) -> "IOLogger":
         return self
@@ -54,8 +54,11 @@ class IOLogger:
         latency_ms: dict,
         model_version: str,
         depth_frames: dict | None = None,
+        action_details: dict | None = None,
     ) -> None:
         record = {
+            "schema_version": 2,
+            "action_details": action_details or {},
             "step": step,
             "timestamp_utc": datetime.now(timezone.utc).isoformat(),
             "instruction": instruction,
@@ -71,6 +74,27 @@ class IOLogger:
         }
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
+
+    def write_depth_result(self, request, result):
+        """Persist one asynchronous result, addressed by its original source step."""
+        result = dict(result)
+        depth = result.pop('depth', None)
+        step = request['source_step']
+        for key in ('aligned_left', 'aligned_right'):
+            frame = result.pop(key, None)
+            if frame is not None:
+                result[key] = self.capture_stereo_frame(frame, 'depth_' + key, step)
+        record = dict(request, **result)
+        record['status'] = 'complete' if depth is not None else 'failed'
+        record['depth'] = self.capture_depth_map(depth, 'overhead', step)
+        path = self.out_dir / request['result_path']
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(record, allow_nan=False))
+        temporary.replace(path)
+        with (self.out_dir / 'depth.jsonl').open('a') as f:
+            f.write(json.dumps(record, allow_nan=False) + '\n')
+            f.flush()
 
     def capture_camera_frame(self, cap, camera_name: str, step: int) -> dict:
         """Read one frame from `cap` and save it under this camera's subdir.
@@ -151,7 +175,8 @@ class IOLogger:
 
         (self.out_dir / f"camera_{camera_name}").mkdir(parents=True, exist_ok=True)
         rel_path = Path(f"camera_{camera_name}") / f"{step:06d}.png"
-        cv2.imwrite(str(self.out_dir / rel_path), frame)
+        if not cv2.imwrite(str(self.out_dir / rel_path), frame):
+            raise OSError(f"Failed to write camera frame: {rel_path}")
         return {"path": str(rel_path), "captured_at_utc": captured_at_utc}
 
 

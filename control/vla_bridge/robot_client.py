@@ -240,6 +240,7 @@ def pop_validated_action(
 
     with client.latest_action_lock:
         client.latest_action = timed_action.get_timestep()
+    client._last_popped_action = dict(timestep=timed_action.get_timestep(), timestamp=timed_action.get_timestamp())
 
     raw_action = client._action_tensor_to_action_dict(timed_action.get_action())
     raw_action = {key.removesuffix(".pos"): value for key, value in raw_action.items()}
@@ -325,10 +326,12 @@ class BridgeActionSource:
         self._inflight_lock = threading.Lock()
         self._stale_watchdog_limit = stale_watchdog_limit
         self._consecutive_stale_count = 0
+        self.last_details = {}
 
     def get_action(
         self, joint_state: dict[str, float], instruction: str
     ) -> tuple[dict[str, float], str]:
+        self.last_details = dict(raw_model_output={}, bridge_flags=[], observation=None)
         # LATENCY-04: defensive-only guard (per CONTEXT.md D-05) -- get_action()
         # is called synchronously, once per tick, from a single-threaded
         # control loop today, so no active overlap bug exists. This structurally
@@ -340,7 +343,11 @@ class BridgeActionSource:
         try:
             if self.client._ready_to_send_observation():
                 try:
-                    self.client.control_loop_observation(task=instruction)
+                    observation = self.client.control_loop_observation(task=instruction)
+                    if isinstance(observation, dict):
+                        self.last_details["observation"] = observation
+                        self.last_details["observation_recorded_at_unix_s"] = time.time()
+                        self.last_details["stereo_frame"] = dict(getattr(getattr(self.client, "_stereo_camera", None), "last_pair_metadata", {}))
                 except (grpc.RpcError, ConnectionError, RuntimeError):
                     return joint_state, f"{self.checkpoint}@bridge-error-holding-position"
 
@@ -371,6 +378,9 @@ class BridgeActionSource:
             else:
                 self._consecutive_stale_count = 0
 
+            self.last_details.update(raw_model_output=_raw_action, bridge_flags=flags,
+                                     action_age_s=_obs_age_s,
+                                     policy_action=getattr(self.client, "_last_popped_action", None) if _raw_action else None)
             self._last_action = validated_action
             if flags:
                 return validated_action, f"{self.checkpoint}@{'+'.join(flags)}"

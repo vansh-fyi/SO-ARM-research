@@ -23,6 +23,9 @@ Colab connection must not crash the live episode's real control loop.
 import argparse
 import base64
 import io
+import hashlib
+import json
+from dataclasses import asdict
 import time
 from pathlib import Path
 
@@ -82,6 +85,9 @@ class DepthCameraClient:
         max_width: int = FASTFS_MAX_WIDTH,
     ):
         self.endpoint_url = endpoint_url
+        self.timeout_s = 10.0
+        self.calibration_metadata = asdict(calibration)
+        self.calibration_sha256 = hashlib.sha256(json.dumps(self.calibration_metadata, sort_keys=True).encode()).hexdigest()
         self.max_width = max_width
         self._build_rectification_maps(calibration)
 
@@ -129,53 +135,60 @@ class DepthCameraClient:
     @staticmethod
     def _decode_depth_npy(depth_b64: str) -> np.ndarray:
         raw = base64.b64decode(depth_b64)
-        return np.load(io.BytesIO(raw))
+        return np.load(io.BytesIO(raw), allow_pickle=False)
 
-    def compute_depth(self, left_frame: np.ndarray, right_frame: np.ndarray) -> np.ndarray | None:
-        """Rectifies, downsamples, and requests a metric depth map from the
-        Colab-hosted FastFS endpoint for this stereo pair. Never raises on a
-        network/endpoint failure -- returns `None` instead, matching
-        `io_logger.capture_camera_frame()`'s fail-safe convention."""
-        rectified_left, rectified_right = self.rectify(left_frame, right_frame)
+    def check_ready(self) -> dict:
+        health_url = self.endpoint_url.rsplit('/depth', 1)[0] + '/health'
+        response = requests.get(health_url, timeout=self.timeout_s)
+        response.raise_for_status()
+        health = response.json()
+        if health.get('status') != 'ready' or health.get('protocol_version') != 1:
+            raise RuntimeError('Expected a warmed resident FastFS server (protocol 1)')
+        return health
 
-        # numpy/cv2 array shape order is (height, width, channels) --
-        # compute_target_size()'s params are (orig_width, orig_height), do
-        # not transpose them.
-        orig_h, orig_w = rectified_left.shape[:2]
-        target_w, target_h = compute_target_size(orig_w, orig_h, self.max_width)
+    def compute_depth(self, left_frame, right_frame):
+        """Compatibility API for the depth inspection CLI."""
+        return self.compute_depth_result(left_frame, right_frame).get('depth')
 
-        resized_left = cv2.resize(rectified_left, (target_w, target_h))
-        resized_right = cv2.resize(rectified_right, (target_w, target_h))
+    def compute_depth_result(self, left_frame, right_frame, request_id=None):
+        """Return metric depth, the exact aligned RGB input and provenance.
 
-        # Actual applied per-axis ratios -- NOT the intermediate `scale`
-        # variable inside compute_target_size(), since independent
-        # floor-rounding per axis means the true applied ratios differ
-        # slightly per axis.
-        scale_x = target_w / orig_w
-        scale_y = target_h / orig_h
-        scaled_intrinsics = scale_intrinsics(self._rectified_intrinsics_flat, scale_x, scale_y)
-
-        payload = {
-            "left_png_b64": self._encode_png(resized_left),
-            "right_png_b64": self._encode_png(resized_right),
-            "intrinsics_flat": scaled_intrinsics,
-            "baseline_m": self._baseline_m,
-        }
-
+        All failures become explicit result records; the background recorder
+        persists these without interrupting motion or labelling them as success.
+        """
+        result = dict(depth=None, calibration_sha256=self.calibration_sha256,
+                      units='metres', pixel_frame='rectified_left_resized')
         try:
-            response = requests.post(self.endpoint_url, json=payload, timeout=10.0)
+            expected = tuple(self.calibration_metadata['image_size'])
+            if any((x.shape[1], x.shape[0]) != expected for x in (left_frame, right_frame)):
+                raise ValueError('capture resolution does not match calibration')
+            left, right = self.rectify(left_frame, right_frame)
+            h, w = left.shape[:2]
+            tw, th = compute_target_size(w, h, self.max_width)
+            left, right = cv2.resize(left, (tw, th)), cv2.resize(right, (tw, th))
+            K = scale_intrinsics(self._rectified_intrinsics_flat, tw / w, th / h)
+            result.update(aligned_left=left, aligned_right=right,
+                          intrinsics_flat=K, baseline_m=self._baseline_m)
+            payload = dict(left_png_b64=self._encode_png(left), right_png_b64=self._encode_png(right),
+                           intrinsics_flat=K, baseline_m=self._baseline_m, request_id=request_id)
+            response = requests.post(self.endpoint_url, json=payload, timeout=self.timeout_s)
             response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            print(f"WARNING: DepthCameraClient: FastFS request failed: {e}")
-            return None
-
-        data = response.json()
-        depth_b64 = data.get("depth_npy_b64")
-        if depth_b64 is None:
-            print("WARNING: DepthCameraClient: FastFS response missing 'depth_npy_b64'")
-            return None
-
-        return self._decode_depth_npy(depth_b64)
+            data = response.json()
+            depth = self._decode_depth_npy(data['depth_npy_b64'])
+            if depth.shape != (th, tw) or depth.dtype != np.float32:
+                raise ValueError(f'invalid depth shape/dtype: {depth.shape}/{depth.dtype}')
+            if request_id is not None and data.get('request_id') != request_id:
+                raise ValueError('depth response request_id mismatch')
+            valid = np.isfinite(depth) & (depth > 0)
+            if not valid.any():
+                raise ValueError('depth response contains no valid positive samples')
+            depth = depth.copy()
+            depth[~valid] = np.nan
+            result.update(depth=depth, valid_fraction=float(valid.mean()),
+                          model=data.get('model'), inference_ms=data.get('inference_ms'))
+        except Exception as exc:
+            result.update(depth=None, error=f'{type(exc).__name__}: {exc}')
+        return result
 
 
 def main() -> None:
