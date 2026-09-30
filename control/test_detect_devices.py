@@ -678,3 +678,61 @@ def test_wrist_name_falls_back_to_raw_index_when_no_name_correlates():
     ]
     result = resolve_cameras(candidates, {0: "CCB Camera", 3: None})
     assert result["wrist_name"] == result["wrist"] == 3
+
+
+def _unexpected_correlation():
+    raise AssertionError("camera correlation must not run on this path")
+
+
+@pytest.mark.parametrize("name", ["CCB Camera", None, 2])
+def test_resolve_stereo_identifier_without_live_correlation(name):
+    cameras = {"stereo_overhead": 2, "stereo_overhead_name": name}
+    assert detect_devices.resolve_camera_identifier(
+        "stereo_overhead", {"cameras": cameras}, correlate_fn=_unexpected_correlation
+    ) == (name if name is not None else 2)
+
+
+@pytest.mark.parametrize("role", ["wrist", "stereo_overhead"])
+def test_resolve_identifier_without_name_uses_raw_index_without_probing(role):
+    assert detect_devices.resolve_camera_identifier(
+        role, {"cameras": {role: 4}}, correlate_fn=_unexpected_correlation
+    ) == 4
+
+
+def test_resolve_wrist_identifier_uses_current_index_instead_of_stale_index():
+    device_map = {"cameras": {"wrist": 1, "wrist_name": "USB Camera"}}
+    assert detect_devices.resolve_camera_identifier(
+        "wrist", device_map, correlate_fn=lambda: {1: "FaceTime Camera", 3: "USB Camera"}
+    ) == 3
+
+
+def test_resolve_wrist_identifier_falls_back_when_live_name_is_missing():
+    device_map = {"cameras": {"wrist": 1, "wrist_name": "USB Camera"}}
+    assert detect_devices.resolve_camera_identifier(
+        "wrist", device_map, correlate_fn=lambda: {0: "CCB Camera", 2: None}
+    ) == 1
+
+
+@pytest.mark.parametrize("name", [None, 1])
+def test_resolve_wrist_without_string_name_skips_live_correlation(name):
+    assert detect_devices.resolve_camera_identifier(
+        "wrist", {"cameras": {"wrist": 1, "wrist_name": name}},
+        correlate_fn=_unexpected_correlation,
+    ) == 1
+
+
+def test_live_correlate_names_composes_existing_probes(monkeypatch):
+    def probe(max_index):
+        assert max_index == 9
+        return [{"index": 2}, {"index": 5}]
+
+    monkeypatch.setattr(detect_devices, "probe_camera_candidates", probe)
+    monkeypatch.setattr(detect_devices, "get_camera_names", lambda: ["USB Camera"])
+    assert detect_devices._live_correlate_names(9) == {2: "USB Camera", 5: None}
+
+
+def test_resolve_wrist_uses_default_live_correlation(monkeypatch):
+    monkeypatch.setattr(detect_devices, "_live_correlate_names", lambda: {5: "USB Camera"})
+    assert detect_devices.resolve_camera_identifier(
+        "wrist", {"cameras": {"wrist": 1, "wrist_name": "USB Camera"}}
+    ) == 5
