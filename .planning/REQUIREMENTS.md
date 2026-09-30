@@ -165,7 +165,7 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 
 - [x] **CAMFIX-01**: A single shared, name-based camera-resolution helper is used by both the model's inference-input path and the `IOLogger` recording path (reusing one `StereoSplitCamera` instance, not two independent camera opens)
 - [ ] **CAMFIX-02**: `camera_overhead` recordings are visually confirmed by a human to show the robot workspace (not the laptop webcam) on a live re-verification episode
-- [ ] **CAMFIX-03**: The bridge logs a hash/thumbnail of the frame it actually sent to Colab per step, explicitly disclosed as client-side-only provenance (not proof of what Colab received/used)
+- [x] **CAMFIX-03**: The bridge logs a hash/thumbnail of the frame it actually sent to Colab per step, explicitly disclosed as client-side-only provenance (not proof of what Colab received/used)
 
 ### Pipeline Architecture
 
@@ -286,7 +286,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEBT-01 | Phase 17 | Pending |
 | CAMFIX-01 | Phase 13 | Complete |
 | CAMFIX-02 | Phase 13 | Pending |
-| CAMFIX-03 | Phase 13 | Pending |
+| CAMFIX-03 | Phase 13 | Complete |
 | PIPE-01 | Phase 14 | Pending |
 | VLAB-01 | Phase 14 | Pending |
 | VLAB-02 | Phase 14 | Pending |
