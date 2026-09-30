@@ -427,7 +427,18 @@ Plans:
   2. A live re-verification episode's saved `camera_overhead/*.png` frames are visually confirmed by a human to show the robot workspace, not the laptop webcam
   3. The bridge logs a hash/thumbnail of the frame it actually sent to Colab per step, with an explicit disclosure that this is client-side-only provenance, not proof of what Colab received/used
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 13-01-PLAN.md — Shared name-first/index-fallback camera identifier resolver + wrist_name field in detect_devices.py (CAMFIX-01)
+- [ ] 13-02-PLAN.md — sha256 client-side frame provenance hash in IOLogger (CAMFIX-03)
+
+**Wave 2** *(blocked on 13-01)*
+
+- [ ] 13-03-PLAN.md — Wire the shared resolver into the live --server-address bridge path in run_vla_episode.py; carries the phase's live re-verification human-check (CAMFIX-01, CAMFIX-02)
+- [ ] 13-04-PLAN.md — Route record_episode.py through the shared resolver with AR0144 stereo support for the first time; new test_record_episode.py (CAMFIX-01)
 
 ### Phase 14: VLA-Style Pipeline & Backends
 
