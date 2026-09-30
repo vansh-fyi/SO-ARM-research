@@ -18,6 +18,8 @@ Usage:
 """
 import argparse
 import csv
+import json
+from datetime import datetime, timezone
 import time
 from pathlib import Path
 
@@ -25,6 +27,49 @@ import cv2
 
 from lerobot.robots.so_follower.config_so_follower import SOFollowerRobotConfig
 from lerobot.robots.so_follower.so_follower import SO101Follower
+
+
+DEVICE_MAP_PATH = Path(__file__).resolve().parent / "device_map.json"
+DEVICE_MAP_MAX_AGE_HOURS = 24
+
+
+def _load_device_map() -> dict | None:
+    """Loads `control/device_map.json` (Plan 11-05 Task 2's `detect_devices.py`
+    output) if present and parseable. Returns `None` -- never raises -- on
+    any failure (missing file, unreadable, invalid JSON), so callers can
+    fall through to requiring explicit CLI args instead of crashing."""
+    if not DEVICE_MAP_PATH.exists():
+        return None
+    try:
+        device_map = json.loads(DEVICE_MAP_PATH.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"WARNING: {DEVICE_MAP_PATH} exists but could not be read ({e}); ignoring it.")
+        return None
+
+    detected_at = device_map.get("detected_at")
+    if detected_at:
+        try:
+            detected_dt = datetime.strptime(detected_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            age_hours = (datetime.now(timezone.utc) - detected_dt).total_seconds() / 3600.0
+            if age_hours > DEVICE_MAP_MAX_AGE_HOURS:
+                print(
+                    f"WARNING: {DEVICE_MAP_PATH} is {age_hours:.1f}h old (>{DEVICE_MAP_MAX_AGE_HOURS}h) -- "
+                    "ports/camera indices may have shifted since detection. Re-run detect_devices.py "
+                    "if any USB device has been unplugged/replugged since then."
+                )
+        except ValueError:
+            pass  # Unparseable timestamp -- use the file anyway, just skip the freshness check.
+
+    return device_map
+
+
+def _build_camera_roles(camera_indices: list[int], device_map: dict | None) -> dict[int, str]:
+    if device_map is None or "cameras" not in device_map:
+        return {}
+    cameras = device_map["cameras"]
+    return {cameras[key]: role for key, role in
+            (("wrist", "wrist"), ("stereo_overhead", "overhead"))
+            if cameras.get(key) in camera_indices}
 
 
 def open_cameras(indices):
@@ -115,6 +160,7 @@ def main():
     parser.add_argument("--fps", type=float, default=15.0)
     parser.add_argument("--no-joints", action="store_true", help="skip joint-position logging (camera-only capture)")
     args = parser.parse_args()
+    device_map = _load_device_map()
 
     if not args.camera:
         print("No --camera given. Probing indices 0-5...")
@@ -126,6 +172,7 @@ def main():
             cap.release()
         print(f"Found cameras: {args.camera}")
 
+    camera_roles = _build_camera_roles(args.camera, device_map)
     caps = open_cameras(args.camera)
     if not caps:
         print("No cameras opened, aborting.")
