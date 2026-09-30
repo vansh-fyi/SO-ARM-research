@@ -25,7 +25,7 @@ from pathlib import Path
 
 import cv2
 import detect_devices
-from vla_bridge.stereo_camera import StereoSplitCamera
+from vla_bridge.stereo_camera import SPLIT_COL, STEREO_HEIGHT, StereoSplitCamera
 
 from lerobot.robots.so_follower.config_so_follower import SOFollowerRobotConfig
 from lerobot.robots.so_follower.so_follower import SO101Follower
@@ -99,6 +99,19 @@ def open_cameras(camera_indices: list[int], camera_roles: dict[int, str], device
 def record_still(caps, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     for idx, cap in caps.items():
+        if isinstance(cap, StereoSplitCamera):
+            for _ in range(15):
+                left, right = cap.read_left(), cap.read_right()
+                if left is not None and right is not None:
+                    break
+            if left is None or right is None:
+                print(f"overhead camera {idx}: failed to capture")
+                continue
+            for side, frame in (("left", left), ("right", right)):
+                path = out_dir / f"camera_overhead_{side}.png"
+                cv2.imwrite(str(path), frame)
+                print(f"overhead camera {side}: saved -> {path}")
+            continue
         ok, frame = False, None
         for _ in range(15):  # warm up, same lesson as diagnostics/camera_test.py
             ok, frame = cap.read()
@@ -116,6 +129,13 @@ def record_episode(robot, caps, out_dir: Path, duration: float, fps: float, log_
     out_dir.mkdir(parents=True, exist_ok=True)
     writers = {}
     for idx, cap in caps.items():
+        if isinstance(cap, StereoSplitCamera):
+            for side in ("left", "right"):
+                path = out_dir / f"camera_overhead_{side}.mp4"
+                writers[f"overhead_{side}"] = cv2.VideoWriter(
+                    str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (SPLIT_COL, STEREO_HEIGHT)
+                )
+            continue
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
         path = out_dir / f"camera_{idx}.mp4"
@@ -139,6 +159,11 @@ def record_episode(robot, caps, out_dir: Path, duration: float, fps: float, log_
         ts = t0 - start
 
         for idx, cap in caps.items():
+            if isinstance(cap, StereoSplitCamera):
+                for side, frame in (("left", cap.read_left()), ("right", cap.read_right())):
+                    if frame is not None:
+                        writers[f"overhead_{side}"].write(frame)
+                continue
             ok, frame = cap.read()
             if ok:
                 writers[idx].write(frame)
