@@ -347,8 +347,9 @@ def resolve_cameras(
     names_by_index: dict[int, str | None],
     prompt_fn=input,
     verify_stereo_fn=None,
-) -> dict[str, int]:
-    """Resolves `{"wrist": <idx>, "stereo_overhead": <idx>, "stereo_overhead_name":
+) -> dict[str, int | str]:
+    """Resolves `{"wrist": <idx>, "wrist_name": <name-or-idx>,
+    "stereo_overhead": <idx>, "stereo_overhead_name":
     <name-or-idx>}` from probed camera `candidates`, excluding any built-in-named
     device first, then splitting the remainder by the AR0144's distinctive
     capture resolution (the live `STEREO_WIDTH`/`STEREO_HEIGHT` constants,
@@ -416,9 +417,13 @@ def resolve_cameras(
     # (`ffmpeg -i "CCB Camera"`) sidesteps the instability entirely. Falls
     # back to the numeric index only if no name could be correlated for it
     # (best-effort correlation, see `_correlate_names()`).
+    # `wrist_name` follows the same fallback convention; the shared
+    # resolve_camera_identifier() uses it to find the wrist's current cv2 index.
     stereo_name = names_by_index.get(stereo_idx)
+    wrist_name = names_by_index.get(wrist_idx)
     return {
         "wrist": wrist_idx,
+        "wrist_name": wrist_name if wrist_name is not None else wrist_idx,
         "stereo_overhead": stereo_idx,
         "stereo_overhead_name": stereo_name if stereo_name is not None else stereo_idx,
     }
