@@ -24,6 +24,8 @@ import time
 from pathlib import Path
 
 import cv2
+import detect_devices
+from vla_bridge.stereo_camera import StereoSplitCamera
 
 from lerobot.robots.so_follower.config_so_follower import SOFollowerRobotConfig
 from lerobot.robots.so_follower.so_follower import SO101Follower
@@ -72,10 +74,21 @@ def _build_camera_roles(camera_indices: list[int], device_map: dict | None) -> d
             if cameras.get(key) in camera_indices}
 
 
-def open_cameras(indices):
+def open_cameras(camera_indices: list[int], camera_roles: dict[int, str], device_map: dict | None) -> dict[int, object]:
     caps = {}
-    for idx in indices:
-        cap = cv2.VideoCapture(idx)
+    for idx in dict.fromkeys(camera_indices):
+        role = camera_roles.get(idx)
+        if role == "overhead":
+            identifier = detect_devices.resolve_camera_identifier("stereo_overhead", device_map) if device_map is not None else idx
+            cap = StereoSplitCamera(index=identifier)
+            if not cap.is_opened:
+                print(f"WARNING: overhead camera did not open (index {idx}), skipping")
+                cap.release()
+                continue
+            caps[idx] = cap
+            continue
+        identifier = detect_devices.resolve_camera_identifier("wrist", device_map) if role == "wrist" and device_map is not None else idx
+        cap = cv2.VideoCapture(identifier)
         if not cap.isOpened():
             print(f"WARNING: camera index {idx} did not open, skipping")
             continue
@@ -173,7 +186,7 @@ def main():
         print(f"Found cameras: {args.camera}")
 
     camera_roles = _build_camera_roles(args.camera, device_map)
-    caps = open_cameras(args.camera)
+    caps = open_cameras(args.camera, camera_roles, device_map)
     if not caps:
         print("No cameras opened, aborting.")
         return
