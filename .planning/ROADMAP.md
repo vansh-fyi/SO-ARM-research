@@ -427,12 +427,12 @@ Plans:
   2. A live re-verification episode's saved `camera_overhead/*.png` frames are visually confirmed by a human to show the robot workspace, not the laptop webcam
   3. The bridge logs a hash/thumbnail of the frame it actually sent to Colab per step, with an explicit disclosure that this is client-side-only provenance, not proof of what Colab received/used
 
-**Plans**: 4 plans
+**Plans**: 1/4 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 13-01-PLAN.md — Shared name-first/index-fallback camera identifier resolver + wrist_name field in detect_devices.py (CAMFIX-01)
+- [x] 13-01-PLAN.md — Shared name-first/index-fallback camera identifier resolver + wrist_name field in detect_devices.py (CAMFIX-01)
 - [ ] 13-02-PLAN.md — sha256 client-side frame provenance hash in IOLogger (CAMFIX-03)
 
 **Wave 2** *(blocked on 13-01)*
@@ -548,7 +548,7 @@ Plans:
 | 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
 | 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
-| 13. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
+| 13. Safety-Validator Cap Re-Tightening | 1/4 | In Progress|  |
 | 14. Camera Device Resolution Unification | 0/TBD | Not started | - |
 | 15. VLA-Style Pipeline & Backends | 0/TBD | Not started | - |
 | 16. MLLM-Style Pipeline & Backends | 0/TBD | Not started | - |
