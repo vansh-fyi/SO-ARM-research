@@ -554,10 +554,16 @@ def main():
             detect_devices.resolve_camera_identifier("wrist", device_map)
             if args.server_address else device_map["cameras"]["wrist"]
         )
-        args.camera = [wrist, device_map["cameras"]["stereo_overhead"]]
+        # The bridge records overhead through its shared stereo instance.
+        # A stale overhead index can equal the newly resolved wrist index;
+        # including both would overwrite the wrist's positional semantic label.
+        args.camera = (
+            [wrist] if args.server_address
+            else [wrist, device_map["cameras"]["stereo_overhead"]]
+        )
         print(
             f"Using cameras from device_map.json (name-resolved for live bridge): wrist={args.camera[0]}, "
-            f"stereo_overhead={args.camera[1]}"
+            f"stereo_overhead fallback={device_map['cameras']['stereo_overhead']}"
         )
 
     if args.stereo_camera_index is None:
