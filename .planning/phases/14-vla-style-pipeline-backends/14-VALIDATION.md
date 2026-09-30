@@ -1,9 +1,9 @@
 ---
 phase: 14
 slug: vla-style-pipeline-backends
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: approved
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-10-01
 ---
 
@@ -51,10 +51,14 @@ created: 2026-10-01
 
 ## Wave 0 Requirements
 
-- [ ] `control/test_backend_adapters.py` — covers VLAB-06/07/08/09/11 (Tier C resident-adapter health/response-shape tests), modeled directly on `control/test_depth_pipeline.py`'s existing FastFS-adapter test pattern
-- [ ] `control/test_gemini_action_source.py` — covers VLAB-01/02, mocked `google-genai` HTTP responses
-- [ ] Shared `backends/` registry test — one parametrized test asserting every entry in `BACKEND_REGISTRY` satisfies the `ActionSource` Protocol (`get_action(joint_state, instruction) -> (action, model_version)`), preventing a future backend from silently breaking PIPE-01's structural guarantee
-- [ ] Framework install: none — pytest already present and in active use; no new test framework needed
+**Updated 2026-10-01 to match the finalized plans (14-01..14-15) — each plan embeds its own `<automated>` pytest command inline, so these are already covered per-task, not a separate pre-pass.**
+
+- [x] `control/test_backend_openvla_oft.py`, `control/test_backend_openvla.py`, `control/test_backend_octo.py`, `control/test_backend_rdt1b.py`, `control/test_backend_groot_n15.py` — covers Tier C resident-adapter tests (14-03, 14-09, 14-10, 14-11, 14-12), modeled on `control/test_depth_pipeline.py`'s FastFS-adapter pattern
+- [x] `control/test_backend_pi0.py`, `control/test_backend_act.py`, `control/test_backend_diffusion_policy.py`, `control/test_backend_groot_n17.py`, `control/test_backend_wallx.py` — covers Tier A/B gRPC-bridge tests (14-04..14-08)
+- [x] `control/test_base_gemini.py`, `control/test_backend_gemini_robotics.py`, `control/test_backend_gemini_robotics_2.py` — covers VLAB-01/02 (14-13, 14-14, 14-15), mocked `google-genai` HTTP responses
+- [x] `control/test_eef_to_joint.py` — IK conversion module tests (14-03), reused by EEF-delta backends
+- [x] `control/test_backend_registry.py` — parametrized test asserting every `BACKEND_REGISTRY` entry satisfies the `ActionSource` Protocol (14-01/14-02), preventing a future backend from silently breaking PIPE-01's structural guarantee
+- [x] Framework install: none — pytest already present and in active use; no new test framework needed
 
 ---
 
@@ -70,11 +74,11 @@ created: 2026-10-01
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 90s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies — confirmed by gsd-plan-checker (2026-10-01): every plan task embeds its own inline pytest verify command, no `MISSING` forward-references
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify — each plan has exactly 2 tasks, each with its own `<automated>` verify
+- [x] Wave 0 covers all MISSING references — none found
+- [x] No watch-mode flags
+- [x] Feedback latency < 90s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-10-01 (gsd-plan-checker VERIFICATION PASSED, 1 non-blocking doc-drift warning resolved by this update)
