@@ -410,7 +410,7 @@ Plans:
 
 ### Phase 13: Camera Device Resolution Unification
 
-**Goal**: A single shared, name-based camera-resolution helper is used by both the model's inference-input path and the `IOLogger` recording path (one `StereoSplitCamera` instance, not two independent opens), so `camera_overhead` recordings reliably show the robot workspace instead of the laptop webcam, and the bridge logs client-side provenance of what it actually sent to Colab per step.
+**Goal**: As a researcher, I want to use a single shared, name-based camera-resolution helper and one `StereoSplitCamera` instance for the model's inference-input path and the `IOLogger` recording path, with client-side provenance logged for each step sent to Colab, so that I can reliably inspect recordings of the robot workspace instead of the laptop webcam and trace the client's submitted frames.
 **Mode:** mvp
 **Depends on**: Phase 12 (technically independent of Phase 12's control-loop work — touches only camera-opening code — but sequenced directly after it since Phase 17's cap re-tightening has been moved to the end of this milestone; see Phase 17 below)
 **Requirements**: CAMFIX-01, CAMFIX-02, CAMFIX-03
@@ -427,7 +427,7 @@ Plans:
   2. A live re-verification episode's saved `camera_overhead/*.png` frames are visually confirmed by a human to show the robot workspace, not the laptop webcam
   3. The bridge logs a hash/thumbnail of the frame it actually sent to Colab per step, with an explicit disclosure that this is client-side-only provenance, not proof of what Colab received/used
 
-**Plans**: 3/4 plans executed
+**Plans**: 4/4 plans executed; fresh live camera verification pending
 
 Plans:
 **Wave 1**
@@ -438,7 +438,7 @@ Plans:
 **Wave 2** *(blocked on 13-01)*
 
 - [x] 13-03-PLAN.md — Wire the shared resolver into the live --server-address bridge path in run_vla_episode.py; carries the phase's live re-verification human-check (CAMFIX-01, CAMFIX-02)
-- [ ] 13-04-PLAN.md — Route record_episode.py through the shared resolver with AR0144 stereo support for the first time; new test_record_episode.py (CAMFIX-01)
+- [x] 13-04-PLAN.md — Route record_episode.py through the shared resolver with AR0144 stereo support for the first time; new test_record_episode.py (CAMFIX-01)
 
 ### Phase 14: VLA-Style Pipeline & Backends
 
@@ -548,8 +548,8 @@ Plans:
 | 10. Digital-Twin Fidelity | 5/5 | Complete    | 2026-09-19 |
 | 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
-| 13. Safety-Validator Cap Re-Tightening | 3/4 | In Progress|  |
-| 14. Camera Device Resolution Unification | 0/TBD | Not started | - |
-| 15. VLA-Style Pipeline & Backends | 0/TBD | Not started | - |
-| 16. MLLM-Style Pipeline & Backends | 0/TBD | Not started | - |
-| 17. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
+| 13. Camera Device Resolution Unification | 4/4 | Human verification pending | - |
+| 14. VLA-Style Pipeline & Backends | 0/TBD | Not started | - |
+| 15. MLLM-Style Pipeline & Backends | 0/TBD | Not started | - |
+| 16. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
+| 17. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
