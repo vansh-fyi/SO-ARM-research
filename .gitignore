@@ -31,3 +31,5 @@ experiment-design/
 # Fast-FoundationStereo checkpoint, staged locally only for upload into the
 # Colab runtime -- large binary, never runs from this local path.
 control/vla_bridge/weights/
+logs/
+docs/
