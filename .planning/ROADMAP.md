@@ -8,7 +8,7 @@ Milestone v1.1 (Phases 7-9) fixes a UAT-surfaced benchmark flaw from Phase 6 (3 
 
 Milestone v2.0 (Phases 10-11) shifts focus from sim/VLA fine-tuning to real-hardware MLLM manipulation, narrowed 2026-09-17 to two concrete workstreams after a general-MLLM-prompting experiment failed. Phase 10 rebuilds the digital twin (URDF + MuJoCo XML) as a correct 1:1 kinematic match to the real SO-ARM101 — this is sim-side-only work, fixing the CoppeliaSim-exported URDF's floating-gripper bug and the mirrored-gripper-gears bug so any future sim-side verification is trustworthy. Phase 11 connects an open-source HuggingFace-hosted VLA to the *real* physical robot over the already-working `control/` LeRobot USB-serial bridge, builds a harness to capture its full reasoning trace, and records at least one full observed run to inform the go/no-go decision on later milestone phases (deep-reasoning MLLM comparison, raw-autonomy design). **Phases 10 and 11 are independent and parallel-capable, not a sequential chain**: Phase 11's VLA experiment runs entirely on real hardware via `control/`'s existing LeRobot bridge and does not consume Phase 10's sim-twin outputs — the digital-twin fix only matters for future sim-side verification/re-training, not for driving the real robot. They are numbered sequentially here (10 then 11) purely by roadmap convention, not by dependency; either can be planned/executed first, or both in parallel, per user preference.
 
-Milestone v2.1 (Phases 12-17) extends Phase 11's proven VLA-bridge infrastructure rather than replacing it. Phase 12 closes the tick-latency bug diagnosed but deliberately left unfixed in `FINDINGS.md` (the bridge resends a full camera observation to Colab on every control tick even while draining an already-fetched action chunk, yielding only 1/60 real actions in Phase 11's episode), and sweeps two small unrelated tech-debt items along with it. Phase 13 unifies two divergent camera-resolution code paths so recorded footage reliably shows the robot workspace, not the laptop webcam. With that infrastructure trustworthy, Phases 14 and 15 build out two independent, parallel-capable `ActionSource` pipeline patterns and their backends: Phase 14 is VLA-style (native trained action-output — Gemini Robotics, π0/π0.5, Wall-X, ACT, alongside the already-working SmolVLA), Phase 15 is MLLM-style (raw-JSON reasoning prompt, no movement primitives — a free HF-hosted reasoning model, Claude, and GPT). Phase 16 runs all 8 backends on one live Pen Transfer episode each and compares them directly using Yu & Qiu 2026's failure taxonomy — the milestone's core research question. Phase 17 closes the milestone by re-tightening `safety_validator.py`'s soft-margin caps — loosened ~8-10x for Phase 11's one-off test — back toward their conservative defaults, live-verified at each step, and pins the cross-phase `WRIST_ROLL_LIMIT_DEG` constant to its Phase 10 source of truth. Phase 17 is deliberately sequenced LAST, not right after the latency fix: per an explicit user decision (2026-09-24), the loosened soft margins stay in place through the entire 8-backend experiment so they don't clip or discard actions in a way that masks what each model under test is actually doing — particularly relevant for observing genuine MLLM raw-autonomy behavior. Hard limits (absolute joint-range clamping, NaN/inf/malformed rejection, e-stop) are never loosened and stay active unmodified throughout all of Phases 12-17.
+Milestone v2.1 (Phases 12-17) extends Phase 11's proven VLA-bridge infrastructure rather than replacing it. Phase 12 closes the tick-latency bug diagnosed but deliberately left unfixed in `FINDINGS.md` (the bridge resends a full camera observation to Colab on every control tick even while draining an already-fetched action chunk, yielding only 1/60 real actions in Phase 11's episode), and sweeps two small unrelated tech-debt items along with it. Phase 13 unifies two divergent camera-resolution code paths so recorded footage reliably shows the robot workspace, not the laptop webcam. With that infrastructure trustworthy, Phases 14 and 15 build out two independent, parallel-capable `ActionSource` pipeline patterns and their backends: Phase 14 is VLA-style (native trained action-output — Gemini Robotics, Gemini Robotics 2, π0/π0.5, Wall-X, ACT, OpenVLA, OpenVLA-OFT, Octo, RDT-1B, GR00T N1.7, GR00T N1.5, Diffusion Policy, alongside the already-working SmolVLA — expanded from an original 4-backend scope 2026-09-30), Phase 15 is MLLM-style (raw-JSON reasoning prompt, no movement primitives — a free HF-hosted reasoning model, Claude, and GPT). Phase 16 runs all 16 backends on one live Pen Transfer episode each and compares them directly using Yu & Qiu 2026's failure taxonomy — the milestone's core research question. Phase 17 closes the milestone by re-tightening `safety_validator.py`'s soft-margin caps — loosened ~8-10x for Phase 11's one-off test — back toward their conservative defaults, live-verified at each step, and pins the cross-phase `WRIST_ROLL_LIMIT_DEG` constant to its Phase 10 source of truth. Phase 17 is deliberately sequenced LAST, not right after the latency fix: per an explicit user decision (2026-09-24), the loosened soft margins stay in place through the entire multi-backend experiment so they don't clip or discard actions in a way that masks what each model under test is actually doing — particularly relevant for observing genuine MLLM raw-autonomy behavior. Hard limits (absolute joint-range clamping, NaN/inf/malformed rejection, e-stop) are never loosened and stay active unmodified throughout all of Phases 12-17.
 
 ## Phases
 
@@ -36,10 +36,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11: VLA Hardware Connection** - Connect an SO-101-native joint-action VLA (SmolVLA) to the real SO-ARM101 over the existing LeRobot bridge with a safety validator and complete per-step I/O logging, and record at least one full observed run (completed 2026-09-24)
 - [x] **Phase 12: Bridge Tick-Latency Fix** - Fix the observation-resend-per-tick root cause so the bridge only requests fresh inference when the local action queue is empty/near-empty, with real measured latency logging and an in-flight-request guard; sweep 2 small pre-existing tech-debt items alongside it (completed 2026-09-25)
 - [ ] **Phase 13: Camera Device Resolution Unification** - Unify the model's inference-input and `IOLogger` recording camera paths behind one shared, name-based resolution helper, and log client-side frame provenance
-- [ ] **Phase 14: VLA-Style Pipeline & Backends** - Build the shared VLA-style `ActionSource` pattern and onboard 4 new native-action VLA backends (Gemini Robotics, π0/π0.5, Wall-X, ACT) driving the real SO-ARM101
+- [ ] **Phase 14: VLA-Style Pipeline & Backends** - Build the shared VLA-style `ActionSource` pattern and onboard 12 new native-action/imitation-learning backends (Gemini Robotics, Gemini Robotics 2, π0/π0.5, Wall-X, ACT, OpenVLA, OpenVLA-OFT, Octo, RDT-1B, GR00T N1.7, GR00T N1.5, Diffusion Policy) driving the real SO-ARM101
 - [ ] **Phase 15: MLLM-Style Pipeline & Backends** - Build the shared MLLM-style `ActionSource` pattern (prompt construction, schema, reasoning-trace capture) and onboard 3 raw-JSON MLLM backends (HF reasoning model, Claude, GPT) with no movement primitives
-- [ ] **Phase 16: Cross-Backend Pen Transfer Benchmark** - Run all 8 backends on one live Pen Transfer episode each and directly compare them using Yu & Qiu 2026's failure taxonomy
-- [ ] **Phase 17: Safety-Validator Cap Re-Tightening** - Deliberately last (resequenced 2026-09-24 per user decision): incrementally restore `safety_validator.py`'s soft-margin caps toward their conservative defaults now that all 8 backends' episodes are observed, live-verified at each step, and pin `WRIST_ROLL_LIMIT_DEG` to its Phase 10 source of truth. Hard limits (absolute joint clamping, NaN/inf rejection, e-stop) stay active unmodified throughout Phases 12-17 regardless.
+- [ ] **Phase 16: Cross-Backend Pen Transfer Benchmark** - Run all 16 backends on one live Pen Transfer episode each and directly compare them using Yu & Qiu 2026's failure taxonomy
+- [ ] **Phase 17: Safety-Validator Cap Re-Tightening** - Deliberately last (resequenced 2026-09-24 per user decision): incrementally restore `safety_validator.py`'s soft-margin caps toward their conservative defaults now that all 16 backends' episodes are observed, live-verified at each step, and pin `WRIST_ROLL_LIMIT_DEG` to its Phase 10 source of truth. Hard limits (absolute joint clamping, NaN/inf rejection, e-stop) stay active unmodified throughout Phases 12-17 regardless.
 
 ## Phase Details
 
@@ -442,23 +442,24 @@ Plans:
 
 ### Phase 14: VLA-Style Pipeline & Backends
 
-**Goal**: A consistent VLA-style `ActionSource` pattern exists that the already-working SmolVLA integration fits without modification, and four new native-action VLA backends — Gemini Robotics, π0/π0.5, Wall-X, and ACT — each drive the real SO-ARM101 through it, reusing the shared control loop, safety validator, and I/O logger unchanged.
+**Goal**: A consistent VLA-style `ActionSource` pattern exists that the already-working SmolVLA integration fits without modification, and twelve new native-action/imitation-learning backends — Gemini Robotics, Gemini Robotics 2, π0/π0.5, Wall-X, ACT, OpenVLA, OpenVLA-OFT, Octo, RDT-1B, GR00T N1.7, GR00T N1.5, and Diffusion Policy — each drive the real SO-ARM101 through it, reusing the shared control loop, safety validator, and I/O logger unchanged.
 **Mode:** mvp
 **Depends on**: Phase 13 (needs the corrected camera pipeline as trustworthy infrastructure before onboarding new backends; safety-cap re-tightening is deliberately deferred to Phase 17/last, not a prerequisite here)
-**Requirements**: PIPE-01, VLAB-01, VLAB-02, VLAB-03, VLAB-04
+**Requirements**: PIPE-01, VLAB-01, VLAB-02, VLAB-03, VLAB-04, VLAB-05, VLAB-06, VLAB-07, VLAB-08, VLAB-09, VLAB-10, VLAB-11, VLAB-12
 **Context/Notes**:
 
-- Phase 11 already proved the `ActionSource` Protocol seam by swapping `ScriptedActionSource` → `BridgeActionSource` with zero control-loop changes; this phase applies the same pattern to 4 more backends, not new infrastructure.
-- Each backend integration is independently live-hardware-verifiable (at least one observed action per backend) — do not batch all 4 behind a single end-to-end test; verify incrementally as each lands.
+- **Scope expanded 2026-09-30** (user decision during `/gsd-discuss-phase 14`) from the original 4 backends (Gemini Robotics, π0/π0.5, Wall-X, ACT) to 12, adding Gemini Robotics 2, OpenVLA, OpenVLA-OFT, Octo, RDT-1B, GR00T N1.7, and GR00T N1.5, plus reclassifying Diffusion Policy (non-VLA imitation-learning baseline) into this phase's backend set. OpenVLA-OFT has prior project familiarity from v1 sim work (Phases 1/6).
+- Phase 11 already proved the `ActionSource` Protocol seam by swapping `ScriptedActionSource` → `BridgeActionSource` with zero control-loop changes; this phase applies the same pattern to 12 more backends, not new infrastructure.
+- Each backend integration is independently live-hardware-verifiable (at least one observed action per backend) — do not batch backends behind a single end-to-end test; verify incrementally as each lands.
 - No backend-specific safety or logging code paths — every new backend must flow through the unmodified `safety_validator.py`/`io_logger.py`/`action_contract.py` trio, same as SmolVLA.
 - Parallel-capable with Phase 15 (independent pipeline pattern, different backend set) once Phase 13 lands.
 
 **Success Criteria** (what must be TRUE):
 
   1. The VLA-style `ActionSource` pattern exists and the existing SmolVLA integration fits it with no control-loop/safety/logging changes required
-  2. Gemini Robotics, π0/π0.5, Wall-X, and ACT each drive the real SO-ARM101 through this pattern for at least one live observed action per backend
-  3. All four new backends reuse `safety_validator.py` and `io_logger.py` unchanged — no backend-specific safety or logging code paths
-  4. Switching between any of the 5 VLA-style backends (SmolVLA + 4 new) requires no changes to `run_vla_episode.py`'s shared control loop
+  2. Gemini Robotics, Gemini Robotics 2, π0/π0.5, Wall-X, ACT, OpenVLA, OpenVLA-OFT, Octo, RDT-1B, GR00T N1.7, GR00T N1.5, and Diffusion Policy each drive the real SO-ARM101 through this pattern for at least one live observed action per backend
+  3. All twelve new backends reuse `safety_validator.py` and `io_logger.py` unchanged — no backend-specific safety or logging code paths
+  4. Switching between any of the 13 VLA-style backends (SmolVLA + 12 new) requires no changes to `run_vla_episode.py`'s shared control loop
 
 **Plans**: TBD
 
@@ -488,7 +489,7 @@ Plans:
 
 ### Phase 16: Cross-Backend Pen Transfer Benchmark
 
-**Goal**: All 8 action-source backends (SmolVLA baseline + Gemini Robotics + π0/π0.5 + Wall-X + ACT + HF reasoning model + Claude + GPT) are run on one live Pen Transfer episode each and directly compared, closing the milestone's core research question of how a general reasoning model performs as a raw-autonomy controller relative to trained VLA policies.
+**Goal**: All 16 action-source backends (SmolVLA baseline + Gemini Robotics + Gemini Robotics 2 + π0/π0.5 + Wall-X + ACT + OpenVLA + OpenVLA-OFT + Octo + RDT-1B + GR00T N1.7 + GR00T N1.5 + Diffusion Policy + HF reasoning model + Claude + GPT) are run on one live Pen Transfer episode each and directly compared, closing the milestone's core research question of how a general reasoning model performs as a raw-autonomy controller relative to trained VLA policies.
 **Mode:** mvp
 **Depends on**: Phase 14 and Phase 15 (needs both pipeline patterns' backends built and live-verified)
 **Requirements**: EVAL-01, EVAL-02
@@ -500,15 +501,15 @@ Plans:
 
 **Success Criteria** (what must be TRUE):
 
-  1. One live Pen Transfer episode is run and recorded end-to-end (I/O log + camera footage + termination reason) for each of the 8 backends
-  2. All 8 episodes are directly compared, human-judged, using Yu & Qiu 2026's 4-category failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) where applicable
+  1. One live Pen Transfer episode is run and recorded end-to-end (I/O log + camera footage + termination reason) for each of the 16 backends
+  2. All 16 episodes are directly compared, human-judged, using Yu & Qiu 2026's 4-category failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) where applicable
   3. A written comparison summarizes relative performance and failure modes across VLA-style vs. MLLM-style backends, informing any future milestone's scope decisions
 
 **Plans**: TBD
 
 ### Phase 17: Safety-Validator Cap Re-Tightening
 
-**Goal**: `safety_validator.py`'s soft-margin caps (`MAX_RELATIVE_TARGET_DEG`, `MAX_VELOCITY_DEG_PER_S`, `STALE_OBSERVATION_S`, `STALE_ACTION_S`), loosened ~8-10x for Phase 11's one-off live test, are incrementally restored toward their original conservative defaults now that all 8 backends' Pen Transfer episodes have been observed — deliberately sequenced last, not right after the latency fix, so the loosened margins don't clip or discard real actions during the experiment phases and mask what each model actually does. The cross-phase `WRIST_ROLL_LIMIT_DEG` constant is pinned to its Phase 10 source of truth in the same phase.
+**Goal**: `safety_validator.py`'s soft-margin caps (`MAX_RELATIVE_TARGET_DEG`, `MAX_VELOCITY_DEG_PER_S`, `STALE_OBSERVATION_S`, `STALE_ACTION_S`), loosened ~8-10x for Phase 11's one-off live test, are incrementally restored toward their original conservative defaults now that all 16 backends' Pen Transfer episodes have been observed — deliberately sequenced last, not right after the latency fix, so the loosened margins don't clip or discard real actions during the experiment phases and mask what each model actually does. The cross-phase `WRIST_ROLL_LIMIT_DEG` constant is pinned to its Phase 10 source of truth in the same phase.
 **Mode:** mvp
 **Depends on**: Phase 16 (deliberately last — resequenced 2026-09-24 per explicit user decision: keep soft margins loose through the entire 8-backend experiment so they don't interfere with observing genuine model behavior, then tighten once results are in)
 **Requirements**: SAFETY-01, DEBT-01

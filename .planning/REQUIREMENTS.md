@@ -174,10 +174,20 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 
 ### VLA Backends (native action-output, paper-matched)
 
+**Scope expanded 2026-09-30** (user decision during `/gsd-discuss-phase 14`) from 4 to 12 backends — see `14-CONTEXT.md` and `ROADMAP.md` Phase 14 Context/Notes.
+
 - [ ] **VLAB-01**: Gemini Robotics is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
-- [ ] **VLAB-02**: π0/π0.5 is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
-- [ ] **VLAB-03**: Wall-X is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
-- [ ] **VLAB-04**: ACT is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-02**: Gemini Robotics 2 is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-03**: π0/π0.5 is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-04**: Wall-X is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-05**: ACT is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-06**: OpenVLA is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-07**: OpenVLA-OFT is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-08**: Octo is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-09**: RDT-1B is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-10**: GR00T N1.7 is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-11**: GR00T N1.5 is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
+- [ ] **VLAB-12**: Diffusion Policy is integrated as a VLA-style `ActionSource` backend driving the real SO-ARM101
 
 ### MLLM Backends (raw-JSON reasoning prompt, no movement primitives)
 
@@ -191,8 +201,8 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 
 ### Cross-Backend Benchmark
 
-- [ ] **EVAL-01**: One live Pen Transfer episode is run and recorded end-to-end (I/O log + camera footage + termination reason) for each of the 8 backends (SmolVLA baseline + Gemini Robotics + π0/π0.5 + Wall-X + ACT + HF reasoning model + Claude + GPT)
-- [ ] **EVAL-02**: All 8 episodes are directly compared, human-judged, using Yu & Qiu 2026's 4-category failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) where applicable
+- [ ] **EVAL-01**: One live Pen Transfer episode is run and recorded end-to-end (I/O log + camera footage + termination reason) for each of the 16 backends (SmolVLA baseline + Gemini Robotics + Gemini Robotics 2 + π0/π0.5 + Wall-X + ACT + OpenVLA + OpenVLA-OFT + Octo + RDT-1B + GR00T N1.7 + GR00T N1.5 + Diffusion Policy + HF reasoning model + Claude + GPT)
+- [ ] **EVAL-02**: All 16 episodes are directly compared, human-judged, using Yu & Qiu 2026's 4-category failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) where applicable
 
 ### Tech Debt (from v2.0 audit)
 
@@ -292,6 +302,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VLAB-02 | Phase 14 | Pending |
 | VLAB-03 | Phase 14 | Pending |
 | VLAB-04 | Phase 14 | Pending |
+| VLAB-05 | Phase 14 | Pending |
+| VLAB-06 | Phase 14 | Pending |
+| VLAB-07 | Phase 14 | Pending |
+| VLAB-08 | Phase 14 | Pending |
+| VLAB-09 | Phase 14 | Pending |
+| VLAB-10 | Phase 14 | Pending |
+| VLAB-11 | Phase 14 | Pending |
+| VLAB-12 | Phase 14 | Pending |
 | PIPE-02 | Phase 15 | Pending |
 | MLLM-01 | Phase 15 | Pending |
 | MLLM-02 | Phase 15 | Pending |
@@ -308,11 +326,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 - v1 requirements: 24 total
 - v1.1 requirements: 13 total (paused, unmapped to active phases pending resume)
 - v2.0 requirements: 12 total (TWIN ×7, VLAHW ×5)
-- v2.1 requirements: 29 total (LATENCY ×4, DEPTH-CAL ×3, SAFETY ×1, CAMFIX ×3, PIPE ×2, VLA ×4, MLLM ×7, EVAL ×2, DEBT ×3)
-- Mapped to phases: 24 (v1) + 13 (v1.1) + 12 (v2.0) + 29 (v2.1) = 78
+- v2.1 requirements: 37 total (LATENCY ×4, DEPTH-CAL ×3, SAFETY ×1, CAMFIX ×3, PIPE ×2, VLAB ×12, MLLM ×7, EVAL ×2, DEBT ×3)
+- Mapped to phases: 24 (v1) + 13 (v1.1) + 12 (v2.0) + 37 (v2.1) = 86
 - Unmapped: 0 (v1) ✓ / 0 (v1.1) ✓ / 0 (v2.0) ✓ / 0 (v2.1) ✓
 
 ---
 *Requirements defined: 2026-07-07*
 *Last updated: 2026-09-24 — mapped v2.1 requirements (26 total) to Phases 12-17 via roadmap creation: LATENCY-01..04 + DEBT-02/03 → Phase 12 (Bridge Tick-Latency Fix); CAMFIX-01..03 → Phase 13 (Camera Device Resolution Unification); PIPE-01 + VLAB-01..04 → Phase 14 (VLA-Style Pipeline & Backends); PIPE-02 + MLLM-01..07 → Phase 15 (MLLM-Style Pipeline & Backends); EVAL-01..02 → Phase 16 (Cross-Backend Pen Transfer Benchmark); SAFETY-01 + DEBT-01 → Phase 17 (Safety-Validator Cap Re-Tightening). Phases 12-13 form a chain; Phases 14 and 15 are independent/parallel-capable (different pipeline patterns); Phase 16 depends on both. Phase 17 is deliberately sequenced LAST (resequenced 2026-09-24 per user decision) so loosened soft-margin safety caps stay in place through the whole experiment rather than being re-tightened before it. The v2.1 VLA Backends requirements were renamed VLA-01..04 → VLAB-01..04 to remove a collision with v1's pre-existing VLA-01..04 (VLA Inference Pipeline, Phase 3).*
 *Addendum 2026-09-26: added DEPTH-CAL-01..03 (3 new) to Phase 12 — a user-requested stereo-depth-calibration extension raised directly in conversation during Phase 12 gap-closure plan-phase, not from the original bridge-latency scoping. See `12-UAT.md`'s 4th Gaps entry and `12-CONTEXT.md` D-07/D-08/D-09. v2.1 total revised 26 → 29.*
+*Addendum 2026-09-30: expanded VLAB-01..04 → VLAB-01..12 (8 new) during `/gsd-discuss-phase 14` — user decision to broaden Phase 14's backend set from the original 4 (Gemini Robotics, π0/π0.5, Wall-X, ACT) to 12, adding Gemini Robotics 2, OpenVLA, OpenVLA-OFT, Octo, RDT-1B, GR00T N1.7, GR00T N1.5, and Diffusion Policy. EVAL-01/02 (Phase 16) updated from "8 backends" to "16 backends" to match. See `14-CONTEXT.md`. v2.1 total revised 29 → 37.*
