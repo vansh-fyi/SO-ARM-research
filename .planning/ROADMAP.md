@@ -462,7 +462,40 @@ Plans:
   3. All twelve new backends reuse `safety_validator.py` and `io_logger.py` unchanged — no backend-specific safety or logging code paths
   4. Switching between any of the 13 VLA-style backends (SmolVLA + 12 new) requires no changes to `run_vla_episode.py`'s shared control loop
 
-**Plans**: TBD
+**Plans**: 15 plans
+Plans:
+**Wave 1**
+
+- [ ] 14-01-PLAN.md — Backend registry foundation: auto-discovering BACKEND_REGISTRY, BackendHandles, connect_bridge() policy_type param, HttpAdapterActionSource (PIPE-01)
+
+**Wave 2** *(blocked on 14-01)*
+
+- [ ] 14-02-PLAN.md — SmolVLA + scripted registered via registry; --backend CLI flag + dispatch; conformance test (PIPE-01)
+
+**Wave 3** *(blocked on 14-02)*
+
+- [ ] 14-03-PLAN.md — OpenVLA-OFT first per D-05: eef_to_joint.py IK helper + Colab adapter server + client backend, live-verified (VLAB-07)
+
+**Wave 4** *(blocked on 14-03 — 9 backends, zero files_modified overlap, run fully in parallel)*
+
+- [ ] 14-04-PLAN.md — π0/π0.5, Tier A (VLAB-03)
+- [ ] 14-05-PLAN.md — ACT, Tier A (VLAB-05)
+- [ ] 14-06-PLAN.md — Diffusion Policy, Tier A (VLAB-12)
+- [ ] 14-07-PLAN.md — GR00T N1.7, Tier B (dispatch-verified + relative-EE conversion) (VLAB-10)
+- [ ] 14-08-PLAN.md — Wall-X, Tier B (dispatch-verified) (VLAB-04)
+- [ ] 14-09-PLAN.md — OpenVLA, Tier C (VLAB-06)
+- [ ] 14-10-PLAN.md — Octo, Tier C (VLAB-08)
+- [ ] 14-11-PLAN.md — RDT-1B, Tier C (A100-class) (VLAB-09)
+- [ ] 14-12-PLAN.md — GR00T N1.5, Tier C (VLAB-11)
+
+**Wave 5** *(blocked on 14-03; sequenced after Wave 4 per D-05's "cloud-API backends last")*
+
+- [ ] 14-13-PLAN.md — Gemini foundation: GeminiActionSourceBase + er_conversion.py against the public Gemini Robotics-ER 2 API per D-02's supersession (VLAB-01, VLAB-02)
+
+**Wave 6** *(blocked on 14-13)*
+
+- [ ] 14-14-PLAN.md — Gemini Robotics, ER-based (VLAB-01)
+- [ ] 14-15-PLAN.md — Gemini Robotics 2, ER-based (VLAB-02)
 
 ### Phase 15: MLLM-Style Pipeline & Backends
 
@@ -551,7 +584,7 @@ Plans:
 | 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
 | 13. Camera Device Resolution Unification | 4/4 | Human verification pending | - |
-| 14. VLA-Style Pipeline & Backends | 0/TBD | Not started | - |
+| 14. VLA-Style Pipeline & Backends | 0/15 | Not started | - |
 | 15. MLLM-Style Pipeline & Backends | 0/TBD | Not started | - |
 | 16. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
 | 17. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
