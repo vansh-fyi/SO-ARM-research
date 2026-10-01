@@ -751,3 +751,157 @@ def test_build_with_the_170m_alternate(monkeypatch):
     rdt1b.build(_args(server_address="http://h:3005", checkpoint=SMALL_CKPT), {0: "wrist"}, {})
     assert seen["checkpoint"] == SMALL_CKPT
     assert seen["convert_fn"](JOINT_RAW, JOINT_STATE) == pytest.approx(JOINT_EXPECTED)
+
+
+# --- Task 2: mocked full round trip (regression) ------------------------------
+
+
+def _route_requests_to(app, monkeypatch):
+    """Send the client's `requests.post` straight into the Flask test client."""
+    http = app.test_client()
+    posted = []
+
+    class Routed:
+        def __init__(self, response):
+            self._response = response
+            self.status_code = response.status_code
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise base_http_adapter.requests.HTTPError(f"{self.status_code}")
+
+        def json(self):
+            return self._response.get_json()
+
+    def fake_post(url, json=None, timeout=None):
+        posted.append((url, json))
+        return Routed(http.post("/action", json=json))
+
+    monkeypatch.setattr(base_http_adapter.requests, "post", fake_post)
+    return posted
+
+
+def _source_via_build(monkeypatch, checkpoint=None, limits=None):
+    """Run the real `rdt1b.build()` (robot/camera construction stubbed) and
+    return a real `HttpAdapterActionSource` with the convert_fn it wired."""
+    from test_backend_registry import FakeStereo, FakeWristCap
+
+    seen = _capture_build(monkeypatch)
+    rdt1b.build(_args(server_address="https://abc.ngrok-free.app", checkpoint=checkpoint), {0: "wrist"},
+                limits or {})
+    return base_http_adapter.HttpAdapterActionSource(
+        seen["endpoint_url"], seen["checkpoint"], FakeWristCap(), FakeStereo(), convert_fn=seen["convert_fn"])
+
+
+LIMITS = {j: (-180.0, 180.0) for j in JOINT_ORDER[:5]} | {"gripper": (0.0, 100.0)}
+
+
+def test_round_trip_default_joint_position_into_a_validated_action(fake_policy, monkeypatch):
+    """Real create_app() -> real HttpAdapterActionSource with build()'s
+    joint_position convert_fn -> real safety_validator.validate_action()."""
+    from vla_bridge import safety_validator
+
+    monkeypatch.setattr(eef_to_joint, "solve_ik", lambda *a, **k: pytest.fail("joint space must not run IK"))
+    model = RDT1BModel(local_dir="/ckpt")
+    posted = _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, limits=LIMITS)
+    action, model_version = source.get_action(JOINT_STATE, "pick up the cube")
+
+    assert [url for url, _ in posted] == ["https://abc.ngrok-free.app/action"]
+    assert posted[0][1]["joint_state"] == JOINT_STATE
+    assert set(posted[0][1]["images"]) == {"wrist", "overhead_left", "overhead_right"}
+    # The model was conditioned on the rig's state in RDT units (rad, gripper 0-1).
+    assert fake_policy.steps[0]["proprio"] == pytest.approx(
+        [math.radians(JOINT_STATE[j]) for j in JOINT_ORDER[:5]] + [0.37])
+    assert model_version == f"{RDT_CKPT}@{RDT_REV[:12]}"
+    assert source.last_details["bridge_flags"] == []
+    assert source.last_details["raw_model_output"] == pytest.approx(JOINT_RAW, abs=1e-6)
+    assert tuple(action) == JOINT_ORDER
+    assert all(isinstance(v, float) and math.isfinite(v) for v in action.values())
+    assert action == pytest.approx(JOINT_EXPECTED, abs=1e-4)
+
+    validated, _flags = safety_validator.validate_action(action, JOINT_STATE, LIMITS)
+    assert set(validated) == set(JOINT_ORDER)
+    assert all(math.isfinite(v) for v in validated.values())
+    assert any(validated[j] != JOINT_STATE[j] for j in JOINT_ORDER)  # a real, non-held action
+
+
+def test_round_trip_170m_alternate(fake_policy, monkeypatch):
+    from vla_bridge import safety_validator
+
+    model = RDT1BModel(SMALL_CKPT, local_dir="/ckpt")
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, checkpoint=SMALL_CKPT, limits=LIMITS)
+    action, model_version = source.get_action(JOINT_STATE, "pick up the cube")
+    assert model_version == f"{SMALL_CKPT}@{SMALL_REV[:12]}"
+    assert action == pytest.approx(JOINT_EXPECTED, abs=1e-4)
+    validated, _flags = safety_validator.validate_action(action, JOINT_STATE, LIMITS)
+    assert all(math.isfinite(v) for v in validated.values())
+
+
+def test_round_trip_consecutive_steps_fill_the_two_frame_history(fake_policy, monkeypatch):
+    model = RDT1BModel(local_dir="/ckpt")
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, limits=LIMITS)
+    for _ in range(3):
+        source.get_action(JOINT_STATE, "pick up the cube")
+    previous_present = [step["images"][0] is not None for step in fake_policy.steps]
+    assert previous_present == [False, True, True]
+    assert all(step["images"][2] is None and step["images"][5] is None for step in fake_policy.steps)
+
+
+def test_round_trip_client_rate_picks_the_returned_chunk_step(fake_policy, monkeypatch):
+    chunk = np.zeros((1, 64, 6), dtype=np.float32)
+    chunk[0, :, 0] = np.radians(np.arange(64))  # shoulder_pan target = chunk index in degrees
+    fake_policy.chunk = chunk
+    model = RDT1BModel(local_dir="/ckpt", client_control_hz=30.0)
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, limits=LIMITS)
+    action, _ = source.get_action(JOINT_STATE, "pick up the cube")
+    assert action["shoulder_pan"] == pytest.approx(0.0, abs=1e-4)  # 30 Hz loop -> step 0
+    assert model.metadata["chunk_step"] == 0
+
+
+def test_round_trip_eef_pose_fallback_runs_real_ik_into_a_validated_action(monkeypatch, no_config):
+    """The fallback branch end to end: an eef_pose profile's absolute pose goes
+    through real ikpy solve_ik() and the real validator."""
+    from vla_bridge import safety_validator
+
+    (no_config / "rdt1b.json").write_text(json.dumps({
+        "checkpoint": "someone/rdt-eef", "endpoint_url": None, "action_space": "eef_pose",
+        "checkpoints": {"someone/rdt-eef": {"action_space": "eef_pose", "gripper_norm_to_percent": [0, 100]}}}))
+    current = eef_to_joint.forward_kinematics(JOINT_STATE)
+    target = [current[0] + 0.01, current[1] - 0.008, current[2] + 0.012]
+    raw = [*target, *_ortho6d(current[3:]), 0.45]
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"action": raw, "model_version": "someone/rdt-eef@abc"}
+
+    monkeypatch.setattr(base_http_adapter.requests, "post", lambda url, json=None, timeout=None: Response())
+    source = _source_via_build(monkeypatch, limits=LIMITS)
+    action, model_version = source.get_action(JOINT_STATE, "pick up the cube")
+
+    assert model_version == "someone/rdt-eef@abc" and source.last_details["bridge_flags"] == []
+    assert tuple(action) == JOINT_ORDER
+    assert action["gripper"] == pytest.approx(45.0)
+    after = eef_to_joint.forward_kinematics(action)
+    assert list(after[:3]) == pytest.approx(target, abs=3e-3)  # IK reached the absolute pose
+    validated, _flags = safety_validator.validate_action(action, JOINT_STATE, LIMITS)
+    assert all(math.isfinite(v) for v in validated.values())
+    assert any(validated[j] != JOINT_STATE[j] for j in JOINT_ORDER)
+
+
+def test_round_trip_holds_position_when_the_model_fails(fake_policy, monkeypatch):
+    fake_policy.chunk = np.full((1, 64, 6), np.nan)
+    model = RDT1BModel(local_dir="/ckpt")
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch)
+    action, model_version = source.get_action(JOINT_STATE, "x")
+    assert action == JOINT_STATE
+    assert model_version == f"{RDT_CKPT}@http-error-holding-position"
