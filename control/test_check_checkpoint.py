@@ -90,3 +90,39 @@ def test_render_section_has_one_row_per_candidate_and_escapes_pipes():
     assert len(table_rows) == 2
     assert "x \\| y" in section
     assert "fetch failed: boom" in section
+
+
+# --- ACT (Plan 14-05): no missing-camera masking --------------------------------------
+#
+# Installed lerobot 0.6.1 `ACTPolicy.predict_action_chunk()` builds
+# `[batch[key] for key in self.config.image_features]`, so unlike pi0/pi05/SmolVLA
+# a declared camera that the bridge never delivers is a KeyError, not a masked
+# empty camera. For ACT the bridge fit is OK only when camera1 is the ONLY image key.
+
+
+def test_candidate_groups_add_act():
+    assert cc.CANDIDATE_GROUPS["act"]
+    assert "act" in cc.SECTION_TITLES
+    assert "act" in cc.NO_CAMERA_MASKING_BACKENDS
+    assert "pi0" not in cc.NO_CAMERA_MASKING_BACKENDS
+
+
+@pytest.mark.parametrize(
+    "image_keys, expected_prefix",
+    [
+        (["observation.images.camera1"], "OK"),
+        (["observation.images.camera1", "observation.images.camera2"], "INCOMPATIBLE"),
+        (["observation.images.front"], "INCOMPATIBLE"),
+        ([], "UNKNOWN"),
+    ],
+)
+def test_bridge_key_fit_without_camera_masking_requires_camera1_only(image_keys, expected_prefix):
+    assert cc._bridge_key_fit(image_keys, masks_missing_cameras=False).startswith(expected_prefix)
+
+
+def test_bridge_key_fit_without_masking_names_the_undelivered_keys():
+    fit = cc._bridge_key_fit(
+        ["observation.images.camera1", "observation.images.camera2"], masks_missing_cameras=False
+    )
+    assert "observation.images.camera2" in fit
+    assert "KeyError" in fit
