@@ -33,3 +33,37 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
   - Better-trained 2-camera SO-101 ACT checkpoints, such as `Alkatt/ACT_so101_CubePickPlace_v2` (`camera1` + `camera2`, exact `JOINT_ORDER .pos` dataset), become usable only once the follow-up above registers the declared camera keys.
   - `check_checkpoint.py` encodes the stricter rule as `NO_CAMERA_MASKING_BACKENDS`.
 - **For 14-06:** Diffusion Policy is likely the same. Unverified: read `DiffusionPolicy`'s image stacking in the installed source, and add `"diffusion"` to `NO_CAMERA_MASKING_BACKENDS` if it doesn't mask missing cameras.
+
+## From 14-06 (Diffusion Policy)
+
+### Diffusion Policy is confirmed non-masking, and no camera1-only Diffusion checkpoint exists
+
+- **Not fixed here; recorded for the bridge follow-up above.**
+- **Confirmed in installed `lerobot==0.6.1`:**
+  - `DiffusionPolicy.predict_action_chunk()` and `select_action()` stack
+    `[batch[key] for key in self.config.image_features]`, with no masking.
+  - `test_diffusion_policy_server.py::test_patched_diffusion_still_does_not_mask_a_missing_camera`
+    reproduces the KeyError.
+  - `check_checkpoint.NO_CAMERA_MASKING_BACKENDS` is now `{"act", "diffusion"}`.
+- **Impact on 14-06:**
+  - Of 415 lerobot `type: diffusion` configs on the HF Hub, none declares `camera1` as its only
+    image key. So `backend_configs/diffusion_policy.json` ships no default `checkpoint`.
+  - **`--backend diffusion` cannot drive the robot with any public checkpoint until the follow-up
+    lands.** It is wired and tested client-side.
+- **What the follow-up would unlock:**
+  - `hrl7/so101-touch-diffusion-l4` (`camera1`+`camera2`): needs the declared keys registered.
+  - Better-trained wrist-only checkpoints, `helloworld26/diffusion_so101_pick_place` and
+    `edouardfoussier/diffusion_so101_pick_tennis_ball_wrist`. Both have verified `JOINT_ORDER .pos`
+    datasets and 100k steps. They need our wrist frame sent under the key `wrist`. The server's
+    `rename_map` can't do this, because `prepare_raw_observation()` indexes
+    `policy_image_features[key]` before the rename step. The client-side camera key
+    (`connect_bridge()`'s hardcoded `"camera1"`) has to change.
+
+### Upstream lerobot#3861: the stock PolicyServer cannot run Diffusion Policy (worked around, not fixed upstream)
+
+- **Workaround shipped in 14-06:** `control/vla_bridge/diffusion_policy_server.py`, a Colab
+  launcher applying open PR huggingface/lerobot#3886.
+- **Remove the launcher once a lerobot release includes PR #3886.**
+  `test_diffusion_policy_server.py::test_stock_policy_server_cannot_run_diffusion` will start
+  failing on that upgrade, which is the signal.
+- **Version guard:** the launcher refuses any lerobot other than 0.6.1.
