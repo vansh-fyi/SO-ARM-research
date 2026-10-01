@@ -11,6 +11,7 @@ network -- every external seam is a monkeypatched double.
 """
 
 import base64
+import inspect
 import json
 import pkgutil
 import threading
@@ -447,7 +448,7 @@ def test_build_grpc_action_source_forwards_policy_type_and_wraps_bridge_source(m
     calls = {}
     fake_stereo = object()
     fake_robot = object()
-    fake_client = SimpleNamespace(robot=fake_robot, _stereo_camera=fake_stereo)
+    fake_client = SimpleNamespace(robot=fake_robot, _stereo_camera=fake_stereo, stop=lambda: None)
 
     def fake_connect_bridge(server_address, checkpoint, **kwargs):
         calls.update(server_address=server_address, checkpoint=checkpoint, **kwargs)
@@ -479,6 +480,9 @@ def test_build_grpc_action_source_forwards_policy_type_and_wraps_bridge_source(m
     assert handles.robot is fake_robot
     assert handles.stereo_camera is fake_stereo
     assert handles.skip_camera_names == frozenset({"overhead"})
+    # Plan 14-02: RobotClient.stop() (disconnect + channel close) replaces a
+    # bare robot.disconnect() at episode end.
+    assert handles.shutdown is fake_client.stop
 
 
 # --- base_http_adapter.build_http_adapter_backend() -----------------------------
@@ -669,3 +673,36 @@ def test_shipped_smolvla_config_names_the_production_checkpoint():
     assert backends.load_backend_config("smolvla") == {
         "checkpoint": "victorvanhalst/smolvla_so101_cube"
     }
+
+
+# --- Conformance (PIPE-01): durable as the registry grows ----------------------
+
+
+def test_registry_contains_the_baseline_backends():
+    assert {"scripted", "smolvla"}.issubset(backends.get_backend_names())
+    assert "smolvla" in backends.GRPC_BRIDGE_BACKENDS
+    assert "scripted" not in backends.GRPC_BRIDGE_BACKENDS
+
+
+def _action_source_bases():
+    from vla_bridge.backends.scripted import ScriptedActionSource
+
+    # Every backend from Wave 3 onward is built on one of these shared bases,
+    # so checking the bases covers the whole registry -- no per-backend
+    # conformance test is needed. Plan 14-13 (Gemini foundation) MUST add its
+    # GeminiActionSourceBase here when it lands.
+    return [
+        robot_client.BridgeActionSource,
+        HttpAdapterActionSource,
+        ScriptedActionSource,
+    ]
+
+
+@pytest.mark.parametrize("cls", _action_source_bases(), ids=lambda cls: cls.__name__)
+def test_action_source_bases_match_the_action_source_protocol_signature(cls):
+    import run_vla_episode
+
+    expected = ["self", "joint_state", "instruction"]
+    protocol_params = list(inspect.signature(run_vla_episode.ActionSource.get_action).parameters)
+    assert protocol_params == expected
+    assert list(inspect.signature(cls.get_action).parameters) == expected

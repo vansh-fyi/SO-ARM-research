@@ -20,6 +20,7 @@ from run_vla_episode import (
 )
 from vla_bridge import action_contract
 from vla_bridge import backends as vla_backends
+from vla_bridge import robot_client
 from vla_bridge.backends import BackendHandles
 from vla_bridge.io_logger import IOLogger
 
@@ -72,8 +73,8 @@ def _run_resolved_bridge_main(monkeypatch, tmp_path, resolver, cli_args=()):
         calls["recording_caps"] = args[1]
         calls["recording_stereo"] = kwargs["stereo_camera"]
 
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", connect)
-    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a: None)
+    monkeypatch.setattr(robot_client, "connect_bridge", connect)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", episode)
     monkeypatch.setattr("sys.argv", [
         "run_vla_episode.py", "/dev/fake", "fake_robot", "--out", str(tmp_path),
@@ -359,6 +360,7 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
         policy_device="cuda",
         stereo_camera_index=1,
         wrist_camera_index=None,
+        policy_type="smolvla",
     ):
         calls["connect_bridge_args"] = (server_address, checkpoint, task, policy_device)
         calls["stereo_camera_index"] = stereo_camera_index
@@ -388,8 +390,8 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
         calls["action_source_type"] = type(action_source).__name__
 
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
-    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", FakeBridgeActionSource)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", FakeBridgeActionSource)
     monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
     monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
@@ -450,13 +452,14 @@ def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch,
         policy_device="cuda",
         stereo_camera_index=1,
         wrist_camera_index=None,
+        policy_type="smolvla",
     ):
         calls["stereo_camera_index"] = stereo_camera_index
         return fake_client
 
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
-    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
     monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
@@ -514,13 +517,14 @@ def test_wrist_camera_index_threads_through_from_camera_names(monkeypatch, tmp_p
         policy_device="cuda",
         stereo_camera_index=1,
         wrist_camera_index=None,
+        policy_type="smolvla",
     ):
         calls["wrist_camera_index"] = wrist_camera_index
         return fake_client
 
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
-    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
     monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
@@ -559,6 +563,7 @@ def test_bridge_unreachable_writes_termination_reason_without_driving_robot(monk
         policy_device="cuda",
         stereo_camera_index=1,
         wrist_camera_index=None,
+        policy_type="smolvla",
     ):
         return None
 
@@ -566,7 +571,7 @@ def test_bridge_unreachable_writes_termination_reason_without_driving_robot(monk
         calls["run_episode_called"] = True
 
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge_returns_none)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge_returns_none)
     monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
     monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
@@ -655,6 +660,7 @@ def test_device_map_supplies_port_robot_id_camera_defaults_when_cli_args_omitted
         policy_device="cuda",
         stereo_camera_index=1,
         wrist_camera_index=None,
+        policy_type="smolvla",
     ):
         calls["port"] = robot_config.port
         calls["robot_id"] = robot_config.id
@@ -662,8 +668,8 @@ def test_device_map_supplies_port_robot_id_camera_defaults_when_cli_args_omitted
         calls["wrist_camera_index"] = wrist_camera_index
         return fake_client
 
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
-    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
     monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
@@ -729,13 +735,14 @@ def test_device_map_prefers_stereo_overhead_name_over_numeric_index_when_present
         policy_device="cuda",
         stereo_camera_index=1,
         wrist_camera_index=None,
+        policy_type="smolvla",
     ):
         calls["stereo_camera_index"] = stereo_camera_index
         calls["wrist_camera_index"] = wrist_camera_index
         return fake_client
 
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
-    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
     monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
@@ -796,14 +803,15 @@ def test_explicit_cli_args_override_device_map_json(monkeypatch, tmp_path):
         policy_device="cuda",
         stereo_camera_index=1,
         wrist_camera_index=None,
+        policy_type="smolvla",
     ):
         calls["port"] = robot_config.port
         calls["robot_id"] = robot_config.id
         calls["stereo_camera_index"] = stereo_camera_index
         return fake_client
 
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
-    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
     monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
@@ -917,12 +925,13 @@ def test_server_address_never_opens_overhead_camera_index_while_wrist_still_does
         policy_device="cuda",
         stereo_camera_index=1,
         wrist_camera_index=None,
+        policy_type="smolvla",
     ):
         return fake_client
 
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
-    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
     monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", _TrackingCapture)
@@ -1310,6 +1319,7 @@ def test_main_constructs_and_threads_depth_client_when_both_depth_flags_given(mo
         policy_device="cuda",
         stereo_camera_index=1,
         wrist_camera_index=None,
+        policy_type="smolvla",
     ):
         return fake_client
 
@@ -1345,8 +1355,8 @@ def test_main_constructs_and_threads_depth_client_when_both_depth_flags_given(mo
             calls["depth_camera_client_endpoint"] = endpoint_url
 
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
-    monkeypatch.setattr(run_vla_episode, "connect_bridge", fake_connect_bridge)
-    monkeypatch.setattr(run_vla_episode, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
     monkeypatch.setattr(run_vla_episode, "load_calibration", fake_load_calibration)
     monkeypatch.setattr(run_vla_episode, "DepthCameraClient", FakeDepthCameraClient)
@@ -1661,3 +1671,42 @@ def test_backend_shutdown_hook_replaces_robot_disconnect(monkeypatch, tmp_path):
     })
     assert robot.disconnected is False
     assert order == ["shutdown", "stereo_release"]
+
+
+def test_explicit_grpc_backend_without_any_bridge_args_errors(monkeypatch, tmp_path):
+    """`--backend smolvla` alone passes both pairing checks (neither flag is
+    given) but has no bridge to dial -- fail at parse time instead."""
+    built = []
+    with pytest.raises(SystemExit):
+        _dispatch_main(monkeypatch, tmp_path, ["--backend", "smolvla"], {
+            "smolvla": _fake_builder(built, "smolvla"),
+        })
+    assert built == []
+
+
+def test_bridge_path_end_to_end_through_the_real_smolvla_registry_entry(monkeypatch, tmp_path):
+    """No fake builder: the real smolvla build() -> base_grpc -> (faked)
+    robot_client.connect_bridge, asserting the handshake asks for smolvla and
+    that RobotClient.stop() runs at teardown."""
+    calls = {}
+
+    class FakeClient:
+        robot = object()
+        _stereo_camera = None
+
+        def stop(self):
+            calls["stopped"] = True
+
+    def fake_connect_bridge(server_address, checkpoint, **kwargs):
+        calls.update(server_address=server_address, checkpoint=checkpoint, **kwargs)
+        return FakeClient()
+
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    calls.update(_dispatch_main(monkeypatch, tmp_path, BRIDGE_ARGS, {}))
+
+    assert calls["policy_type"] == "smolvla"
+    assert calls["server_address"] == "0.tcp.ngrok.io:12345"
+    assert calls["checkpoint"] == "victorvanhalst/smolvla_so101_cube"
+    assert isinstance(calls["action_source"], robot_client.BridgeActionSource)
+    assert list(calls["caps"]) == [0]  # "overhead" (index 1) is skipped
+    assert calls["stopped"] is True

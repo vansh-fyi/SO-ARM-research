@@ -22,6 +22,12 @@ Reuses (does not reimplement):
 Usage:
     python run_vla_episode.py PORT ROBOT_ID --out outputs/dry_run_001 \
         --max-steps 20 [--camera 0 --camera 1] [--instruction "Pick up the red cube"]
+
+    # Phase 14 (PIPE-01): pick any registered vla_bridge/backends/ module.
+    # Omitting --backend keeps the old behavior (smolvla with bridge args,
+    # scripted without).
+    python run_vla_episode.py --out outputs/run_001 --backend smolvla \
+        --server-address HOST:PORT --checkpoint victorvanhalst/smolvla_so101_cube
 """
 
 import argparse
@@ -33,18 +39,16 @@ from typing import Protocol
 
 import cv2
 import detect_devices
-from lerobot.robots.so_follower.config_so_follower import SOFollowerRobotConfig
-from lerobot.robots.so_follower.so_follower import SO101Follower
 
 from keyboard_joint_control import move_to_positions, read_positions
 from vla_bridge import action_contract, safety_validator
+from vla_bridge.backends import BACKEND_REGISTRY, GRPC_BRIDGE_BACKENDS, get_backend_names
 # Re-exported: the class moved to vla_bridge/backends/scripted.py (Plan 14-02) so
 # the backend registry can build it without importing this script.
 from vla_bridge.backends.scripted import ScriptedActionSource  # noqa: F401
 from vla_bridge.depth_camera import DepthCameraClient
 from vla_bridge.depth_recorder import DepthRecorder
 from vla_bridge.io_logger import IOLogger
-from vla_bridge.robot_client import BridgeActionSource, connect_bridge
 from vla_bridge.stereo_calibration import load_calibration
 
 # Plan 11-05 Task 2's `detect_devices.py` output -- the new default source of
@@ -441,17 +445,28 @@ def main():
         "near-empty, so raising this does not increase Colab inference request frequency).",
     )
     parser.add_argument(
+        "--backend",
+        type=str,
+        default=None,
+        # Fail closed (T-14-03): only names a vla_bridge/backends/ module registered.
+        choices=get_backend_names(),
+        help="ActionSource backend to drive the robot with. Omit to auto-select: "
+        "'smolvla' if --server-address (or --checkpoint) is given, else 'scripted'.",
+    )
+    parser.add_argument(
         "--server-address",
         type=str,
         default=None,
         help="Colab PolicyServer bridge address (host:port). When given, drives the robot "
-        "with a real Colab-hosted VLA via BridgeActionSource instead of ScriptedActionSource.",
+        "with a real Colab-hosted VLA via BridgeActionSource instead of ScriptedActionSource. "
+        "Required (with --checkpoint) by every gRPC-bridge --backend.",
     )
     parser.add_argument(
         "--checkpoint",
         type=str,
         default=None,
-        help="HF Hub SmolVLA checkpoint id. Required when --server-address is given.",
+        help="HF Hub checkpoint id served by the Colab bridge. Required when --server-address "
+        "is given for a gRPC-bridge --backend.",
     )
     parser.add_argument(
         "--stereo-camera-index",
@@ -494,10 +509,23 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.server_address and not args.checkpoint:
-        parser.error("--checkpoint is required when --server-address is given")
-    if args.checkpoint and not args.server_address:
-        parser.error("--server-address is required when --checkpoint is given")
+    # Backward-compat shim: pre-Phase-14 invocations never named a backend --
+    # bridge args meant SmolVLA, no bridge args meant the scripted dry run.
+    # A lone --checkpoint also resolves to smolvla so it still hits the
+    # pairing error below rather than silently running the scripted path.
+    if args.backend is None:
+        args.backend = "smolvla" if (args.server_address or args.checkpoint) else "scripted"
+
+    # Only gRPC-bridge backends need the pair together; other lanes validate
+    # their own required config inside their build().
+    if args.backend in GRPC_BRIDGE_BACKENDS:
+        if args.server_address and not args.checkpoint:
+            parser.error("--checkpoint is required when --server-address is given")
+        if args.checkpoint and not args.server_address:
+            parser.error("--server-address is required when --checkpoint is given")
+        if not args.server_address:
+            parser.error(f"--backend {args.backend} rides the Colab gRPC bridge and needs "
+                         "--server-address and --checkpoint")
     if (args.depth_endpoint is None) != (args.depth_calibration is None):
         parser.error("--depth-endpoint and --depth-calibration must be given together")
     if args.depth_endpoint and not args.server_address:
@@ -569,82 +597,39 @@ def main():
 
     camera_names = _build_camera_names(args.camera)
 
-    # Gap 1: in the bridge path, the "overhead" index is never opened here --
-    # connect_bridge()'s StereoSplitCamera already holds that physical device
-    # (the AR0144) open exclusively, and it does not tolerate concurrent
-    # opens. The non-bridge (ScriptedActionSource) path is unaffected: no
-    # StereoSplitCamera exists there, so nothing is skipped.
-    caps = _open_cameras(
-        args.camera,
-        camera_names,
-        skip_names=frozenset({"overhead"}) if args.server_address else frozenset(),
-    )
-
     joint_limits_deg = action_contract.load_joint_limits_deg()
 
-    stereo_camera = None
-
-    client = None
-    robot = None
+    handles = None
+    caps: dict[int, "cv2.VideoCapture"] = {}
     try:
-        if args.server_address:
-            # Real, network-bridged SmolVLA path (Plan 11-04). `connect_bridge()`
-            # constructs AND connects the physical robot internally -- its
-            # returned client's `.robot` is the one true robot handle; do NOT
-            # also construct a separate local SO101Follower here.
-            robot_config = SOFollowerRobotConfig(
-                port=args.port,
-                id=args.robot_id,
-                max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG,
+        # PIPE-01: the ONLY backend-specific line in this script. Every
+        # backend (scripted dry run, gRPC-bridge SmolVLA/pi0/..., HTTP-adapter,
+        # Gemini) is a vla_bridge/backends/<name>.py module whose build()
+        # returns BackendHandles, or None if its server is unreachable.
+        handles = BACKEND_REGISTRY[args.backend](args, camera_names, joint_limits_deg)
+        if handles is None:
+            print(
+                f"Backend {args.backend!r} unreachable (server {args.server_address}), "
+                "aborting before touching the robot."
             )
-            # camera1 (wrist) wiring gap found live this session (Plan 11-05 Task 2):
-            # `connect_bridge()` only wired camera2/camera3 (the AR0144 stereo split),
-            # never camera1 -- silently starving the VLA checkpoint of its wrist view.
-            # `_build_camera_names()` assigns the FIRST `--camera`/device_map index to
-            # "wrist" positionally, so recover that same index here rather than
-            # re-deriving it a second way.
-            wrist_camera_index = next((idx for idx, name in camera_names.items() if name == "wrist"), None)
-            client = connect_bridge(
-                args.server_address,
-                args.checkpoint,
-                robot_config=robot_config,
-                task=args.instruction,
-                policy_device="cuda",
-                stereo_camera_index=args.stereo_camera_index,
-                wrist_camera_index=wrist_camera_index,
-            )
-            if client is None:
-                print(f"Bridge unreachable at {args.server_address}, aborting before touching the robot.")
-                args.out.mkdir(parents=True, exist_ok=True)
-                _write_termination(args.out, "bridge_unreachable", 0)
-                for cap in caps.values():
-                    cap.release()
-                return
-            robot = client.robot
-            action_source = BridgeActionSource(client, args.checkpoint, joint_limits_deg)
-            # Gap 1: reuse the SAME StereoSplitCamera instance already feeding
-            # the policy for the camera_overhead diagnostic recording below --
-            # never a second, colliding open of the AR0144.
-            stereo_camera = client._stereo_camera
+            args.out.mkdir(parents=True, exist_ok=True)
+            _write_termination(args.out, "bridge_unreachable", 0)
+            return
 
-        else:
-            # Plan 11-02's scripted dry-run path, unchanged.
-            robot = SO101Follower(
-                SOFollowerRobotConfig(
-                    port=args.port,
-                    id=args.robot_id,
-                    max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG,
-                )
-            )
-            robot.connect(calibrate=False)
-            with robot.bus.torque_disabled():
-                robot.bus.write_calibration(robot.calibration)
-            action_source = ScriptedActionSource()
+        # Gap 1: cameras open only AFTER the backend, because the backend
+        # says which devices it already holds exclusively (the gRPC lane's
+        # StereoSplitCamera holds the AR0144 "overhead" device, which does not
+        # tolerate concurrent opens). Those names are never opened here.
+        caps = _open_cameras(args.camera, camera_names, skip_names=handles.skip_camera_names)
+        robot = handles.robot
+        action_source = handles.action_source
+        # Gap 1: reuse the backend's already-open StereoSplitCamera (if any)
+        # for the camera_overhead diagnostic recording -- never a second open.
+        stereo_camera = handles.stereo_camera
 
-        # The "overhead" index is never in `caps` in the bridge path (see
-        # `_open_cameras(..., skip_names=...)` above), so this comprehension
-        # naturally excludes it from `IOLogger`'s pre-declared camera_names
-        # -- no now-unused, always-empty `camera_overhead/` directory.
+        # A skipped index is never in `caps`, so this comprehension excludes
+        # it from `IOLogger`'s pre-declared camera_names -- no now-unused,
+        # always-empty `camera_overhead/` directory.
         io_logger_camera_names = {idx: name for idx, name in camera_names.items() if idx in caps}
         with IOLogger(args.out, io_logger_camera_names) as io_logger:
             run_episode(
@@ -665,14 +650,34 @@ def main():
     finally:
         for cap in caps.values():
             cap.release()
-        if client is not None:
-            try:
-                client.stop()
-            finally:
-                if stereo_camera is not None and hasattr(stereo_camera, "release"):
-                    stereo_camera.release()
-        elif robot is not None:
-            robot.disconnect()
+        _shutdown_backend(handles)
+
+
+def _shutdown_backend(handles) -> None:
+    """Tears down whatever a backend's build() returned, for every lane.
+
+    `handles.shutdown` (the gRPC lane's `RobotClient.stop()`, which also
+    disconnects the robot) replaces the plain `robot.disconnect()`. Then the
+    action source's `close()` (the HTTP lane's dedicated wrist capture) and
+    the stereo camera's `release()` run if present. Each step runs even if
+    an earlier one raises.
+    """
+    if handles is None:
+        return
+    try:
+        if handles.shutdown is not None:
+            handles.shutdown()
+        elif handles.robot is not None:
+            handles.robot.disconnect()
+    finally:
+        try:
+            close = getattr(handles.action_source, "close", None)
+            if callable(close):
+                close()
+        finally:
+            stereo_camera = handles.stereo_camera
+            if stereo_camera is not None and hasattr(stereo_camera, "release"):
+                stereo_camera.release()
 
 
 if __name__ == "__main__":

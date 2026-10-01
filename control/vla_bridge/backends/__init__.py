@@ -60,12 +60,19 @@ class BackendHandles:
     second open of the AR0144. `skip_camera_names` are camera names the
     caller's `_open_cameras()` must NOT open itself because this backend
     already holds that device exclusively.
+
+    `shutdown`, when set, REPLACES the caller's default `robot.disconnect()`
+    at episode end -- e.g. the gRPC lane's `RobotClient.stop()`, which
+    disconnects the robot AND closes the channel. After it (or the
+    disconnect), the caller also calls `action_source.close()` if that
+    exists and `stereo_camera.release()` if that exists (Plan 14-02).
     """
 
     action_source: Any
     robot: Any
     stereo_camera: Any | None = None
     skip_camera_names: frozenset[str] = frozenset()
+    shutdown: Callable[[], None] | None = None
 
 
 def _add(name: str, obj: Callable) -> None:
