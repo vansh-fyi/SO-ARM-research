@@ -119,3 +119,27 @@ def test_act_returns_none_when_bridge_is_unreachable(monkeypatch):
     monkeypatch.setattr(base_grpc.robot_client, "connect_bridge", lambda *a, **k: None)
 
     assert backends.BACKEND_REGISTRY["act"](_args(checkpoint="some/ckpt"), {0: "wrist"}, {}) is None
+
+
+# --- Shipped config (HF-Hub-verified 2026-10-01) ------------------------------------
+
+# Checked live: public, not gated, lerobot "type": "act", input_features have
+# observation.images.camera1 as the ONLY image key (ACT has no missing-camera
+# masking and the bridge delivers only camera1, see backends/act.py), 6-D
+# state and action, and config + processor pipeline parse under lerobot 0.6.1.
+SHIPPED_ACT_CHECKPOINT = "hrl7/so101-pregrasp-act-l4"
+SHIPPED_ACT_REVISION = "1fb2021f5378c71f11ec95c76ecbdc066f61b5c2"
+
+
+def test_shipped_config_names_the_verified_camera1_only_checkpoint():
+    config = backends.load_backend_config("act")
+
+    assert config is not None
+    assert config["checkpoint"] == SHIPPED_ACT_CHECKPOINT
+    assert config["verified_revision"] == SHIPPED_ACT_REVISION
+
+
+def test_shipped_act_checkpoint_is_the_first_act_candidate_row():
+    from vla_bridge import check_checkpoint as cc
+
+    assert cc.CANDIDATE_GROUPS["act"][0] == SHIPPED_ACT_CHECKPOINT
