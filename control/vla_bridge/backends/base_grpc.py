@@ -71,6 +71,9 @@ def build_grpc_action_source(
         # Reuse the SAME StereoSplitCamera already feeding the policy (Gap 1).
         stereo_camera=client._stereo_camera,
         skip_camera_names=frozenset({"overhead"}),
+        # lerobot 0.6.1 RobotClient.stop(): sets shutdown_event, disconnects
+        # the robot, closes the gRPC channel -- the pre-Phase-14 teardown.
+        shutdown=client.stop,
     )
 
 

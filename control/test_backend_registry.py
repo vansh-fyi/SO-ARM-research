@@ -11,6 +11,7 @@ network -- every external seam is a monkeypatched double.
 """
 
 import base64
+import inspect
 import json
 import pkgutil
 import threading
@@ -447,7 +448,7 @@ def test_build_grpc_action_source_forwards_policy_type_and_wraps_bridge_source(m
     calls = {}
     fake_stereo = object()
     fake_robot = object()
-    fake_client = SimpleNamespace(robot=fake_robot, _stereo_camera=fake_stereo)
+    fake_client = SimpleNamespace(robot=fake_robot, _stereo_camera=fake_stereo, stop=lambda: None)
 
     def fake_connect_bridge(server_address, checkpoint, **kwargs):
         calls.update(server_address=server_address, checkpoint=checkpoint, **kwargs)
@@ -479,6 +480,9 @@ def test_build_grpc_action_source_forwards_policy_type_and_wraps_bridge_source(m
     assert handles.robot is fake_robot
     assert handles.stereo_camera is fake_stereo
     assert handles.skip_camera_names == frozenset({"overhead"})
+    # Plan 14-02: RobotClient.stop() (disconnect + channel close) replaces a
+    # bare robot.disconnect() at episode end.
+    assert handles.shutdown is fake_client.stop
 
 
 # --- base_http_adapter.build_http_adapter_backend() -----------------------------
@@ -565,3 +569,140 @@ def test_build_http_adapter_backend_requires_a_wrist_camera_before_touching_robo
             "https://adapter.example", "openvla/openvla-7b", _args(), {3: "overhead"}
         )
     assert RecordingMockRobot.instances == []
+
+
+# --- Plan 14-02: "scripted" and "smolvla" registry entries ---------------------
+
+
+def _scripted_args(**overrides):
+    defaults = dict(port="/dev/tty.usbmodem1", robot_id="soarm_follower_02")
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def test_scripted_backend_builds_connected_robot_and_scripted_source(monkeypatch):
+    from vla_bridge.backends import scripted
+
+    RecordingMockRobot.instances = []
+    monkeypatch.setattr(scripted, "SO101Follower", RecordingMockRobot)
+
+    handles = backends.BACKEND_REGISTRY["scripted"](
+        _scripted_args(), {0: "wrist", 1: "overhead"}, {}
+    )
+
+    assert isinstance(handles, BackendHandles)
+    robot = RecordingMockRobot.instances[-1]
+    assert handles.robot is robot
+    assert robot.connect_kwargs == dict(calibrate=False)
+    assert robot.calibration_written is True
+    assert robot.config.port == "/dev/tty.usbmodem1"
+    assert robot.config.id == "soarm_follower_02"
+    assert robot.config.max_relative_target == safety_validator.MAX_RELATIVE_TARGET_DEG
+    assert isinstance(handles.action_source, scripted.ScriptedActionSource)
+    assert handles.stereo_camera is None
+    assert handles.skip_camera_names == frozenset()
+
+
+def test_scripted_is_a_plain_backend_and_smolvla_is_a_grpc_backend():
+    assert "scripted" in backends.BACKEND_REGISTRY
+    assert "scripted" not in backends.GRPC_BRIDGE_BACKENDS
+    assert "smolvla" in backends.BACKEND_REGISTRY
+    assert "smolvla" in backends.GRPC_BRIDGE_BACKENDS
+
+
+def test_run_vla_episode_scripted_action_source_is_the_relocated_class():
+    """Backward compatibility: run_vla_episode.ScriptedActionSource must keep
+    resolving -- to the single relocated copy, not a duplicate."""
+    import run_vla_episode
+    from vla_bridge.backends import scripted
+
+    assert run_vla_episode.ScriptedActionSource is scripted.ScriptedActionSource
+
+
+def _record_grpc_build(monkeypatch):
+    calls = {}
+    sentinel = object()
+
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg):
+        calls.update(policy_type=policy_type, checkpoint=checkpoint, args=args,
+                     camera_names=camera_names, joint_limits_deg=joint_limits_deg)
+        return sentinel
+
+    monkeypatch.setattr(base_grpc, "build_grpc_action_source", fake_build)
+    return calls, sentinel
+
+
+def test_smolvla_backend_uses_cli_checkpoint_when_given(monkeypatch, tmp_path):
+    monkeypatch.setattr(backends, "BACKEND_CONFIG_DIR", tmp_path)
+    (tmp_path / "smolvla.json").write_text(json.dumps({"checkpoint": "config/ckpt"}))
+    calls, sentinel = _record_grpc_build(monkeypatch)
+    args = _args(checkpoint="cli/ckpt")
+    camera_names = {0: "wrist"}
+    joint_limits = {"gripper": (0.0, 100.0)}
+
+    result = backends.BACKEND_REGISTRY["smolvla"](args, camera_names, joint_limits)
+
+    assert result is sentinel
+    assert calls == dict(policy_type="smolvla", checkpoint="cli/ckpt", args=args,
+                         camera_names=camera_names, joint_limits_deg=joint_limits)
+
+
+def test_smolvla_backend_falls_back_to_config_checkpoint(monkeypatch, tmp_path):
+    monkeypatch.setattr(backends, "BACKEND_CONFIG_DIR", tmp_path)
+    (tmp_path / "smolvla.json").write_text(json.dumps({"checkpoint": "config/ckpt"}))
+    calls, _ = _record_grpc_build(monkeypatch)
+
+    backends.BACKEND_REGISTRY["smolvla"](_args(checkpoint=None), {0: "wrist"}, {})
+
+    assert calls["policy_type"] == "smolvla"
+    assert calls["checkpoint"] == "config/ckpt"
+
+
+def test_smolvla_backend_without_any_checkpoint_exits_before_connecting(monkeypatch, tmp_path):
+    monkeypatch.setattr(backends, "BACKEND_CONFIG_DIR", tmp_path)  # no smolvla.json
+    calls, _ = _record_grpc_build(monkeypatch)
+
+    with pytest.raises(SystemExit, match="checkpoint"):
+        backends.BACKEND_REGISTRY["smolvla"](_args(checkpoint=None), {0: "wrist"}, {})
+    assert calls == {}
+
+
+def test_shipped_smolvla_config_names_the_production_checkpoint():
+    # Verified live on the HF Hub (2026-10-01): public, lerobot "type": "smolvla",
+    # camera1/camera2/camera3 inputs matching connect_bridge()'s wiring.
+    assert backends.load_backend_config("smolvla") == {
+        "checkpoint": "victorvanhalst/smolvla_so101_cube"
+    }
+
+
+# --- Conformance (PIPE-01): durable as the registry grows ----------------------
+
+
+def test_registry_contains_the_baseline_backends():
+    assert {"scripted", "smolvla"}.issubset(backends.get_backend_names())
+    assert "smolvla" in backends.GRPC_BRIDGE_BACKENDS
+    assert "scripted" not in backends.GRPC_BRIDGE_BACKENDS
+
+
+def _action_source_bases():
+    from vla_bridge.backends.scripted import ScriptedActionSource
+
+    # Every backend from Wave 3 onward is built on one of these shared bases,
+    # so checking the bases covers the whole registry -- no per-backend
+    # conformance test is needed. Plan 14-13 (Gemini foundation) MUST add its
+    # GeminiActionSourceBase here when it lands.
+    return [
+        robot_client.BridgeActionSource,
+        HttpAdapterActionSource,
+        ScriptedActionSource,
+    ]
+
+
+@pytest.mark.parametrize("cls", _action_source_bases(), ids=lambda cls: cls.__name__)
+def test_action_source_bases_match_the_action_source_protocol_signature(cls):
+    import run_vla_episode
+
+    expected = ["self", "joint_state", "instruction"]
+    protocol_params = list(inspect.signature(run_vla_episode.ActionSource.get_action).parameters)
+    assert protocol_params == expected
+    assert list(inspect.signature(cls.get_action).parameters) == expected
