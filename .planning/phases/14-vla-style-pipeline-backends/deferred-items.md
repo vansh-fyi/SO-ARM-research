@@ -19,3 +19,17 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
   - The fix also changes what the live-verified SmolVLA path sees on hardware.
   - It needs a decision: per-checkpoint camera filtering, or forwarding only keys the checkpoint declares. That requires knowing the checkpoint's `image_features` client-side, for example by fetching its `config.json` at build time.
 - **Suggested follow-up:** in `connect_bridge()`/`base_grpc`, read the checkpoint's `config.json` `input_features`. Then register exactly the camera keys the checkpoint declares and the rig can supply into `lerobot_features` before `client.start()`. Re-verify SmolVLA on hardware afterwards.
+
+## From 14-05 (ACT)
+
+### The camera1-only limitation is stricter for ACT (and possibly Diffusion Policy)
+
+- **Not fixed here; recorded for the follow-up above.**
+- **Mechanism (installed `lerobot==0.6.1`):**
+  - `ACTPolicy.predict_action_chunk()` builds `[batch[key] for key in self.config.image_features]`, with no missing-camera masking.
+  - So on today's bridge, an ACT checkpoint that declares `camera2`/`camera3` alongside `camera1` raises KeyError on every observation and the robot only holds position. pi0/pi05/SmolVLA would mask those cameras instead.
+- **Impact on 14-05:**
+  - Of about 3500 HF Hub ACT repos scanned, only two declare `camera1` as their only image key. 14-05 ships one of them (`hrl7/so101-pregrasp-act-l4`).
+  - Better-trained 2-camera SO-101 ACT checkpoints, such as `Alkatt/ACT_so101_CubePickPlace_v2` (`camera1` + `camera2`, exact `JOINT_ORDER .pos` dataset), become usable only once the follow-up above registers the declared camera keys.
+  - `check_checkpoint.py` encodes the stricter rule as `NO_CAMERA_MASKING_BACKENDS`.
+- **For 14-06:** Diffusion Policy is likely the same. Unverified: read `DiffusionPolicy`'s image stacking in the installed source, and add `"diffusion"` to `NO_CAMERA_MASKING_BACKENDS` if it doesn't mask missing cameras.

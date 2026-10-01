@@ -1,0 +1,5 @@
+{
+  "checkpoint": "hrl7/so101-pregrasp-act-l4",
+  "verified_revision": "1fb2021f5378c71f11ec95c76ecbdc066f61b5c2",
+  "notes": "SO-101 ACT fine-tune (dataset hrl7/so101-wrist-d1-pregrasp-v1, 58 episodes at 30 fps, 5000 training steps, chunk_size 100). Inputs: observation.state [6], observation.images.camera1 (480x640) as its ONLY camera; output action [6]. ACT does not mask missing cameras, so it is the only ACT checkpoint found that loads on the camera1-only gRPC bridge. The dataset is private, so its joint names are unverified; normalizer stats (wrist_roll up to 118, gripper 1.9-47) fit degree-mode joints plus a 0-100 gripper. verified_revision is informational: the bridge cannot pin a revision, so the server loads main. Evidence: vla_bridge/checkpoint_candidates.md."
+}

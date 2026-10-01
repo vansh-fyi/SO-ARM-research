@@ -4,6 +4,8 @@ Phase 11 (VLA Hardware Connection), Plan 11-03, Task 1 wrote this for
 SmolVLA. Phase 14 (Plan 14-04 onward) extends it to every gRPC-bridge-lane
 backend (pi0/pi05 here; ACT in 14-05, Diffusion Policy in 14-06): add a
 `CANDIDATE_GROUPS["<backend>"]` list and run it with `--backend <backend>`.
+Backends in `NO_CAMERA_MASKING_BACKENDS` (ACT) get a stricter key check: see
+`_bridge_key_fit`.
 
 For each candidate repo id this script:
 
@@ -67,6 +69,20 @@ CANDIDATE_GROUPS: dict[str, list[str]] = {
         "pdhinaka/pi05_so101_blue_cube_gray_box_cleaned_20k",
         "lerobot/pi05_base",
     ],
+    # Phase 14, Plan 14-05. From a wide HF Hub scan (2026-10-01): every repo whose
+    # name contains "act" across 15 searches, plus every `lerobot`+`act`-tagged
+    # repo whose name mentions SO-100/SO-101, about 3500 repos in total. Only the
+    # first two declare `camera1` as their ONLY image key (required for ACT, see
+    # NO_CAMERA_MASKING_BACKENDS); the rest show why the others are excluded,
+    # plus the official LeRobot ACT checkpoint.
+    "act": [
+        "hrl7/so101-pregrasp-act-l4",
+        "pshingavi/policy_first-so101_22",
+        "Alkatt/ACT_so101_CubePickPlace_v2",
+        "tatsuyaaaaaaa/act_so_arm101_grab_red_dice_policy",
+        "robotfuel/act_so101_t16b",
+        "lerobot/act_aloha_sim_transfer_cube_human",
+    ],
 }
 
 # Backward-compatible name for the Phase 11 SmolVLA list.
@@ -76,7 +92,15 @@ SECTION_TITLES = {
     "smolvla": "SmolVLA (Phase 11, Plan 11-03)",
     "pi0": "pi0 (Phase 14, Plan 14-04)",
     "pi05": "pi0.5 / pi05 (Phase 14, Plan 14-04)",
+    "act": "ACT (Phase 14, Plan 14-05)",
 }
+
+# Policies that do NOT mask a declared-but-missing camera. Installed lerobot
+# 0.6.1 `ACTPolicy.predict_action_chunk()` builds
+# `[batch[key] for key in self.config.image_features]`, so any declared image
+# key the bridge does not deliver is a KeyError on every inference. (pi0/pi05/
+# SmolVLA instead fill missing cameras with masked empty images.)
+NO_CAMERA_MASKING_BACKENDS = frozenset({"act"})
 
 OUT_PATH = Path(__file__).resolve().parent / "checkpoint_candidates.md"
 
@@ -264,20 +288,27 @@ def _rig_fit_judgment(camera_summary: str) -> str:
     return f"UNCLEAR FIT — expects {n} camera inputs, does not cleanly map to this project's 2-physical-camera rig"
 
 
-def _bridge_key_fit(image_keys: list[str] | None) -> str:
+def _bridge_key_fit(image_keys: list[str] | None, masks_missing_cameras: bool = True) -> str:
     """Will the gRPC bridge's observation load on this checkpoint at all?
 
     Only `observation.images.camera1` (wrist) reaches the policy server (see
-    `BRIDGE_IMAGE_KEY`). The checkpoint must declare it; any other declared
-    camera arrives missing, which pi0/pi05/SmolVLA mask as an empty camera.
+    `BRIDGE_IMAGE_KEY`). The checkpoint must declare it. Any other declared
+    camera arrives missing: pi0/pi05/SmolVLA mask it as an empty camera, but a
+    policy that does not mask (`masks_missing_cameras=False`, i.e. ACT) raises
+    KeyError on it, so for those camera1 must be the ONLY image key.
     """
     if not image_keys:
         return "UNKNOWN — no image keys found in config.json"
-    if BRIDGE_IMAGE_KEY in image_keys:
-        others = [k for k in image_keys if k != BRIDGE_IMAGE_KEY]
-        note = f"; {len(others)} other key(s) arrive missing (masked)" if others else ""
-        return f"OK — declares camera1, which receives our wrist frame{note}"
-    return "INCOMPATIBLE — no observation.images.camera1; PolicyServer raises KeyError on every observation"
+    if BRIDGE_IMAGE_KEY not in image_keys:
+        return "INCOMPATIBLE — no observation.images.camera1; PolicyServer raises KeyError on every observation"
+    others = [k for k in image_keys if k != BRIDGE_IMAGE_KEY]
+    if others and not masks_missing_cameras:
+        return (
+            f"INCOMPATIBLE — declares camera1 but also {others}, which the bridge never delivers; "
+            "this policy does not mask missing cameras, so predict_action_chunk raises KeyError on every observation"
+        )
+    note = f"; {len(others)} other key(s) arrive missing (masked)" if others else ""
+    return f"OK — declares camera1, which receives our wrist frame{note}"
 
 
 def _section_markers(backend: str) -> tuple[str, str]:
@@ -355,7 +386,9 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Fetching {repo_id} ...")
         row = _fetch_candidate(repo_id)
         row["rig_fit"] = _rig_fit_judgment(row["camera_keys"])
-        row["bridge_fit"] = _bridge_key_fit(row["image_keys"])
+        row["bridge_fit"] = _bridge_key_fit(
+            row["image_keys"], masks_missing_cameras=args.backend not in NO_CAMERA_MASKING_BACKENDS
+        )
         rows.append(row)
         print(f"  -> {row['fetch_status']}")
 
