@@ -685,3 +685,120 @@ def test_build_with_official_alternate_uses_its_gripper_range(monkeypatch):
     octo.build(_args(server_address="http://h:3004", checkpoint=SMALL_CKPT), {0: "wrist"}, {})
     seen["convert_fn"](list(EEF_RAW[:6]) + [1.0], JOINT_STATE)
     assert calls[0]["gripper"] == pytest.approx(100.0)
+
+
+# --- Task 2: mocked full round trip (regression) ------------------------------
+
+
+def _route_requests_to(app, monkeypatch):
+    """Send the client's `requests.post` straight into the Flask test client."""
+    http = app.test_client()
+    posted = []
+
+    class Routed:
+        def __init__(self, response):
+            self._response = response
+            self.status_code = response.status_code
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise base_http_adapter.requests.HTTPError(f"{self.status_code}")
+
+        def json(self):
+            return self._response.get_json()
+
+    def fake_post(url, json=None, timeout=None):
+        posted.append((url, json))
+        return Routed(http.post("/action", json=json))
+
+    monkeypatch.setattr(base_http_adapter.requests, "post", fake_post)
+    return posted
+
+
+def _source_via_build(monkeypatch, checkpoint=None, limits=None):
+    """Run the real `octo.build()` (robot/camera construction stubbed) and
+    return a real `HttpAdapterActionSource` with the convert_fn it wired."""
+    from test_backend_registry import FakeStereo, FakeWristCap
+
+    seen = _capture_build(monkeypatch)
+    octo.build(_args(server_address="https://abc.ngrok-free.app", checkpoint=checkpoint), {0: "wrist"},
+               limits or {})
+    return base_http_adapter.HttpAdapterActionSource(
+        seen["endpoint_url"], seen["checkpoint"], FakeWristCap(), FakeStereo(), convert_fn=seen["convert_fn"])
+
+
+LIMITS = {j: (-180.0, 180.0) for j in JOINT_ORDER[:5]} | {"gripper": (0.0, 100.0)}
+
+
+def test_round_trip_so101_default_runs_real_ik_into_a_validated_action(fake_policy, monkeypatch):
+    """Real create_app() -> real HttpAdapterActionSource with build()'s
+    eef_delta convert_fn -> real ikpy-backed eef_to_joint.solve_ik() -> real
+    safety_validator.validate_action()."""
+    from vla_bridge import safety_validator
+
+    model = OctoModel(SO101_CKPT, revision=SO101_REV, local_dir="/ckpt")
+    posted = _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, limits=LIMITS)
+    action, model_version = source.get_action(JOINT_STATE, "pick up the cube")
+
+    assert [url for url, _ in posted] == ["https://abc.ngrok-free.app/action"]
+    assert posted[0][1]["joint_state"] == JOINT_STATE
+    assert set(posted[0][1]["images"]) == {"wrist", "overhead_left", "overhead_right"}
+    assert model_version == f"{SO101_CKPT}@{SO101_REV[:12]}"
+    assert source.last_details["bridge_flags"] == []
+    assert source.last_details["raw_model_output"] == pytest.approx(EEF_RAW)
+    assert tuple(action) == JOINT_ORDER
+    assert all(isinstance(v, float) and math.isfinite(v) for v in action.values())
+    assert action["gripper"] == pytest.approx(45.0)  # 0.5 over [-10, 100] %
+    assert any(abs(action[j] - JOINT_STATE[j]) > 1e-3 for j in JOINT_ORDER[:5])  # IK moved the arm
+
+    # The IK target really is the commanded Cartesian step (5-DOF: position wins).
+    before = eef_to_joint.forward_kinematics(JOINT_STATE)
+    after = eef_to_joint.forward_kinematics(action)
+    assert np.subtract(after[:3], before[:3]) == pytest.approx(EEF_RAW[:3], abs=3e-3)
+
+    validated, _flags = safety_validator.validate_action(action, JOINT_STATE, LIMITS)
+    assert set(validated) == set(JOINT_ORDER)
+    assert all(math.isfinite(v) for v in validated.values())
+    assert any(validated[j] != JOINT_STATE[j] for j in JOINT_ORDER)  # a real, non-held action
+
+
+def test_round_trip_official_alternate_uses_bridge_stats_and_real_ik(fake_policy, monkeypatch):
+    from vla_bridge import safety_validator
+
+    fake_policy.stats = {"bridge_dataset": {"action": _action_stats()},
+                         "fractal20220817_data": {"action": _action_stats()}}
+    model = OctoModel(SMALL_CKPT, revision=SMALL_REV, local_dir="/ckpt")
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, checkpoint=SMALL_CKPT, limits=LIMITS)
+    action, model_version = source.get_action(JOINT_STATE, "put the spoon on the towel")
+
+    assert model_version == f"{SMALL_CKPT}@{SMALL_REV[:12]}"
+    assert fake_policy.samples[0]["stats"] is model.model.dataset_statistics["bridge_dataset"]["action"]
+    assert source.last_details["bridge_flags"] == []
+    assert tuple(action) == JOINT_ORDER
+    assert all(isinstance(v, float) and math.isfinite(v) for v in action.values())
+    assert action["gripper"] == pytest.approx(50.0)  # 0.5 over [0, 100] %
+    validated, _flags = safety_validator.validate_action(action, JOINT_STATE, LIMITS)
+    assert all(math.isfinite(v) for v in validated.values())
+    assert any(validated[j] != JOINT_STATE[j] for j in JOINT_ORDER)
+
+
+def test_round_trip_consecutive_steps_fill_the_history_window(fake_policy, monkeypatch):
+    model = OctoModel(SO101_CKPT, revision=SO101_REV, local_dir="/ckpt")
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, limits=LIMITS)
+    for _ in range(2):
+        source.get_action(JOINT_STATE, "pick up the cube")
+    masks = [s["observations"]["timestep_pad_mask"].tolist() for s in fake_policy.samples]
+    assert masks == [[[False, True]], [[True, True]]]
+
+
+def test_round_trip_holds_position_when_the_model_fails(fake_policy, monkeypatch):
+    fake_policy.chunk = np.full((1, 4, 7), np.nan)
+    model = OctoModel(SO101_CKPT, revision=SO101_REV)
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch)
+    action, model_version = source.get_action(JOINT_STATE, "x")
+    assert action == JOINT_STATE
+    assert model_version == f"{SO101_CKPT}@http-error-holding-position"
