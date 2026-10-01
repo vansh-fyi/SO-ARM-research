@@ -237,8 +237,8 @@ def test_image_key_selects_which_frame_the_model_sees(fake_policy):
 
 
 def test_center_crop_matches_openvla_crop_scale():
-    rgb = np.zeros((100, 100, 3), dtype=np.uint8)
-    rgb[:3, :, :] = 255  # a thin white band only at the very top edge
+    rgb = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    rgb[:12, :, :] = 255  # a thin white band (1.2 % of the height) at the very top edge
     plain = openvla_server.preprocess_image(rgb, center_crop=False)
     cropped = openvla_server.preprocess_image(rgb, center_crop=True)
     assert plain.size == cropped.size == (224, 224)
