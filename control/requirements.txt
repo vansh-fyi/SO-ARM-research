@@ -11,6 +11,12 @@ requests==2.34.2
 # running the test suite here, not for driving the Colab service.
 flask==3.1.3
 
+# Plan 14-03: URDF parsing + forward kinematics for
+# vla_bridge/backends/eef_to_joint.py (EEF-delta -> joint-target conversion for
+# OpenVLA-OFT and later delta-EEF backends). PyPI project `ikpy`, source
+# github.com/Phylliade/ikpy (Apache-2.0); pulls in scipy + sympy.
+ikpy==4.1.0
+
 # Installed for the planned YOLO object-follow feature (adapting XLeRobot's
 # 3_so100_yolo_ee_follow.py) - not yet wired into any script here.
 ultralytics==8.4.138
