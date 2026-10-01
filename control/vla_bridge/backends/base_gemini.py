@@ -76,6 +76,8 @@ This is the same fail-safe contract as `BridgeActionSource` and
 
 import base64
 import json
+import math
+import numbers
 import os
 import re
 import threading
@@ -86,7 +88,7 @@ from lerobot.robots.so_follower.so_follower import SO101Follower
 
 from vla_bridge import safety_validator
 from vla_bridge.action_contract import JOINT_ORDER
-from vla_bridge.backends import BackendHandles
+from vla_bridge.backends import BackendHandles, load_backend_config
 from vla_bridge.backends.base_http_adapter import _is_joint_action, capture_observation_images
 from vla_bridge.robot_client import OBSERVATION_MAX_SIDE
 from vla_bridge.stereo_camera import StereoSplitCamera
@@ -116,6 +118,19 @@ MAX_LOGGED_TEXT_CHARS = 2000
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
+
+# Config validation for the per-backend backend_configs/<name>.json (Plans 14-14/14-15).
+# Every model id this lane can convert starts with this prefix: the conversion
+# layer only understands embodied-reasoning points/boxes, not native VLA actions.
+ER_MODEL_PREFIX = "gemini-robotics-er-"
+# `gemini-robotics-er-2-streaming-preview` is Live-API only (robotics-overview,
+# 2026-09-23); `client.interactions.create` cannot serve it.
+_LIVE_API_ONLY_MARKER = "streaming"
+# google-genai 2.25.0 `_gaos/types/interactions/thinkinglevel.py`.
+THINKING_LEVELS = ("minimal", "low", "medium", "high")
+# POSIX-portable env-var NAME (uppercase, digits, underscore). Google API
+# keys always contain lowercase letters, so a key pasted here is rejected.
+_ENV_VAR_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
 def _make_genai_client(api_key: str, timeout_s: float, httpx_client=None):
@@ -295,6 +310,72 @@ class GeminiActionSourceBase:
             self.wrist_cap.release()
 
 
+def load_er_backend_config(config_name: str, backend_name: str) -> tuple[str, str, dict]:
+    """Resolve and validate `backend_configs/<config_name>.json` for a Gemini backend.
+
+    Returns `(model, api_key_env, source_kwargs)`. `source_kwargs` holds only
+    the optional tuning keys that are present and non-null (`thinking_level`,
+    `timeout_s`), so an absent key keeps `GeminiActionSourceBase`'s default.
+    Any other config keys (notes, provenance) are ignored.
+
+    Raises `SystemExit` with a message naming the bad field when:
+      - the file is missing, unparseable or not a JSON object;
+      - `model` is not a non-blank string, is not a Gemini Robotics-ER model
+        (`ER_MODEL_PREFIX`), or is the Live-API-only streaming variant;
+      - `api_key_env` is not an uppercase environment-variable NAME. That
+        also rejects a pasted API key, and the value is never echoed back.
+      - `thinking_level` is not one of `THINKING_LEVELS`, or `timeout_s` is
+        not a finite positive number.
+    """
+    where = f"control/vla_bridge/backend_configs/{config_name}.json"
+    config = load_backend_config(config_name)
+    if config is None:
+        raise SystemExit(
+            f"--backend {backend_name} needs {where} (a JSON object with 'model' and "
+            "'api_key_env'); it is missing or unreadable."
+        )
+
+    model = config.get("model")
+    if not isinstance(model, str) or not model.strip():
+        raise SystemExit(f"{where}: 'model' must be a non-blank Gemini Robotics-ER model id string.")
+    model = model.strip()
+    if not model.startswith(ER_MODEL_PREFIX):
+        raise SystemExit(
+            f"{where}: 'model' {model!r} is not a Gemini Robotics-ER model (expected prefix "
+            f"{ER_MODEL_PREFIX!r}). --backend {backend_name} only converts embodied-reasoning "
+            "points/boxes into joint steps; a native VLA model would need a different integration."
+        )
+    if _LIVE_API_ONLY_MARKER in model:
+        raise SystemExit(
+            f"{where}: 'model' {model!r} is served only through the Live API, which this "
+            "request/response lane (client.interactions.create) does not use."
+        )
+
+    api_key_env = config.get("api_key_env")
+    if not isinstance(api_key_env, str) or not _ENV_VAR_NAME_RE.match(api_key_env):
+        # Never echo the value: it may be a pasted key.
+        raise SystemExit(
+            f"{where}: 'api_key_env' must be the uppercase NAME of an environment variable "
+            "(e.g. GEMINI_API_KEY), never the key itself. If a key was pasted here, remove "
+            "it, rotate it, and export it under that variable instead."
+        )
+
+    source_kwargs = {}
+    thinking_level = config.get("thinking_level")
+    if thinking_level is not None:
+        if thinking_level not in THINKING_LEVELS:
+            raise SystemExit(f"{where}: 'thinking_level' must be one of {THINKING_LEVELS} or null.")
+        source_kwargs["thinking_level"] = thinking_level
+    timeout_s = config.get("timeout_s")
+    if timeout_s is not None:
+        if (isinstance(timeout_s, bool) or not isinstance(timeout_s, numbers.Real)
+                or not math.isfinite(timeout_s) or timeout_s <= 0):
+            raise SystemExit(f"{where}: 'timeout_s' must be a finite positive number of seconds or null.")
+        source_kwargs["timeout_s"] = float(timeout_s)
+
+    return model, api_key_env, source_kwargs
+
+
 def build_gemini_backend(
     model: str,
     api_key_env: str,
@@ -360,7 +441,10 @@ __all__ = [
     "ACTION_PATH",
     "CONVERSION_SUFFIX",
     "DEFAULT_ER_PROMPT_TEMPLATE",
+    "ER_MODEL_PREFIX",
     "GeminiActionSourceBase",
+    "THINKING_LEVELS",
     "build_gemini_backend",
+    "load_er_backend_config",
     "parse_er_json",
 ]
