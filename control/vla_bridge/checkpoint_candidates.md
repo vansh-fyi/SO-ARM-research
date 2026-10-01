@@ -320,3 +320,76 @@ Caveats, all inferred from the published files (not from running the 15 GB model
 - **Instruction.** The single training task is "Pick up the black cylinder and place it on the
   plate." Pass it as `--instruction`.
 <!-- backend:openvla-selection:end -->
+
+<!-- backend:octo:start -->
+## Octo (Phase 14, Plan 14-10; hand-written, the script never rewrites this section)
+
+`check_checkpoint.py` has no `octo` group. An official-format Octo checkpoint is a JAX/orbax
+directory: `config.json`, `example_batch.msgpack`, `dataset_statistics.json` and `<step>/default/checkpoint`.
+It has no lerobot `input_features`. These rows come from an ad hoc live fetch on 2026-10-01
+(unauthenticated) of each repo's HF API metadata, `config.json`, `finetune_config.json`, and
+`dataset_statistics.json`. The `example_batch.msgpack` array shapes were decoded with a minimal
+msgpack reader.
+- **Search:** Hub searches `octo so101`, `octo-so101`, `octo_so101`, `so101 octo`, `octo so100`,
+  `octo-so100`, `octo koch`, `octo lerobot`, `octo-small`, `octo-base`, `octo-finetune` and `octo`.
+  Then each SO-101 author's full model list (`sapanostic`, `ivlabs`, `kartiksonu`, `khanhnd61`).
+- **Action space** is read from each checkpoint's own statistics. Every official-format Octo
+  checkpoint found has a 7-D action with mask `[T]*6+[F]`: a 6-D end-effector **delta** plus a raw
+  gripper. **None is joint-space.**
+
+| Repo ID | Revision | License | Format / step(s) | Obs (example batch) | Action stats | Action space | SO-101 fit |
+|---|---|---|---|---|---|---|---|
+| `sapanostic/octo-so101-3hz-finetune` | `a45ff970242a66e268871a5f64530947143f9a6e` | none stated; no card | official Octo; `octo-base-1.5` `encoder_and_head`, 10000 steps (= `num_steps`); step `10000` only | primary 256 + wrist 128, window 2, horizon 4, language (+ goal-image) task | 100 traj / 6280 transitions; p01..p99 dx [-1.7, 1.8] cm, dy [-2.4, 2.2] cm, dz [-1.7, 2.9] cm, rot [-0.17, 0.16] rad; gripper raw [0.10 .. 0.64] | **eef_delta**: `action/eef_delta_m_rad` (Pinocchio FK on the SO101 URDF; gripper min-max over [-10, 100]) | **GOOD**. Real SO-101 lerobot data (`sapanostic/so101_pick_cube_v2_merged`: `so_follower`, 15 Hz, `right`/`left`/`wrist`), RLDS at 3 Hz (`ivlabs/so101_pick_cube_v2_merged_rlds_3hz`, Apache-2.0, documented) |
+| `rail-berkeley/octo-small-1.5` | `dc9aa3019f764726c770814b27e4ab0fc6e32a58` | MIT | official; step `300000` | primary 256 + wrist 128, window 2, horizon 4 | 26 OXE keys; `bridge_dataset` std ~1 cm, ~0.03-0.08 rad; gripper 0/1 | eef_delta (bridge: WidowX state differences at 5 Hz; gripper 1 = open) | alternate. Official and audited org, but WidowX/OXE: out of distribution |
+| `rail-berkeley/octo-base-1.5` | `ee3c10e8edd6ce2e8b1e8744d3c6fba4097bed48` | MIT | official; step `300000` | as above | identical `dataset_statistics.json` | as above | alternate, as above |
+| `sapanostic/octo-so101-finetuned` | `d3ad5fa32debac5d5045ba755276b59fc6166872` | none stated | official; `head_only`; 50 steps 1000..50000 (~40 GB if fetched whole) | primary + wrist, window 1 | 90 traj / 40103; p99 dx 3.6 mm; gripper binarized, mean 0.08 | eef_delta | not chosen. The dataset `so101_pick_cube` version is unidentified, only the head was trained, and the gripper is binarized and mostly 0 |
+| `ivlabs/octo-so101-finetuned-v0.3` | `e458413d4fac67002a41bf9d902e64bac95ffac6` | none stated | official; step `80000` | primary + wrist, window 1 | 90 traj / 8058; gripper binarized | eef_delta | not chosen. No `finetune_config.json`, so the camera mapping and dataset are unknown |
+| `ivlabs/octo-finetuningv0_9_1-ds2_1` | `1a693c2ebc2a7ace672e024d350747bc415bfa25` | none stated | official; steps 1000..10000 | primary (`image_0`) + wrist (`image_2`), window 2 | 100 traj / 6435; gripper raw 0..1, mean 0.68 | eef_delta | plausible but unprofiled. `mixture_v2_1_continuous` has no dataset card; the earlier iteration of the same group's 3 Hz pipeline |
+| `ivlabs/octo-finetune-v0.01` / `v0.02`, `sapanostic/so101_finetune_octo_0.01` | `24b98ee` / `0cefd5a` / `7b7b8ea` | none stated | official; octo-small, re-initialized L1/diffusion head, horizon 50 | primary + **proprio** (7-D EEF pose), window 1 | EEF pose proprio (x 0.09-0.29 m, rpy ±π) | eef_delta | NO. Needs the checkpoint's own FK pose as proprio; `octo_server.py` refuses proprio checkpoints |
+| `ivlabs/octo-finetune-v0.03` | `ab8aed726af55bea285f6146d546868c11c32b41` | none stated | official; its `finetune_config` says `num_steps: 1`, `save_dir: /tmp/v003_meta` | primary + proprio | `bounds` normalization | eef_delta | NO. A metadata stub, with proprio |
+| `kartiksonu/so101_octo_small[_finetune]`, `ivlabs/fine-tune-v-0-*`, `ivlabs/octo-finetuningv0_9-ds2_1`, `sapanostic/octo-v05-test` | various | none stated | step params only | n/a | none | unknown | NO. No `config.json` / `dataset_statistics.json`, so they can't be loaded |
+| `khanhnd61/octo*_so101*` (5 repos), `khanhnd61/octo-small-so101-*-gguf` | e.g. `55872b3` | Apache-2.0 / MIT / none | **not official Octo**: a PyTorch port (`type: octo`) in the unofficial fork `khanhnd61-vr/lerobot`; GGUF for `vla.simd` | front 256 + wrist 128, window 2 | lerobot normalizer safetensors | absolute SO-101 joints (6-D, degrees) | NO for this backend. It would need an unaudited lerobot fork or `vla.simd`, not `octo-models/octo`. lerobot 0.6.1 has no `octo` policy |
+<!-- backend:octo:end -->
+
+<!-- backend:octo-selection:start -->
+## Octo selection (Plan 14-10, hand-written; the script never rewrites this section)
+
+**Chosen default:** `sapanostic/octo-so101-3hz-finetune` @ `a45ff970242a66e268871a5f64530947143f9a6e`,
+step `10000`, flat single-dataset statistics, action space `eef_delta`
+(`backend_configs/octo.json`). The official MIT `rail-berkeley/octo-{small,base}-1.5` checkpoints,
+un-normalized with the `bridge_dataset` statistics, are kept as reviewed alternates.
+
+Why this checkpoint:
+- **Data.** It is the only loadable official-format Octo checkpoint trained on real SO-101 data whose
+  data pipeline is documented end to end:
+  - the source lerobot dataset (`meta/info.json`: `so_follower`, names `shoulder_pan.pos ..
+    gripper.pos`)
+  - the RLDS card (`action/eef_delta_m_rad` = [dx, dy, dz, droll, dpitch, dyaw, gripper_normalized],
+    Pinocchio FK on the SO101 URDF)
+  - `mixture_metadata.json` (`gripper_min_deg: -10`, `gripper_max_deg: 100`, `binarize_gripper:
+    false`, 15 Hz -> 3 Hz)
+  - its own `finetune_config.json` (primary `image_1`, wrist `image_2`, window 2, horizon 4,
+    `normal` normalization)
+- **No proprio.** Unlike the v0.01/v0.02 checkpoints, it needs no proprio, and so no reproduction of
+  that group's FK pose as an input.
+- **Same robot, same base frame.** Position deltas are metres in the SO-101 base frame.
+  `so101_new_calib.urdf`'s `shoulder_pan` origin matches this repo's `So-101/So-101.urdf` exactly.
+
+Conversion (`backends/octo.py`):
+- The angular slots are **roll/pitch/yaw differences** of the FK pose, not a rotation vector. So the
+  goal orientation is `R(rpy_current + d)`, composed exactly at this repo's FK pose, then sent to
+  `eef_to_joint.solve_ik()`.
+- The gripper is `-10 + 110 * g` percent.
+
+Caveats:
+- **Unpublished code.** The checkpoint has no card and no license. Its `so101_dataset_transform` is
+  unpublished, so the action space is confirmed from its statistics and the dataset card, not code.
+- **End-effector frame.** The dataset's EE frame (`so101_new_calib.urdf`'s gripper frame) is not this
+  repo's `eef` link. Positions agree up to the tool-point offset. Roll/pitch/yaw differences depend on
+  the EE frame, so orientation is approximate. On a 5-DOF arm the IK weights orientation at 0.1
+  anyway.
+- **Primary camera.** `image_1` is inferred to be the `left` camera (the camera order is right,
+  left, wrist), so the server feeds `overhead_left`; `--primary-image-key` overrides it.
+- **Control rate.** Each action is a 3 Hz step.
+- **Instruction.** The training task is "pick up the cube". Pass it as `--instruction`.
+<!-- backend:octo-selection:end -->

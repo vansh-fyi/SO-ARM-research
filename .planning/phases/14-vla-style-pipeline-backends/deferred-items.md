@@ -150,3 +150,35 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
 - Not fixable client-side without retraining. Confirm on hardware (14-09 human check). If confirmed,
   candidates are: a re-fine-tune with the gripper normalized, or holding the current gripper for
   this checkpoint.
+
+## From 14-10 (Octo)
+
+### `check_checkpoint.py` has no `octo` group
+
+- The Octo scan for 14-10 was done ad hoc. It covered 12 Hub searches plus four SO-101 authors'
+  full model lists, about 26 repos. It is recorded in `checkpoint_candidates.md` (`backend:octo` /
+  `backend:octo-selection`, both hand-written) and in 14-10-SUMMARY.md.
+- An official-format Octo checkpoint has no lerobot `input_features`. A group would instead need
+  to check:
+  - that `config.json`, `dataset_statistics.json` and `example_batch.msgpack` are present (several
+    SO-101 repos ship only step params)
+  - flat vs per-dataset statistics
+  - the action `mask` and dimension
+  - the `example_batch` observation keys (`proprio` is unsupported by `octo_server.py`) and the
+    window size
+  - `finetune_config.json`'s camera mapping and normalization type
+
+### Joint-space SO-101 Octo checkpoints exist only as an unofficial PyTorch port (not integrated)
+
+- `khanhnd61/octo-small_so101-multi-task-clean` and its siblings are `type: octo` lerobot-format
+  checkpoints with absolute 6-D joint actions, which would need no IK. They come from the fork
+  `khanhnd61-vr/lerobot` (or the `vla.simd` GGUF runtime), not `octo-models/octo`.
+- lerobot 0.6.1 has no `octo` policy. Integrating them would mean installing an unaudited fork.
+  That is a supply-chain decision for the human, outside this plan.
+- `backends/octo.py` already has the `joint_absolute` branch such a checkpoint would use.
+
+### Octo returns one step per request, not examples/04's temporal ensembling
+
+- `octo_server.py` executes only the first step of each 4-step chunk (receding horizon, 1 step).
+- If live runs are jittery, a server-side `TemporalEnsembleWrapper` equivalent is a contained
+  follow-up. It would be stateful like the history window already is.
