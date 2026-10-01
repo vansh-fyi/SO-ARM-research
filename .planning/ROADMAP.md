@@ -36,7 +36,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11: VLA Hardware Connection** - Connect an SO-101-native joint-action VLA (SmolVLA) to the real SO-ARM101 over the existing LeRobot bridge with a safety validator and complete per-step I/O logging, and record at least one full observed run (completed 2026-09-24)
 - [x] **Phase 12: Bridge Tick-Latency Fix** - Fix the observation-resend-per-tick root cause so the bridge only requests fresh inference when the local action queue is empty/near-empty, with real measured latency logging and an in-flight-request guard; sweep 2 small pre-existing tech-debt items alongside it (completed 2026-09-25)
 - [ ] **Phase 13: Camera Device Resolution Unification** - Unify the model's inference-input and `IOLogger` recording camera paths behind one shared, name-based resolution helper, and log client-side frame provenance
-- [ ] **Phase 14: VLA-Style Pipeline & Backends** - Build the shared VLA-style `ActionSource` pattern and onboard 12 new native-action/imitation-learning backends (Gemini Robotics, Gemini Robotics 2, π0/π0.5, Wall-X, ACT, OpenVLA, OpenVLA-OFT, Octo, RDT-1B, GR00T N1.7, GR00T N1.5, Diffusion Policy) driving the real SO-ARM101
+- [x] **Phase 14: VLA-Style Pipeline & Backends** - Build the shared VLA-style `ActionSource` pattern and onboard 12 new native-action/imitation-learning backends (Gemini Robotics, Gemini Robotics 2, π0/π0.5, Wall-X, ACT, OpenVLA, OpenVLA-OFT, Octo, RDT-1B, GR00T N1.7, GR00T N1.5, Diffusion Policy) driving the real SO-ARM101 (completed 2026-10-01)
 - [ ] **Phase 15: MLLM-Style Pipeline & Backends** - Build the shared MLLM-style `ActionSource` pattern (prompt construction, schema, reasoning-trace capture) and onboard 3 raw-JSON MLLM backends (HF reasoning model, Claude, GPT) with no movement primitives
 - [ ] **Phase 16: Cross-Backend Pen Transfer Benchmark** - Run all 16 backends on one live Pen Transfer episode each and directly compare them using Yu & Qiu 2026's failure taxonomy
 - [ ] **Phase 17: Safety-Validator Cap Re-Tightening** - Deliberately last (resequenced 2026-09-24 per user decision): incrementally restore `safety_validator.py`'s soft-margin caps toward their conservative defaults now that all 16 backends' episodes are observed, live-verified at each step, and pin `WRIST_ROLL_LIMIT_DEG` to its Phase 10 source of truth. Hard limits (absolute joint clamping, NaN/inf rejection, e-stop) stay active unmodified throughout Phases 12-17 regardless.
@@ -462,7 +462,7 @@ Plans:
   3. All twelve new backends reuse `safety_validator.py` and `io_logger.py` unchanged — no backend-specific safety or logging code paths
   4. Switching between any of the 13 VLA-style backends (SmolVLA + 12 new) requires no changes to `run_vla_episode.py`'s shared control loop
 
-**Plans**: 14/15 plans executed
+**Plans**: 15/15 plans complete
 Plans:
 **Wave 1**
 
@@ -495,7 +495,7 @@ Plans:
 **Wave 6** *(blocked on 14-13)*
 
 - [x] 14-14-PLAN.md — Gemini Robotics, ER-based (VLAB-01)
-- [ ] 14-15-PLAN.md — Gemini Robotics 2, ER-based (VLAB-02)
+- [x] 14-15-PLAN.md — Gemini Robotics 2, ER-based (VLAB-02)
 
 ### Phase 15: MLLM-Style Pipeline & Backends
 
@@ -584,7 +584,7 @@ Plans:
 | 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
 | 13. Camera Device Resolution Unification | 4/4 | Human verification pending | - |
-| 14. VLA-Style Pipeline & Backends | 14/15 | In Progress|  |
+| 14. VLA-Style Pipeline & Backends | 15/15 | Complete   | 2026-10-01 |
 | 15. MLLM-Style Pipeline & Backends | 0/TBD | Not started | - |
 | 16. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
 | 17. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
