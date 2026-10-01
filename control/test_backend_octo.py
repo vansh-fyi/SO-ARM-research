@@ -116,9 +116,9 @@ def fake_policy(monkeypatch):
         state.loads.append((model_dir, step))
         return state.model
 
-    def sample_actions(model, observations, tasks, unnormalization_statistics, normalization_type, seed):
+    def sample_actions(model, observations, tasks, unnormalization_statistics, seed):
         state.samples.append(dict(observations=observations, tasks=tasks, stats=unnormalization_statistics,
-                                  normalization_type=normalization_type, seed=seed))
+                                  seed=seed))
         dim = len(unnormalization_statistics["mean"])
         if state.chunk is not None:
             return np.asarray(state.chunk, dtype=np.float32)
@@ -235,8 +235,8 @@ def test_model_gets_resized_rgb_frames_window_and_task(fake_policy):
     # First call: HistoryWrapper semantics -> the frame is repeated, older slot padded.
     assert obs["timestep_pad_mask"].tolist() == [[False, True]]
     assert fake_policy.model.task_calls == [["pick up the cube"]]
-    assert sample["normalization_type"] == "normal"
-    assert sample["stats"]["mean"] is not None
+    assert sample["stats"] is model.action_stats
+    assert fake_policy.samples[0]["seed"] != 0
 
 
 def test_history_window_fills_then_resets_on_new_instruction(fake_policy):

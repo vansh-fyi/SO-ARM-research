@@ -1,0 +1,41 @@
+{
+  "checkpoint": "sapanostic/octo-so101-3hz-finetune",
+  "revision": "a45ff970242a66e268871a5f64530947143f9a6e",
+  "endpoint_url": null,
+  "action_space": "eef_delta",
+  "instruction": "pick up the cube",
+  "checkpoints": {
+    "sapanostic/octo-so101-3hz-finetune": {
+      "revision": "a45ff970242a66e268871a5f64530947143f9a6e",
+      "step": 10000,
+      "unnorm_key": null,
+      "action_space": "eef_delta",
+      "gripper_norm_to_percent": [-10.0, 100.0],
+      "control_hz": 3,
+      "instruction": "pick up the cube"
+    },
+    "rail-berkeley/octo-small-1.5": {
+      "revision": "dc9aa3019f764726c770814b27e4ab0fc6e32a58",
+      "step": 300000,
+      "unnorm_key": "bridge_dataset",
+      "action_space": "eef_delta",
+      "gripper_norm_to_percent": [0.0, 100.0],
+      "control_hz": 5
+    },
+    "rail-berkeley/octo-base-1.5": {
+      "revision": "ee3c10e8edd6ce2e8b1e8744d3c6fba4097bed48",
+      "step": 300000,
+      "unnorm_key": "bridge_dataset",
+      "action_space": "eef_delta",
+      "gripper_norm_to_percent": [0.0, 100.0],
+      "control_hz": 5
+    }
+  },
+  "notes": [
+    "Verified live on the HF Hub and github.com/octo-models/octo @ 241fb35 on 2026-10-01; see 14-10-SUMMARY.md and checkpoint_candidates.md (backend:octo).",
+    "action_space was read from each checkpoint's own dataset_statistics.json (7-D, mask [T]*6+[F], cm/0.1-rad magnitudes) and, for the default, the RLDS dataset card (ivlabs/so101_pick_cube_v2_merged_rlds_3hz: action/eef_delta_m_rad, Pinocchio FK on the SO101 URDF, gripper min-max over [-10, 100]). It is not assumed from the Octo family.",
+    "--checkpoint must match the checkpoint octo_server.py was launched with: it selects the gripper mapping. Each step's model_version shows what the server ran.",
+    "Default sapanostic/octo-so101-3hz-finetune: a real SO-101 fine-tune of octo-base-1.5 (window 2, horizon 4, primary + wrist, trained at 3 Hz). It has no model card and no license, and its so101_dataset_transform is unpublished.",
+    "rail-berkeley/octo-{small,base}-1.5 (MIT, official): OXE-pretrained, un-normalized with the bridge_dataset (WidowX, 5 Hz) statistics. These are out of distribution on SO-101 hardware, with an identity WidowX->SO-101 frame mapping."
+  ]
+}
