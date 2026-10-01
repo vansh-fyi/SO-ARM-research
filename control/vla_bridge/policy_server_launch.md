@@ -1025,3 +1025,124 @@ pinned at its per-step clamp in the first steps. If you see it, stop. It means t
 units are not degrees (check its normalizer stats) or something is converting the action twice.
 
 Tear down with Step 6 as usual.
+
+---
+
+## Tier C: Wall-X / WALL-OSS resident adapter (Plan 14-08, `--backend wallx`)
+
+The installed `lerobot==0.6.1` `PolicyServer` does not dispatch `wall_x`: it is not in
+`async_inference/constants.py`'s `SUPPORTED_POLICIES`. So Wall-X can't use Steps 1-5. It runs
+as its own resident Flask adapter, `control/vla_bridge/wallx_server.py`, built like the
+OpenVLA-OFT adapter above: it loads once, warms up, then serves.
+
+The adapter loads Wall-X through **lerobot's own** `WallXPolicy` (`lerobot[wallx]==0.6.1`, a
+pure-Python extra). It does **not** clone or `pip install` `github.com/X-Square-Robot/wall-x`. That
+route needs a source build of flash-attn, `dmuon` from a second GitHub repo, and an nvcc
+`CUDAExtension` compile (14-RESEARCH.md Pitfall 5). This path has none of those steps.
+
+**Status:** written from installed lerobot 0.6.1 source and HF Hub metadata. These cells have
+**not yet been run on Colab**.
+
+Requirements:
+- **GPU:** an A100. The pinned fine-tune and the base model it builds on are 8.4 GB of
+  safetensors each, and `WallXPolicy` builds the model in fp32 before casting it to bf16.
+- **RAM:** a High-RAM runtime is likely needed for the same reason.
+
+Default checkpoint: `Zekai-Chen/wallx_pick_place_3cam_200ep@ef8ce55f9772`. It is trained on
+SO-101 in degree mode, for the single task "Put the object in the bin", with cameras
+`wrist`/`top`/`side`.
+
+```python
+# Wall-X only: lerobot's own `wallx` extra, same lerobot pin as Step 1 (pure Python:
+# transformers>=5.4,<5.6, peft, scipy, torchdiffeq, qwen-vl-utils). No GitHub clone and no
+# CUDA-operator compile. Both the install and the import check are verified by exit status,
+# not by a quiet pip run.
+import subprocess, sys
+install = subprocess.run([sys.executable, '-m', 'pip', 'install', 'lerobot[wallx]==0.6.1', 'flask'],
+                         capture_output=True, text=True)
+print(install.stdout[-2000:]); print(install.stderr[-2000:])
+if install.returncode != 0:
+    raise RuntimeError(f'lerobot[wallx] install failed (exit {install.returncode})')
+# Fresh interpreter: this kernel may still hold the pre-install transformers in memory.
+check = subprocess.run([sys.executable, '-c', (
+    "import importlib.metadata as m\n"
+    "from lerobot.utils.import_utils import _wallx_deps_available\n"
+    "from lerobot.policies.factory import get_policy_class\n"
+    "assert _wallx_deps_available, 'lerobot[wallx] dependencies are missing'\n"
+    "print(get_policy_class('wall_x'))\n"
+    "print({p: m.version(p) for p in ('lerobot', 'torch', 'transformers', 'peft', 'qwen-vl-utils')})\n"
+)], capture_output=True, text=True)
+print(check.stdout); print(check.stderr[-2000:])
+if check.returncode != 0:
+    raise RuntimeError('lerobot[wallx] import check failed; see stderr above')
+```
+
+Upload `control/vla_bridge/wallx_server.py` to `/content/wallx_server.py` (Files panel or
+Drive). Then launch it as a separate OS process.
+
+On first start it snapshot-downloads two pinned revisions, about 17 GB in total:
+- the fine-tune, `Zekai-Chen/wallx_pick_place_3cam_200ep@ef8ce55f9772`
+- the base model it builds on, `x-square-robot/wall-oss-flow@44e827683819`
+
+`/health` only answers after the model has loaded and warmed up. Logs go to
+`/content/wallx_server.log`.
+
+To use a different SO-101 `wall_x` checkpoint, pass `--checkpoint <repo> --revision <sha>`.
+Also pass `--camera-map key=source,...`, mapping each of its camera keys to `wrist`,
+`overhead_left` or `overhead_right`. The server refuses to start if any camera is unmapped.
+
+```python
+import os, subprocess, sys, time, requests
+WALLX_LOG = '/content/wallx_server.log'
+env = dict(os.environ, TOKENIZERS_PARALLELISM='false')
+with open(WALLX_LOG, 'w') as log:
+    wallx_server_process = subprocess.Popen(
+        [sys.executable, '/content/wallx_server.py', '--port', '3002'],
+        stdout=log, stderr=subprocess.STDOUT, env=env)
+for _ in range(3600):  # two 8.4 GB downloads + load + warmup
+    if wallx_server_process.poll() is not None:
+        raise RuntimeError(f'Wall-X adapter exited; inspect {WALLX_LOG}')
+    try:
+        if requests.get('http://127.0.0.1:3002/health', timeout=2).json().get('status') == 'ready':
+            print('Wall-X adapter ready'); break
+    except requests.RequestException:
+        pass
+    time.sleep(1)
+else:
+    wallx_server_process.terminate()
+    raise RuntimeError(f'Wall-X warmup timed out; inspect {WALLX_LOG}')
+```
+
+```python
+from pyngrok import ngrok
+wallx_tunnel = ngrok.connect(3002, "http")  # plain JSON-over-HTTP, like Step 9
+print(f"Wall-X endpoint: {wallx_tunnel.public_url}")
+```
+
+Then, locally in `control/` (pass the base URL; the client appends `/action`):
+
+```bash
+.venv/bin/python run_vla_episode.py --backend wallx \
+  --server-address https://WALLX_TUNNEL.ngrok-free.app \
+  --instruction "Put the object in the bin" \
+  --out outputs/wallx_UNIQUE_NAME --max-steps 20
+```
+
+`--instruction` matches the default checkpoint's only training task. Each step's
+`model_version` should read `Zekai-Chen/wallx_pick_place_3cam_200ep@ef8ce55f9772`. A step that
+logs `http-error-holding-position` means the adapter returned an error. Check
+`/content/wallx_server.log`: a 500 `wall-x inference failed` means the model produced a
+non-finite action, and a 400 means a bad request.
+
+```python
+# Wall-X teardown -- every session, same rule as Step 6.
+if 'wallx_tunnel' in globals():
+    ngrok.disconnect(wallx_tunnel.public_url)
+if 'wallx_server_process' in globals() and wallx_server_process.poll() is None:
+    wallx_server_process.terminate()
+    try:
+        wallx_server_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        wallx_server_process.kill()
+        wallx_server_process.wait()
+```
