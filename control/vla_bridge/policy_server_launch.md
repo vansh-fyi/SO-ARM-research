@@ -798,3 +798,113 @@ if 'oft_server_process' in globals() and oft_server_process.poll() is None:
         oft_server_process.kill()
         oft_server_process.wait()
 ```
+
+---
+
+## Tier A: Diffusion Policy (Plan 14-06, `--backend diffusion`)
+
+Diffusion Policy uses the same gRPC lane as Steps 1-5 (`policy_type="diffusion"`), with two
+differences. Both were verified against the installed `lerobot==0.6.1` source.
+
+1. **It needs `diffusers`.** `DiffusionPolicy` imports its noise scheduler from it (lerobot's
+   `diffusion` extra pins `diffusers>=0.38.0,<0.40.0`). The cell below pins `0.39.0`; the
+   PyPI metadata for that release has no `torch` requirement.
+2. **The stock server can't run it.** `PolicyServer` calls `predict_action_chunk()` with one
+   observation, and 0.6.1's Diffusion fails its `n_obs_steps` assertion on every inference
+   (huggingface/lerobot#3861; fix PR #3886 is unmerged). The server logs
+   `Error in StreamActions` and the robot only holds position. So start the server with
+   `control/vla_bridge/diffusion_policy_server.py`. It applies PR #3886's fix to
+   `DiffusionPolicy` only, then runs the same `serve()`.
+
+**Status:** not yet run on Colab.
+
+**Checkpoint:** no default is shipped. Diffusion Policy doesn't mask missing cameras, and no HF
+Hub Diffusion checkpoint declares `camera1` as its only camera, which today's camera1-only bridge
+requires. See `backend_configs/diffusion_policy.json` and `checkpoint_candidates.md`. Pass a
+checkpoint whose ONLY image key is `observation.images.camera1`, or wait for the bridge
+camera-key follow-up in `deferred-items.md`.
+
+Run Steps 1, 2 and the token/torchaudio cells of Step 3 as usual, then the two cells below
+**instead of** Step 3's launch cell. A T4 is enough: the models are a ResNet-18 plus a 1-D U-Net.
+Each chunk runs the full DDPM schedule (100 denoising steps by default) and returns only
+`n_action_steps` actions (8 for most SO-101 checkpoints). Expect noticeably more hold-position
+steps between chunks than with ACT.
+
+```python
+# Diffusion Policy only: lerobot's `diffusion` extra (diffusers>=0.38.0,<0.40.0), pinned.
+!pip install 'diffusers==0.39.0'
+```
+
+Upload `control/vla_bridge/diffusion_policy_server.py` to
+`/content/diffusion_policy_server.py` (Files panel or Drive), then run the launch cell. It
+replaces Step 3's launch cell. It uses the same port (5173), log file, and
+`policy_server_process` handle, so Steps 4-6 and the teardown cells work unchanged.
+
+```python
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+POLICY_SERVER_LOG = "/content/policy_server.log"
+DIFFUSION_LAUNCHER = Path("/content/diffusion_policy_server.py")
+if not DIFFUSION_LAUNCHER.exists():
+    raise FileNotFoundError(
+        f"Upload control/vla_bridge/diffusion_policy_server.py to {DIFFUSION_LAUNCHER} first."
+    )
+
+# Kill a stock OR patched PolicyServer left over from an earlier attempt (same port, GPU memory).
+subprocess.run(["pkill", "-9", "-f", "lerobot.async_inference.policy_server"], check=False)
+subprocess.run(["pkill", "-9", "-f", "diffusion_policy_server.py"], check=False)
+time.sleep(1)
+
+_env = os.environ.copy()
+_env["CUDA_LAUNCH_BLOCKING"] = "1"
+_env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+_env.setdefault("OMP_NUM_THREADS", "1")
+
+_log_fh = open(POLICY_SERVER_LOG, "w", buffering=1)
+policy_server_process = subprocess.Popen(
+    [sys.executable, str(DIFFUSION_LAUNCHER), "--host", "0.0.0.0", "--port", "5173"],
+    stdout=_log_fh,
+    stderr=subprocess.STDOUT,
+    env=_env,
+)
+
+for _ in range(60):
+    if policy_server_process.poll() is not None:
+        raise RuntimeError(
+            f"Diffusion PolicyServer exited early (code {policy_server_process.returncode}) "
+            f"-- see {POLICY_SERVER_LOG}"
+        )
+    try:
+        with socket.create_connection(("127.0.0.1", 5173), timeout=1):
+            break
+    except OSError:
+        time.sleep(1)
+else:
+    raise RuntimeError(f"Diffusion PolicyServer did not start listening in time -- see {POLICY_SERVER_LOG}")
+
+print(f"Patched PolicyServer running as PID {policy_server_process.pid}. Logs -> {POLICY_SERVER_LOG}")
+print("The log's first line should read 'Patched DiffusionPolicy.predict_action_chunk ...'.")
+```
+
+Then open the Step 4 tunnel, and run this locally in `control/`:
+
+```bash
+.venv/bin/python run_vla_episode.py <port> <robot_id> --backend diffusion \
+  --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint <camera1-only diffusion checkpoint> \
+  --out outputs/diffusion_UNIQUE_NAME --max-steps 20
+```
+
+A healthy server log shows `Policy type: diffusion` and then
+`Preprocessing and inference took ...s, action shape: torch.Size([1, 8, 6])`-style lines. Two
+failures look different:
+- `Error in StreamActions: ` followed by an empty `AssertionError`: the stock server is running
+  instead of the patched launcher.
+- `KeyError: 'observation.images.camera2'` (or similar): the checkpoint declares a camera the
+  bridge doesn't deliver.
+
+Tear down with Step 6 as usual.
