@@ -19,7 +19,22 @@ enforced server-side (an unsupported value fails the handshake, so this
 function returns `None`, never raises).
 
 Depth is untouched here (D-03).
+
+Optional `convert_fn` (Plan 14-07): a backend may pass
+`convert_fn(action, joint_state) -> dict`, and the action source is then a
+`ConvertedBridgeActionSource` that applies it to each action the
+`BridgeActionSource` returns. Omitting it (every backend before GR00T N1.7)
+returns the plain `BridgeActionSource`, exactly as before. Scope: on this lane
+`pop_validated_action()` has ALREADY run `safety_validator.validate_action()`
+on the raw, positionally mapped joint dict before `convert_fn` sees it, so a
+gRPC-lane `convert_fn` must be a joint-space -> joint-space transform (a shape,
+unit or ordering gate). A Cartesian -> joint conversion would need a
+pre-validation hook in `robot_client.pop_validated_action()`, which no backend
+needs today. `run_episode()` still validates the converted action with the
+unmodified validator, and a `convert_fn` exception holds position.
 """
+
+from collections.abc import Callable
 
 from lerobot.robots.so_follower.config_so_follower import SOFollowerRobotConfig
 
@@ -33,6 +48,7 @@ def build_grpc_action_source(
     args,
     camera_names: dict[int, str],
     joint_limits_deg: dict,
+    convert_fn: "Callable[[dict, dict], dict] | None" = None,
 ) -> "BackendHandles | None":
     """Connect the gRPC bridge for `policy_type`/`checkpoint` and wrap it.
 
@@ -45,6 +61,9 @@ def build_grpc_action_source(
     `connect_bridge()` constructs AND connects the physical robot inside
     `RobotClient.__init__`, so `client.robot` is the one true robot handle;
     callers must not construct a second `SO101Follower`.
+
+    `convert_fn`, when given, wraps the source in `ConvertedBridgeActionSource`
+    (see the module docstring for its joint-space-only scope).
     """
     robot_config = SOFollowerRobotConfig(
         port=args.port,
@@ -65,8 +84,11 @@ def build_grpc_action_source(
     )
     if client is None:
         return None
+    action_source = robot_client.BridgeActionSource(client, checkpoint, joint_limits_deg)
+    if convert_fn is not None:
+        action_source = ConvertedBridgeActionSource(action_source, convert_fn, checkpoint)
     return BackendHandles(
-        action_source=robot_client.BridgeActionSource(client, checkpoint, joint_limits_deg),
+        action_source=action_source,
         robot=client.robot,
         # Reuse the SAME StereoSplitCamera already feeding the policy (Gap 1).
         stereo_camera=client._stereo_camera,
@@ -77,4 +99,45 @@ def build_grpc_action_source(
     )
 
 
-__all__ = ["build_grpc_action_source"]
+class ConvertedBridgeActionSource:
+    """`BridgeActionSource` plus a per-action `convert_fn` (Plan 14-07).
+
+    `get_action()` delegates to the wrapped source, then returns
+    `convert_fn(action, joint_state)`. It never raises: if `convert_fn` raises,
+    it holds position (`<checkpoint>@action-conversion-error-holding-position`),
+    like `HttpAdapterActionSource`. `last_details` is the wrapped source's dict,
+    so `run_episode()` logs the same raw model output and bridge flags. Any other
+    attribute (`client`, `checkpoint`, ...) is read from the wrapped source.
+    """
+
+    def __init__(self, inner, convert_fn: "Callable[[dict, dict], dict]", checkpoint: str):
+        self.inner = inner
+        self.convert_fn = convert_fn
+        self.checkpoint = checkpoint
+        self.last_details = {}
+
+    def get_action(self, joint_state: dict[str, float], instruction: str) -> tuple[dict[str, float], str]:
+        action, model_version = self.inner.get_action(joint_state, instruction)
+        details = getattr(self.inner, "last_details", None)
+        self.last_details = details if isinstance(details, dict) else {}
+        try:
+            converted = self.convert_fn(action, joint_state)
+        except Exception as e:  # noqa: BLE001 -- never raise into the control loop
+            flags = list(self.last_details.get("bridge_flags") or [])
+            self.last_details["bridge_flags"] = [*flags, f"action-conversion-error: {e}"]
+            return dict(joint_state), f"{self.checkpoint}@action-conversion-error-holding-position"
+        return converted, model_version
+
+    def close(self) -> None:
+        close = getattr(self.inner, "close", None)
+        if callable(close):
+            close()
+
+    def __getattr__(self, name):
+        inner = self.__dict__.get("inner")
+        if inner is None:
+            raise AttributeError(name)
+        return getattr(inner, name)
+
+
+__all__ = ["ConvertedBridgeActionSource", "build_grpc_action_source"]
