@@ -252,3 +252,71 @@ huggingface/lerobot#3861, and its fix PR #3886 is unmerged. Launch the server wi
 `vla_bridge/diffusion_policy_server.py` instead. See `policy_server.ipynb`'s Diffusion Policy
 section, which also installs `diffusers==0.39.0`.
 <!-- backend:diffusion-selection:end -->
+
+<!-- backend:openvla:start -->
+## OpenVLA (Phase 14, Plan 14-09; hand-written, the script never rewrites this section)
+
+`check_checkpoint.py` has no `openvla` group. Its columns read lerobot `input_features` /
+`output_features`, and OpenVLA's Prismatic `config.json` has neither: actions are 256-bin tokens
+un-normalized by `norm_stats[<key>]["action"]` q01/q99 under a `mask`. So these rows come from an
+ad hoc live fetch of each repo's HF API metadata, `config.json`, and `dataset_statistics.json`
+(unauthenticated, 2026-10-01).
+- **Search:** 16 Hub searches (`openvla so101`, `openvla_so`, `openvla koch`, `openvla-7b-finetuned`,
+  `openvla`, ...) returned 771 unique repos. 19 names mention SO-100/SO-101/Koch/lerobot.
+- **Base OXE keys:** `openvla/openvla-7b@47a0ec7` embeds 25 OXE `norm_stats` keys. A fine-tune's
+  "own key" is any key beyond those 25.
+
+| Repo ID | Revision | License | Weights / code | Own unnorm key(s) | Action stats (q01 .. q99) and mask | Action space | SO-101 fit |
+|---|---|---|---|---|---|---|---|
+| `toasta18/openvla-so101-cylinder` | `f00833ce58510a955b981ee7e9ba8e9ef4e2ef2e` | none stated; empty card | full 7B bf16 fine-tune (15.1 GB); no `*_prismatic.py`, `auto_map` -> `openvla/openvla-7b--` | `so101_pick_cylinder` (config), plus the 25 OXE keys | 7-D. Slots 0-4 q01 [-23.6, -86.5, -46.7, -31.4, -14.7], q99 [54.8, 60.9, 76.0, 88.1, 6.9]; slot 5 = 0 (pad); slot 6 [2.7 .. 52.8]. Config mask `[T,T,T,T,T,F,T]` (edited after upload); its `dataset_statistics.json` mask is `[T]*6+[F]` | absolute SO-101 joints, degrees; gripper percent | **GOOD**. Real SO-101 lerobot data (`toasta18/so101_task_yellow_cylinder`: `so_follower`, names exactly `shoulder_pan.pos .. gripper.pos`, `overhead` + `wrist`, 50 episodes) via RLDS `toasta18/so101_pick_cylinder_rlds` |
+| `openvla/openvla-7b-finetuned-libero-object` | `287d6cfdf12d07b1449505f66d9bf3550257e9b3` | MIT | full 7B; `auto_map` -> `openvla/openvla-7b--` | `libero_object` (only key) | 7-D q01 [-0.54, -0.88, -0.94, -0.07, -0.12, -0.16, 0], q99 [0.85, 0.84, 0.94, 0.08, 0.15, 0.09, 1]; mask `[T]*6+[F]` | robosuite OSC_POSE delta (normalized [-1, 1]), gripper 1 = open | IK only; out-of-distribution Franka sim |
+| `openvla/openvla-7b-finetuned-libero-spatial` | `962318cec55ac10993ff0f5f43eda9a270b4c873` | MIT | as above | `libero_spatial` | 7-D, within ±0.94; mask `[T]*6+[F]` | same | IK only |
+| `openvla/openvla-7b-finetuned-libero-goal` | `fa5ae1e7509348889295bba8e08621d8b55e9baf` | MIT | as above | `libero_goal` | 7-D, within ±0.94; mask `[T]*6+[F]` | same | IK only |
+| `openvla/openvla-7b-finetuned-libero-10` | `80970322773f81baa2e22fe495d0487b93a05cfa` | MIT | as above | `libero_10` | 7-D, within ±0.94; mask `[T]*6+[F]` | same | IK only |
+| `openvla/openvla-7b` | `47a0ec7fc4ec123775a391911046cf33cf9ed83f` | MIT | base; ships the `*_prismatic.py` remote code | none (25 OXE keys only) | n/a | OXE delta-EEF per dataset | NO. No SO-101 key; used only as the pinned source of the remote code |
+| `madokalif/so101-openvla-sft-v2-*-merged` (pickplace `b892604`, and stacking / transfer-cube / mixed variants) | `b892604acc9e963dcb7148a680f647f4ddf300d3` (pickplace) | none stated | merged 7B; ships its own `*_prismatic.py` | none in config (only the 25 OXE keys) | `dataset_statistics.json`: 6-D `so101*` keys with min/max only (identical joint-limit-like radians across 8 tasks), **no q01/q99** | 6-D joint (radians?) | NO. `predict_action` needs `q01`/`q99` and 7 slots; custom code |
+| `madokalif/so101-openvla-sft[-v2]-*` (adapters) | `be5d750a3d4d0dce97b6972904aff66060ff94ea` (v2-pickplace) | none stated | LoRA adapter only; the v1 ones are self-marked DEPRECATED | n/a | n/a | n/a | NO. Adapter-only, with the same stats problem as the merged variants |
+| `Atabaku/so101-openvla-oft-5000` | `61e0d08adba99a3633ffec6055d63cfc0af4cb35` | none stated | gated (manual); OFT heads (`action_head--5000`) | n/a | n/a | OpenVLA-**OFT** | NO. Gated, 0 downloads, and it is OFT, not OpenVLA |
+| `phospho-ai/openvla-koch` | `55e47f8ca671753a9b83c89fea58a4c30022e9ba` | none stated | full 7B | none in config (`koch_lerobot` only in `dataset_statistics.json`) | 7-D delta-EEF (q01/q99 ±0.03 m, ±0.8 rad), gripper constant 0 | Koch arm delta-EEF | NO. Different robot (Koch), EEF |
+| `m1b/openvla-koch-red-box-150K` | `4fa2ea33cb4e6d614c6fd4ebe7c20466416fdeb3` | none stated | full 7B; no dataset stats | none | n/a | unknown | NO. Koch, and no un-normalization stats |
+<!-- backend:openvla:end -->
+
+<!-- backend:openvla-selection:start -->
+## OpenVLA selection (Plan 14-09, hand-written; the script never rewrites this section)
+
+**Chosen default:** `toasta18/openvla-so101-cylinder` @ `f00833ce58510a955b981ee7e9ba8e9ef4e2ef2e`,
+unnorm key `so101_pick_cylinder`, action space `absolute_joint_degrees_so101_7d`
+(`backend_configs/openvla.json`). The four official MIT LIBERO checkpoints are kept as
+reviewed alternates, using `delta_eef_robosuite_osc` -> `eef_to_joint.solve_ik()`.
+
+Why the SO-101 fine-tune (14-RESEARCH.md Open Question 3: prefer a joint-space SO-101 fine-tune
+over IK):
+- **Data.** It is the only OpenVLA checkpoint on the Hub trained on real SO-101 lerobot data.
+- **Action.** Its action is already an absolute `JOINT_ORDER` target in this repo's units
+  (`action_contract`: arm degrees, gripper percent), so no IK is needed. That also sidesteps 14-03's
+  unverified LIBERO-frame -> SO-101 IK sign/frame mapping.
+- **Slot mapping.** The 7-slot layout is [5 arm joints, constant 0 pad, gripper]. The q01/q99
+  ranges line up with the source dataset's `meta/stats.json` action min/max, and slot 5 is 0 in
+  both RLDS and model stats.
+- **No community code.** It ships no code. `openvla_server._localize_remote_code` installs the
+  official `openvla/openvla-7b@47a0ec7` code and pins it.
+
+Caveats, all inferred from the published files (not from running the 15 GB model):
+- **Gripper probably uninformative.**
+  - The config's action `mask` was edited after the weights were uploaded (commit history:
+    `ed27729` had no `so101` key, `a545284` added it with `[T]*6+[F]`, `f00833c` set it to
+    `[T,T,T,T,T,F,T]`).
+  - The model's own `dataset_statistics.json` still records `[T]*6+[F]`. That is the mask
+    OpenVLA's `make_oxe_dataset_kwargs` forces for EEF_POS datasets (the only encoding it
+    accepts).
+  - So in training the gripper (1-53 %) was left un-normalized and `ActionTokenizer` clipped it
+    to the top bin.
+  - With the edited mask, the top bin un-normalizes to 52.68 % (computed from the real stats).
+    Expect a near-constant ~53 % gripper. The arm joints were normalized normally.
+- **Undocumented.** There is no license and an empty card (4 downloads). This needs the
+  end-of-phase legitimacy and licensing human check.
+- **Camera assumption.** The RLDS `image` is assumed to be the dataset's `overhead` camera, so
+  the server feeds `overhead_left`; `--image-key` overrides it. OpenVLA uses one image only.
+- **Instruction.** The single training task is "Pick up the black cylinder and place it on the
+  plate." Pass it as `--instruction`.
+<!-- backend:openvla-selection:end -->

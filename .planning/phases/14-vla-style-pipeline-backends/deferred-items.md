@@ -126,3 +126,27 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
 - Adding a group would need the same units check as GR00T's. Wall-X also needs an
   `attn_implementation` check: lerobot 0.6.1 rejects `"sdpa"` unless the loader overrides it, as
   `wallx_server.py` does.
+
+## From 14-09 (OpenVLA)
+
+### `check_checkpoint.py` has no `openvla` group
+
+- The OpenVLA scan for 14-09 was done ad hoc: 16 Hub searches, 771 repos, 19 SO/Koch-named. It is
+  recorded in `checkpoint_candidates.md` (`backend:openvla` / `backend:openvla-selection`, both
+  hand-written) and in 14-09-SUMMARY.md.
+- The script's columns read lerobot `input_features` / `output_features`. A Prismatic OpenVLA
+  group would instead need checks on:
+  - `norm_stats` own keys beyond the 25 base OXE keys
+  - the action q01/q99 dimension (must be 7)
+  - the `mask`
+  - `auto_map` targets (`openvla/openvla-7b--` vs shipped code)
+
+### Default OpenVLA checkpoint's gripper is probably untrained (upstream checkpoint issue, not fixed)
+
+- `toasta18/openvla-so101-cylinder@f00833c`: the config's action mask was edited after upload to
+  un-normalize the gripper. The model's own `dataset_statistics.json` still records OpenVLA's
+  forced EEF_POS training mask `[T]*6+[F]`, so the gripper was likely trained clipped to the top
+  bin, and the output is expected near 52.7 %.
+- Not fixable client-side without retraining. Confirm on hardware (14-09 human check). If confirmed,
+  candidates are: a re-fine-tune with the gripper normalized, or holding the current gripper for
+  this checkpoint.

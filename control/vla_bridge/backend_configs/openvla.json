@@ -1,0 +1,40 @@
+{
+  "checkpoint": "toasta18/openvla-so101-cylinder",
+  "revision": "f00833ce58510a955b981ee7e9ba8e9ef4e2ef2e",
+  "endpoint_url": null,
+  "instruction": "Pick up the black cylinder and place it on the plate.",
+  "checkpoints": {
+    "toasta18/openvla-so101-cylinder": {
+      "revision": "f00833ce58510a955b981ee7e9ba8e9ef4e2ef2e",
+      "unnorm_key": "so101_pick_cylinder",
+      "action_space": "absolute_joint_degrees_so101_7d",
+      "instruction": "Pick up the black cylinder and place it on the plate."
+    },
+    "openvla/openvla-7b-finetuned-libero-object": {
+      "revision": "287d6cfdf12d07b1449505f66d9bf3550257e9b3",
+      "unnorm_key": "libero_object",
+      "action_space": "delta_eef_robosuite_osc"
+    },
+    "openvla/openvla-7b-finetuned-libero-spatial": {
+      "revision": "962318cec55ac10993ff0f5f43eda9a270b4c873",
+      "unnorm_key": "libero_spatial",
+      "action_space": "delta_eef_robosuite_osc"
+    },
+    "openvla/openvla-7b-finetuned-libero-goal": {
+      "revision": "fa5ae1e7509348889295bba8e08621d8b55e9baf",
+      "unnorm_key": "libero_goal",
+      "action_space": "delta_eef_robosuite_osc"
+    },
+    "openvla/openvla-7b-finetuned-libero-10": {
+      "revision": "80970322773f81baa2e22fe495d0487b93a05cfa",
+      "unnorm_key": "libero_10",
+      "action_space": "delta_eef_robosuite_osc"
+    }
+  },
+  "notes": [
+    "Verified live on the HF Hub and github.com/openvla/openvla @ c8f03f4 on 2026-10-01; see 14-09-SUMMARY.md and checkpoint_candidates.md (backend:openvla-selection).",
+    "--checkpoint must match the checkpoint openvla_server.py was launched with: it selects the action_space conversion. Each step's model_version shows what the server ran.",
+    "Default toasta18/openvla-so101-cylinder: an SO-101 joint-space fine-tune (degrees; gripper percent; slot 5 is a constant pad), so no IK. The card is empty and there is no license. The config's action mask was edited after upload, and the gripper output is expected to sit near 52.7 % (see openvla_server.py).",
+    "openvla/openvla-7b-finetuned-libero-* (MIT): robosuite OSC_POSE deltas -> openvla_oft_action_to_eef_delta -> eef_to_joint.solve_ik. These are out-of-distribution Franka-sim policies."
+  ]
+}

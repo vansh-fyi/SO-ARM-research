@@ -1146,3 +1146,144 @@ if 'wallx_server_process' in globals() and wallx_server_process.poll() is None:
         wallx_server_process.kill()
         wallx_server_process.wait()
 ```
+
+---
+
+## Tier C: OpenVLA resident adapter (Plan 14-09, `--backend openvla`)
+
+OpenVLA (the original 7B model, not OFT) has no LeRobot `PolicyServer` integration. It runs as its
+own resident Flask adapter, `control/vla_bridge/openvla_server.py`, built like the OpenVLA-OFT
+adapter above: it loads once, warms up, then serves. It does NOT use Steps 1-5.
+
+Unlike OpenVLA-OFT, it needs **no GitHub clone**. The official inference path
+(github.com/openvla/openvla README and `vla-scripts/deploy.py`) is plain
+`transformers` AutoClasses with `trust_remote_code=True`. The adapter pins that remote code: it
+copies `openvla/openvla-7b@47a0ec7f`'s three `*_prismatic.py` files into the pinned checkpoint
+snapshot and rewrites `auto_map` to point at them, so no other code can run.
+
+**Status:** written from upstream source and HF Hub metadata. These cells have **not yet been run
+on Colab**.
+
+Requirements:
+- **GPU:** an A100 or L4. The model is 7.5B parameters in bf16, about 15 GB of weights, so it
+  needs about 16 GB of VRAM.
+- **Dependencies:** OpenVLA's modeling code requires `timm` 0.9.x and expects
+  `transformers==4.40.1` / `tokenizers==0.19.1`. Those must never touch the PolicyServer's
+  environment, so the adapter runs in its own Python 3.10 venv. `openvla_server.py` refuses to
+  start on other versions.
+
+Default checkpoint: `toasta18/openvla-so101-cylinder@f00833ce5851`. It is an SO-101 joint-space
+fine-tune (degrees, gripper percent) with the single task "Pick up the black cylinder and place it
+on the plate." The official MIT `openvla/openvla-7b-finetuned-libero-{object,spatial,goal,10}`
+checkpoints are reviewed alternates: their delta-EEF output goes through IK on the control side.
+
+```python
+# OpenVLA only: an isolated Python 3.10 venv with the versions OpenVLA pins (README /
+# pyproject / modeling_prismatic.py). No GitHub clone, no flash-attn build (the adapter uses sdpa).
+# Both the install and the import check are verified by exit status.
+import subprocess, sys
+from pathlib import Path
+OPENVLA_VENV = '/content/openvla_venv'
+OPENVLA_PYTHON = f'{OPENVLA_VENV}/bin/python'
+if not Path(OPENVLA_PYTHON).exists():
+    subprocess.run([sys.executable, '-m', 'pip', 'install', 'uv'], check=True)
+    subprocess.run(['uv', 'venv', '--python', '3.10', '--seed', OPENVLA_VENV], check=True)
+install = subprocess.run(
+    ['uv', 'pip', 'install', '--python', OPENVLA_PYTHON,
+     'torch==2.2.0', 'torchvision==0.17.0', 'transformers==4.40.1', 'tokenizers==0.19.1',
+     'timm==0.9.10', 'accelerate==0.30.1', 'sentencepiece==0.1.99', 'numpy<2',
+     'pillow', 'flask', 'opencv-python-headless', 'requests'],
+    capture_output=True, text=True)
+print(install.stdout[-2000:]); print(install.stderr[-2000:])
+if install.returncode != 0:
+    raise RuntimeError(f'OpenVLA venv install failed (exit {install.returncode})')
+check = subprocess.run([OPENVLA_PYTHON, '-c', (
+    "import importlib.metadata as m, torch\n"
+    "print({p: m.version(p) for p in ('torch', 'transformers', 'tokenizers', 'timm', 'accelerate', 'huggingface-hub')})\n"
+    "assert torch.cuda.is_available(), 'no CUDA GPU visible to the OpenVLA venv'\n"
+)], capture_output=True, text=True)
+print(check.stdout); print(check.stderr[-2000:])
+if check.returncode != 0:
+    raise RuntimeError('OpenVLA venv import check failed; see stderr above')
+```
+
+Upload `control/vla_bridge/openvla_server.py` to `/content/openvla_server.py` (Files panel or
+Drive). Then launch it as a separate OS process with the venv's Python.
+
+On first start it does two downloads, about 15 GB in total:
+- the pinned checkpoint revision
+- the three pinned `openvla/openvla-7b` code files
+
+`/health` only answers after the model has loaded and warmed up. It reports `unnorm_key`,
+`action_space` and the action q01/q99. Logs go to `/content/openvla_server.log`.
+
+To use a LIBERO alternate, add `--checkpoint openvla/openvla-7b-finetuned-libero-object` here.
+Its reviewed revision and unnorm key are applied automatically. Pass the **same** `--checkpoint`
+to `run_vla_episode.py`, because it selects the client-side conversion.
+
+```python
+import os, subprocess, time, requests
+OPENVLA_LOG = '/content/openvla_server.log'
+env = dict(os.environ, TOKENIZERS_PARALLELISM='false')
+with open(OPENVLA_LOG, 'w') as log:
+    openvla_server_process = subprocess.Popen(
+        [OPENVLA_PYTHON, '/content/openvla_server.py', '--port', '3003'],
+        stdout=log, stderr=subprocess.STDOUT, env=env)
+for _ in range(2400):  # 15 GB download + load + warmup
+    if openvla_server_process.poll() is not None:
+        raise RuntimeError(f'OpenVLA adapter exited; inspect {OPENVLA_LOG}')
+    try:
+        health = requests.get('http://127.0.0.1:3003/health', timeout=2).json()
+        if health.get('status') == 'ready':
+            print('OpenVLA adapter ready:', {k: health['model'][k] for k in ('checkpoint', 'revision', 'unnorm_key', 'action_space')})
+            break
+    except requests.RequestException:
+        pass
+    time.sleep(1)
+else:
+    openvla_server_process.terminate()
+    raise RuntimeError(f'OpenVLA warmup timed out; inspect {OPENVLA_LOG}')
+```
+
+```python
+from pyngrok import ngrok
+openvla_tunnel = ngrok.connect(3003, "http")  # plain JSON-over-HTTP, like Step 9
+print(f"OpenVLA endpoint: {openvla_tunnel.public_url}")
+```
+
+Then, locally in `control/` (pass the base URL; the client appends `/action`):
+
+```bash
+.venv/bin/python run_vla_episode.py --backend openvla \
+  --server-address https://OPENVLA_TUNNEL.ngrok-free.app \
+  --instruction "Pick up the black cylinder and place it on the plate." \
+  --out outputs/openvla_UNIQUE_NAME --max-steps 20
+```
+
+`--instruction` matches the default checkpoint's only training task. Each step's `model_version`
+should read `toasta18/openvla-so101-cylinder@f00833ce5851`.
+
+For a LIBERO alternate, add `--checkpoint openvla/openvla-7b-finetuned-libero-object`, the same
+value the server was launched with. Its delta-EEF actions then go through
+`eef_to_joint.solve_ik()`.
+
+A step that logs `http-error-holding-position` means the adapter returned an error. Check
+`/content/openvla_server.log`:
+- 500 `openvla inference failed` means the model produced a non-finite or wrong-shaped action.
+- 400 means a bad request.
+
+Expect the default checkpoint's gripper to stay near ~53 %. That is a probable training-time
+masking defect, explained in `openvla_server.py`.
+
+```python
+# OpenVLA teardown -- every session, same rule as Step 6.
+if 'openvla_tunnel' in globals():
+    ngrok.disconnect(openvla_tunnel.public_url)
+if 'openvla_server_process' in globals() and openvla_server_process.poll() is None:
+    openvla_server_process.terminate()
+    try:
+        openvla_server_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        openvla_server_process.kill()
+        openvla_server_process.wait()
+```
