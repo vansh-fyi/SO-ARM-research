@@ -182,3 +182,54 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
 - `octo_server.py` executes only the first step of each 4-step chunk (receding horizon, 1 step).
 - If live runs are jittery, a server-side `TemporalEnsembleWrapper` equivalent is a contained
   follow-up. It would be stateful like the history window already is.
+
+## From 14-11 (RDT-1B)
+
+### No SO-101 RDT checkpoint exists, so `--backend rdt1b` is out of distribution
+
+- **Not fixable without training.** A scan of the HF Hub on 2026-10-01 found no RDT fine-tune for
+  SO-101, SO-100 or Koch (see `checkpoint_candidates.md`, `backend:rdt1b`).
+- The official model card says RDT "cannot yet generalize to new robot platforms (not seen in the
+  pre-training datasets)".
+- So `robotics-diffusion-transformer/rdt-1b` on SO-101 proves the pipeline (load, warm, serve,
+  convert, validate, drive) but not the task.
+- **Follow-up:** fine-tune RDT on this repo's SO-101 lerobot data, using the upstream README's
+  `HDF5VLADataset` guide.
+  - Fill slots 0-4 with `radians(JOINT_ORDER[:5] degrees)` and slot 10 with `gripper % / 100`.
+    That is exactly `backend_configs/rdt1b.json`'s `state_indices` / `joint_units` /
+    `gripper_norm_to_percent`.
+  - Train at the recording rate (30 Hz, the profile's `control_hz`).
+  - Then add the result as a reviewed profile in both `rdt1b_server.CHECKPOINT_PROFILES` and
+    `rdt1b.json`.
+  - Upstream recommends at least 150K steps. That is a training-budget decision, outside this phase.
+
+### `rdt1b_server.py` serves joint-position profiles only
+
+- The client's `eef_pose` branch (absolute EEF position plus 6-D rotation, through
+  `eef_to_joint.solve_ik()`) is implemented and tested.
+- **Why the server refuses EEF profiles:** RDT trains with state and action in the same slots
+  (`train/train.py` uses the state indicator as the action mask). An EEF checkpoint would therefore
+  need the current EEF pose as its state input. The HTTP wire contract carries only `joint_state`,
+  and the Colab side has no FK.
+- **Contained follow-up if an EEF RDT checkpoint is ever adopted:** add an optional `eef_pose` field
+  to `HttpAdapterActionSource`'s payload (client-side FK), or run FK on the server.
+
+### `check_checkpoint.py` has no `rdt1b` group
+
+- The RDT scan for 14-11 was done ad hoc and is recorded in `checkpoint_candidates.md`
+  (`backend:rdt1b` / `backend:rdt1b-selection`, both hand-written) and in 14-11-SUMMARY.md.
+- RDT checkpoints carry no per-robot slot map, so a group could only check the network shape:
+  - `config.json` `action_dim == state_token_dim == 128`
+  - `lang_token_dim == 4096`, `img_token_dim == 1152`
+  - `img_pos_embed_config == [[image, [2, 3, -729]]]`
+  - that a `pytorch_model.bin` is present
+- **The slot map itself must come from the fine-tune's documentation.**
+
+### RDT returns one chunk step per request, not agilex_inference's full-chunk execution
+
+- Upstream deployment executes all 64 steps of each chunk, with interpolation, before inferring
+  again. `rdt1b_server.py` instead returns one absolute target about one client control period ahead
+  (step 14 at 2 Hz), as a receding horizon.
+- If live motion is jerky or too slow, streaming the chunk to the client's local waypoint
+  interpolation (`--execution-hz`) is a contained follow-up. It would change `HttpAdapterActionSource`'s
+  one-action contract.

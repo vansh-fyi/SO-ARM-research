@@ -393,3 +393,70 @@ Caveats:
 - **Control rate.** Each action is a 3 Hz step.
 - **Instruction.** The training task is "pick up the cube". Pass it as `--instruction`.
 <!-- backend:octo-selection:end -->
+
+<!-- backend:rdt1b:start -->
+## RDT-1B (Phase 14, Plan 14-11; hand-written, the script never rewrites this section)
+
+`check_checkpoint.py` has no `rdt1b` group. An RDT checkpoint is a `PyTorchModelHubMixin` directory
+(`config.json` + `pytorch_model.bin`) with no lerobot `input_features`. Its `config.json` describes
+the network only: the per-robot slot mapping lives in the fine-tuner's dataset code, not in the
+checkpoint. These rows come from an ad hoc live fetch on 2026-10-01 (unauthenticated):
+- the HF API metadata and card of each repo
+- for the official checkpoints, `config.json` and the tensor names and shapes inside
+  `pytorch_model.bin`, read by HTTP range requests over the zip's pickle (no full download)
+
+How the scan was run:
+- **Search:** Hub searches `rdt-1b`, `rdt_1b`, `rdt1b`, `rdt-170m`, `rdt so101`, `rdt so100`, `rdt-so`,
+  `rdt_so`, `RoboticsDiffusionTransformer`, `rdt-finetune`, `rdt-lerobot`, `rdt koch`, `rdt piper` and
+  `rdt` (119 hits), plus the `rdt` tag.
+- **Reverse search:** every model id from the paginated searches `so101` (8979), `so-101`, `so_101`,
+  `so100`, `so-100`, `so_100`, `soarm` and `so-arm`, filtered for `rdt` / `diffusion-transformer`.
+  Only false positives came back (`record...`, `boardtest...`).
+- **Result:** **no RDT checkpoint fine-tuned on SO-101, SO-100 or Koch exists.**
+
+| Repo ID | Revision | License | Weights / config | Action space | SO-101 fit |
+|---|---|---|---|---|---|
+| `robotics-diffusion-transformer/rdt-1b` | `eb09036cc64ca4945051acbd1bd581d30a1d7711` | MIT | 1,228,319,872 bf16 params (2.46 GB); hidden 2048, depth 28; output 128; state adaptor in 256 (state + mask); image condition 4374 = 2 x 3 x 729; language 4096 (T5-XXL) | unified 128-D; **joint_position** for SO-101 (slots 0-4 rad, 10 gripper 0-1) | **default**. Official and audited org; pre-trained on 46 datasets, none of them SO-101. The card says it does not generalize to unseen robots |
+| `robotics-diffusion-transformer/rdt-170m` | `8aa386cac3bbfd9540676c75b3d767cc7f88a10a` | MIT | 166,229,888 bf16 params; hidden 1024, depth 14; same 128-D in/out and encoders | as above | alternate. Same caveat; smaller policy, same T5-XXL / SigLIP |
+| `robotics-diffusion-transformer/maniskill-model` | not fetched | MIT | ManiSkill sim fine-tunes (+ OpenVLA / Octo / DP baselines) | joint position (ManiSkill Panda) | NO. A simulated Franka |
+| `robotics-diffusion-transformer/RDT2-*`, `RVQActionTokenizer` | not fetched | not fetched | RDT2, a different model family | n/a | NO. Not RDT-1B and not in the 14-RESEARCH audit |
+| `TJ-chen/RDT-1B-LIBERO-*` (5 repos) | not fetched | not fetched | LIBERO fine-tunes | LIBERO Panda | NO. A simulated Franka |
+| `Weke/rdt-piper` | `95c8f49` | none | DeepSpeed checkpoint, no config or card | unknown (AgileX Piper, 6-DOF) | NO. Not SO-101 and undocumented |
+| `shawber2/rdt-agilex-best`, `leledaidai/rdt-checkpoint-2000-diemaojin` | `8415342` / `0665a1b` | none | AgileX / ALOHA fine-tunes | bimanual joints | NO. A bimanual AgileX |
+| `chenhaojun/rdt*`, `wyl88/rdt_*`, `mimirmimir/k_rdt-1b_5k`, `yuta0x89/sample-rdt`, `Ethan-pooh/rdt-1b-test`, `inifyy/RDT_UR5_Models`, `KMK040412/RDT-1B-Ablation`, `shreethar/B0-RDT-OXE-20K` | various | none / MIT | auto-generated mixin cards, raw DeepSpeed state, zips or code mirrors | unknown | NO. No robot or dataset is documented (`inifyy` is a UR5) |
+<!-- backend:rdt1b:end -->
+
+<!-- backend:rdt1b-selection:start -->
+## RDT-1B selection (Plan 14-11, hand-written; the script never rewrites this section)
+
+**Chosen default:** `robotics-diffusion-transformer/rdt-1b` @ `eb09036cc64ca4945051acbd1bd581d30a1d7711`,
+action space `joint_position` (`backend_configs/rdt1b.json`). The official
+`robotics-diffusion-transformer/rdt-170m` @ `8aa386c` is a reviewed alternate.
+
+**Action space, confirmed rather than assumed.** It was checked against
+`thu-ml/RoboticsDiffusionTransformer` @ `cd79363` and the weights:
+- **Slot map.** `configs/state_vec.py` maps `right_arm_joint_{0..9}_pos` to slots 0-9 and
+  `right_gripper_open` to slot 10.
+- **README.** A single-arm robot fills the right-arm part; with 6 DOF, fill the first six joint
+  slots. Physical quantities stay in SI units (radians), and only the gripper is min-max normalized
+  to [0, 1].
+- **State and action share the same slots.** `scripts/agilex_model.py` and
+  `data/hdf5_vla_dataset.py` write the ABSOLUTE target qpos into the same slots as the state, and
+  `train/train.py` passes the state indicator as the action mask.
+- **Weights.** The final layer outputs 128 values, and the state adaptor takes 128 state + 128 mask
+  values.
+
+So SO-101's 5 arm joints map directly to slots 0-4, and its gripper (percent / 100) to slot 10. No IK
+is needed. The client only converts units: radians to degrees, and [0, 1] to percent. The EEF slots
+(30-38: an absolute position plus a 6-D rotation) are supported client-side as an `eef_pose` fallback
+through `eef_to_joint.solve_ik()`, but no reviewed checkpoint uses them.
+
+Caveats:
+- **Out of distribution.** No SO-101 fine-tune exists, and the base checkpoint never saw SO-101's
+  joint conventions. Expect the pipeline to run end to end, but not task-meaningful motion, until RDT
+  is fine-tuned on SO-101 data (the upstream README's fine-tuning guide, ~150K steps recommended).
+- **Compute.** The policy and encoders run in bf16, which a T4 lacks. T5-XXL (a 44.5 GB fp32
+  download, ~9.5 GB in VRAM) dominates the footprint. Use an A100 runtime.
+- **Pacing.** Each of the 64 chunk steps is an absolute target at 30 Hz. The server returns the step
+  about one client control period ahead (step 14 at the default 2 Hz loop).
+<!-- backend:rdt1b-selection:end -->

@@ -1448,3 +1448,185 @@ if 'octo_server_process' in globals() and octo_server_process.poll() is None:
         octo_server_process.kill()
         octo_server_process.wait()
 ```
+
+---
+
+## Tier C: RDT-1B resident adapter (Plan 14-11, `--backend rdt1b`)
+
+RDT-1B has no LeRobot `PolicyServer` integration. It runs as its own resident Flask adapter,
+`control/vla_bridge/rdt1b_server.py`, built like the Octo and OpenVLA adapters above: it loads once,
+warms up, then serves. It does NOT use Steps 1-5.
+
+The code comes from **github.com/thu-ml/RoboticsDiffusionTransformer**, cloned at the pinned commit
+`cd79363` (MIT). It is not on PyPI. The adapter loads through the repo's own deployment wrapper,
+`scripts.agilex_model.RoboticDiffusionTransformerModel`, and overrides only the two hooks the README
+says to change for a new robot (`_format_joint_to_state` / `_unformat_action_to_joint`). The
+checkpoint, the SigLIP vision encoder and the T5-XXL text encoder are each downloaded at a pinned
+revision.
+
+**Status:** written from upstream source and HF Hub metadata. These cells have **not yet been run
+on Colab**.
+
+Requirements:
+- **GPU: an A100 runtime (Colab Pro).** RDT runs in bfloat16, which a T4 lacks, so
+  `rdt1b_server.py` refuses to start there (14-RESEARCH Pitfall 4). Expect about 13 GB of VRAM:
+  T5-XXL's encoder is ~9.5 GB in bf16, RDT-1B 2.5 GB, SigLIP 0.8 GB. Below 24 GB of VRAM (e.g. an L4),
+  the adapter automatically offloads T5 encoder blocks 12-23 to `--offload-dir`, as upstream recommends.
+- **Disk: about 55 GB free.** `google/t5-v1_1-xxl` ships only a 44.5 GB fp32 `pytorch_model.bin`.
+  The first launch therefore takes a long time. `--no-text-encoder` with precomputed
+  `--lang-embeddings` (upstream `scripts/encode_lang.py` output) skips that download entirely.
+- **Dependencies:** RDT pins Python 3.10 and `torch==2.1.0` (no Python 3.12 wheels), so the adapter
+  runs in its own venv. `rdt1b_server.py` refuses other versions of torch, transformers, diffusers,
+  timm, accelerate and huggingface_hub.
+
+Default checkpoint: the official `robotics-diffusion-transformer/rdt-1b@eb09036`. Its action space was
+confirmed from RDT's own code and weights as a 128-D unified vector whose **joint-position** slots
+take SO-101 directly: arm joints 0-4 in radians, gripper slot 10 in [0, 1]. **No IK.** There is no
+SO-101 RDT fine-tune on the Hub, and the model card says RDT does not generalize to robots it was
+not pre-trained on. So this run proves the pipeline, not the task. The official
+`robotics-diffusion-transformer/rdt-170m` is a reviewed alternate.
+
+
+```python
+# RDT-1B only: the official install (README: python 3.10, torch 2.1.0 cu121, requirements.txt) in an
+# isolated venv, at a pinned thu-ml/RoboticsDiffusionTransformer commit. Only the inference subset of
+# requirements.txt is installed (deepspeed, wandb, h5py and imgaug are training/data only). flash-attn is
+# skipped: the model code uses torch SDPA through timm, never flash_attn. huggingface_hub is pinned to
+# 0.25.2 because diffusers 0.27.2 still imports cached_download (removed in 0.26). Clone, installs and
+# import check are all verified by exit status.
+import subprocess, sys
+from pathlib import Path
+RDT_COMMIT = 'cd79363a1387e8f81c7724d070ef7e45fd23150f'
+RDT_DIR = '/content/RoboticsDiffusionTransformer'
+RDT_VENV = '/content/rdt_venv'
+RDT_PYTHON = f'{RDT_VENV}/bin/python'
+if not Path(RDT_DIR).exists():
+    subprocess.run(['git', 'clone', 'https://github.com/thu-ml/RoboticsDiffusionTransformer', RDT_DIR], check=True)
+subprocess.run(['git', '-C', RDT_DIR, 'checkout', '--detach', RDT_COMMIT], check=True)
+head = subprocess.run(['git', '-C', RDT_DIR, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True)
+if head.stdout.strip() != RDT_COMMIT:
+    raise RuntimeError(f'RDT checkout is at {head.stdout.strip()}, expected {RDT_COMMIT}')
+if not Path(RDT_PYTHON).exists():
+    subprocess.run([sys.executable, '-m', 'pip', 'install', 'uv'], check=True)
+    subprocess.run(['uv', 'venv', '--python', '3.10', '--seed', RDT_VENV], check=True)
+for packages in (
+    ['--index-url', 'https://download.pytorch.org/whl/cu121', 'torch==2.1.0', 'torchvision==0.16.0'],
+    ['transformers==4.41.0', 'diffusers==0.27.2', 'timm==1.0.3', 'accelerate==0.30.1', 'sentencepiece==0.2.0',
+     'protobuf==4.25.3', 'huggingface_hub==0.25.2', 'packaging==24.0', 'numpy==1.26.4', 'pyyaml',
+     'opencv-python-headless==4.9.0.80', 'flask', 'pillow', 'requests'],
+):
+    install = subprocess.run(['uv', 'pip', 'install', '--python', RDT_PYTHON, *packages], capture_output=True, text=True)
+    print(install.stdout[-2000:]); print(install.stderr[-2000:])
+    if install.returncode != 0:
+        raise RuntimeError(f'RDT venv install failed (exit {install.returncode})')
+check = subprocess.run([RDT_PYTHON, '-c', (
+    "import importlib.metadata as m, torch\n"
+    "print({p: m.version(p) for p in ('torch', 'transformers', 'diffusers', 'timm', 'accelerate', 'huggingface_hub', 'numpy')})\n"
+    "from scripts.agilex_model import RoboticDiffusionTransformerModel\n"
+    "from models.multimodal_encoder.t5_encoder import T5Embedder\n"
+    "assert torch.cuda.is_available(), 'no CUDA GPU'\n"
+    "print(torch.cuda.get_device_name(0), round(torch.cuda.get_device_properties(0).total_memory / 2**30, 1), 'GiB')\n"
+    "assert torch.cuda.is_bf16_supported(), 'this GPU has no bf16 (T4?): switch the runtime to an A100'\n"
+)], cwd=RDT_DIR, capture_output=True, text=True)
+print(check.stdout); print(check.stderr[-2000:])
+if check.returncode != 0:
+    raise RuntimeError('RDT venv import check failed; see stderr above')
+```
+
+Upload `control/vla_bridge/rdt1b_server.py` to `/content/rdt1b_server.py` (Files panel or Drive).
+Then launch it as a separate OS process with the venv's Python.
+
+On first start it downloads three pinned revisions, about 51 GB in total:
+- the checkpoint's `config.json` and `pytorch_model.bin` (2.5 GB for RDT-1B)
+- `google/siglip-so400m-patch14-384` (3.5 GB)
+- `google/t5-v1_1-xxl` (44.5 GB), unless you pass `--no-text-encoder`
+
+Before declaring the model ready, it checks that the cloned repo's unified layout is the reviewed one
+and that every weight key matches. Then it runs one warm-up inference. `/health` only answers after
+that. It reports `action_space`, `state_indices`, `control_hz`, `chunk_step` and the T5 offload folder.
+The log at `/content/rdt1b_server.log` records the GPU, whether T5 is offloaded, and the **peak VRAM**
+after warm-up. That line is the Pitfall 4 evidence: an OOM shows up there as
+`torch.cuda.OutOfMemoryError`, or as the process dying during load.
+
+The server returns the chunk step about one client control period ahead. By default that is
+`--client-control-hz 2.0`, matching `run_vla_episode.py`'s default `--control-hz`. If you run the
+client at another rate, pass the same value here.
+
+To use the alternate, add `--checkpoint robotics-diffusion-transformer/rdt-170m` here, and pass the
+**same** `--checkpoint` to `run_vla_episode.py`.
+
+
+```python
+import os, shutil, subprocess, time, requests
+RDT_LOG = '/content/rdt1b_server.log'
+free_gb = shutil.disk_usage('/content').free / 1e9
+if free_gb < 60:
+    raise RuntimeError(f'only {free_gb:.0f} GB free on /content; RDT needs ~55 GB (T5-XXL alone is 44.5 GB)')
+env = dict(os.environ, TOKENIZERS_PARALLELISM='false')
+with open(RDT_LOG, 'w') as log:
+    rdt_server_process = subprocess.Popen(
+        [RDT_PYTHON, '/content/rdt1b_server.py', '--port', '3005', '--rdt-repo', RDT_DIR],
+        stdout=log, stderr=subprocess.STDOUT, env=env, cwd=RDT_DIR)
+for _ in range(7200):  # ~51 GB download + load + warmup
+    if rdt_server_process.poll() is not None:
+        print(open(RDT_LOG).read()[-3000:])
+        raise RuntimeError(f'RDT adapter exited (OOM or bad dependency?); inspect {RDT_LOG}')
+    try:
+        health = requests.get('http://127.0.0.1:3005/health', timeout=2).json()
+        if health.get('status') == 'ready':
+            print('RDT adapter ready:', {k: health['model'][k] for k in (
+                'checkpoint', 'revision', 'action_space', 'state_indices', 'control_hz', 'chunk_step', 't5_offload_dir')})
+            break
+    except requests.RequestException:
+        pass
+    time.sleep(1)
+else:
+    rdt_server_process.terminate()
+    raise RuntimeError(f'RDT warmup timed out; inspect {RDT_LOG}')
+print([line for line in open(RDT_LOG) if 'GiB' in line or 'OutOfMemory' in line])
+```
+
+```python
+from pyngrok import ngrok
+rdt_tunnel = ngrok.connect(3005, "http")  # plain JSON-over-HTTP, like Step 9
+print(f"RDT endpoint: {rdt_tunnel.public_url}")
+```
+
+Then, locally in `control/` (pass the base URL; the client appends `/action`):
+
+```bash
+.venv/bin/python run_vla_episode.py --backend rdt1b \
+  --server-address https://RDT_TUNNEL.ngrok-free.app \
+  --instruction "pick up the cube" \
+  --out outputs/rdt1b_UNIQUE_NAME --max-steps 20
+```
+
+Each step's `model_version` should read `robotics-diffusion-transformer/rdt-1b@eb09036cc64c`. The action
+is an absolute joint target: radians are converted to degrees, and the gripper's [0, 1] to percent.
+There is no IK. Every action then goes through the safety validator.
+
+For the alternate, add `--checkpoint robotics-diffusion-transformer/rdt-170m`, the same value the server
+was launched with.
+
+A step that logs `http-error-holding-position` means the adapter returned an error. Check
+`/content/rdt1b_server.log`:
+- 500 `rdt inference failed` means the model produced a non-finite or wrong-shaped action.
+- 400 means a bad request. With `--no-text-encoder`, this includes an instruction that has no
+  precomputed embedding.
+
+Expect motion that is not task-meaningful. The base checkpoint has never seen SO-101, and the per-step
+safety clamp bounds every jump.
+
+
+```python
+# RDT teardown -- every session, same rule as Step 6.
+if 'rdt_tunnel' in globals():
+    ngrok.disconnect(rdt_tunnel.public_url)
+if 'rdt_server_process' in globals() and rdt_server_process.poll() is None:
+    rdt_server_process.terminate()
+    try:
+        rdt_server_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        rdt_server_process.kill()
+        rdt_server_process.wait()
+```
