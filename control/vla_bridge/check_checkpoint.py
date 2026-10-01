@@ -4,8 +4,8 @@ Phase 11 (VLA Hardware Connection), Plan 11-03, Task 1 wrote this for
 SmolVLA. Phase 14 (Plan 14-04 onward) extends it to every gRPC-bridge-lane
 backend (pi0/pi05 here; ACT in 14-05, Diffusion Policy in 14-06): add a
 `CANDIDATE_GROUPS["<backend>"]` list and run it with `--backend <backend>`.
-Backends in `NO_CAMERA_MASKING_BACKENDS` (ACT) get a stricter key check: see
-`_bridge_key_fit`.
+Backends in `NO_CAMERA_MASKING_BACKENDS` (ACT, Diffusion Policy) get a stricter
+key check: see `_bridge_key_fit`.
 
 For each candidate repo id this script:
 
@@ -83,6 +83,20 @@ CANDIDATE_GROUPS: dict[str, list[str]] = {
         "robotfuel/act_so101_t16b",
         "lerobot/act_aloha_sim_transfer_cube_human",
     ],
+    # Phase 14, Plan 14-06. From a wide HF Hub scan (2026-10-01): 13 name searches
+    # ("diffusion", "dp_so101", "so101_diffusion", ...) plus `lerobot`/`diffusion`-
+    # tagged repos mentioning SO-10x, about 3500 repos, 415 of them lerobot
+    # `"type": "diffusion"`. NONE declares `camera1` as its only image key (required,
+    # see NO_CAMERA_MASKING_BACKENDS). The first is the only one declaring `camera1`
+    # at all; the rest show the common shapes (wrist-only, front+wrist) and the
+    # official LeRobot Diffusion checkpoint.
+    "diffusion": [
+        "hrl7/so101-touch-diffusion-l4",
+        "helloworld26/diffusion_so101_pick_place",
+        "edouardfoussier/diffusion_so101_pick_tennis_ball_wrist",
+        "tsangb34/diffusion_so101_stack_white_bowls_240x320",
+        "lerobot/diffusion_pusht",
+    ],
 }
 
 # Backward-compatible name for the Phase 11 SmolVLA list.
@@ -93,14 +107,16 @@ SECTION_TITLES = {
     "pi0": "pi0 (Phase 14, Plan 14-04)",
     "pi05": "pi0.5 / pi05 (Phase 14, Plan 14-04)",
     "act": "ACT (Phase 14, Plan 14-05)",
+    "diffusion": "Diffusion Policy (Phase 14, Plan 14-06)",
 }
 
 # Policies that do NOT mask a declared-but-missing camera. Installed lerobot
-# 0.6.1 `ACTPolicy.predict_action_chunk()` builds
+# 0.6.1 `ACTPolicy.predict_action_chunk()` and
+# `DiffusionPolicy.predict_action_chunk()` both build
 # `[batch[key] for key in self.config.image_features]`, so any declared image
 # key the bridge does not deliver is a KeyError on every inference. (pi0/pi05/
 # SmolVLA instead fill missing cameras with masked empty images.)
-NO_CAMERA_MASKING_BACKENDS = frozenset({"act"})
+NO_CAMERA_MASKING_BACKENDS = frozenset({"act", "diffusion"})
 
 OUT_PATH = Path(__file__).resolve().parent / "checkpoint_candidates.md"
 
@@ -294,7 +310,7 @@ def _bridge_key_fit(image_keys: list[str] | None, masks_missing_cameras: bool = 
     Only `observation.images.camera1` (wrist) reaches the policy server (see
     `BRIDGE_IMAGE_KEY`). The checkpoint must declare it. Any other declared
     camera arrives missing: pi0/pi05/SmolVLA mask it as an empty camera, but a
-    policy that does not mask (`masks_missing_cameras=False`, i.e. ACT) raises
+    policy that does not mask (`masks_missing_cameras=False`: ACT, Diffusion) raises
     KeyError on it, so for those camera1 must be the ONLY image key.
     """
     if not image_keys:
