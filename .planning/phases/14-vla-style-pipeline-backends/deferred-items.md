@@ -102,3 +102,27 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
   and in 14-07-SUMMARY.md. `check_checkpoint.py --backend groot` does not exist yet.
 - Adding it would also need a units check (degree vs range-normalized vs radians normalizer stats).
   The radians case is real: `alexhegit/so101-simstudio-lab01-pnp-groot-n17`.
+
+## From 14-08 (Wall-X)
+
+### lerobot 0.6.1's async PolicyServer does not dispatch `wall_x` (worked around via Tier C)
+
+- **Not fixed upstream; Wall-X runs on the HTTP-adapter lane instead.**
+- `async_inference/constants.py::SUPPORTED_POLICIES` lacks `"wall_x"`, even though
+  `lerobot/policies/wall_x/` ships a full `WallXPolicy`.
+- **Alternative not taken:** a version-pinned launcher like `groot_n17_server.py` that appends
+  `"wall_x"` to `SUPPORTED_POLICIES` would put Wall-X on the gRPC lane. It would also inherit the
+  bridge's `camera1`-only limitation above. No SO-101 `wall_x` checkpoint on the Hub declares
+  `camera1` only: grahamwichhh's declare camera1-3 (some also camera4). The HTTP lane sends all
+  three rig frames and maps them server-side, so it is the better lane today anyway.
+- **Revisit signal:** `test_backend_wallx.py::test_installed_lerobot_policy_server_does_not_dispatch_wall_x`
+  starts failing when a lerobot release adds `wall_x`. `wallx.build()` already takes the gRPC
+  branch for a `host:port` endpoint once dispatch exists.
+
+### `check_checkpoint.py` has no `wall_x` candidate group
+
+- The Wall-X candidate scan for 14-08 was done ad hoc and is recorded in `wallx.json`'s notes and
+  in 14-08-SUMMARY.md. It covered 34 Hub repos with `type: wall_x` and a 6-D action.
+- Adding a group would need the same units check as GR00T's. Wall-X also needs an
+  `attn_implementation` check: lerobot 0.6.1 rejects `"sdpa"` unless the loader overrides it, as
+  `wallx_server.py` does.
