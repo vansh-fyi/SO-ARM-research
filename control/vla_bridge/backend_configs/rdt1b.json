@@ -1,0 +1,34 @@
+{
+  "checkpoint": "robotics-diffusion-transformer/rdt-1b",
+  "revision": "eb09036cc64ca4945051acbd1bd581d30a1d7711",
+  "endpoint_url": null,
+  "action_space": "joint_position",
+  "instruction": "pick up the cube",
+  "checkpoints": {
+    "robotics-diffusion-transformer/rdt-1b": {
+      "revision": "eb09036cc64ca4945051acbd1bd581d30a1d7711",
+      "action_space": "joint_position",
+      "state_indices": [0, 1, 2, 3, 4, 10],
+      "joint_units": "rad",
+      "gripper_norm_to_percent": [0.0, 100.0],
+      "control_hz": 30
+    },
+    "robotics-diffusion-transformer/rdt-170m": {
+      "revision": "8aa386cac3bbfd9540676c75b3d767cc7f88a10a",
+      "action_space": "joint_position",
+      "state_indices": [0, 1, 2, 3, 4, 10],
+      "joint_units": "rad",
+      "gripper_norm_to_percent": [0.0, 100.0],
+      "control_hz": 30
+    }
+  },
+  "notes": [
+    "Verified live on 2026-10-01 against github.com/thu-ml/RoboticsDiffusionTransformer @ cd79363 and the HF Hub. See 14-11-SUMMARY.md and checkpoint_candidates.md (backend:rdt1b).",
+    "action_space joint_position was confirmed from RDT's own code, not assumed from the family. configs/state_vec.py maps right_arm_joint_{0..4}_pos to slots 0-4 and right_gripper_open to slot 10. The README says single-arm robots fill the right-arm part, in SI units (radians), with only the gripper min-max normalized to [0, 1]. scripts/agilex_model.py and data/hdf5_vla_dataset.py write ABSOLUTE target qpos into the same slots as the state, and train.py uses the state indicator as the action mask.",
+    "The rdt-1b weights (eb09036, read by HTTP range over pytorch_model.bin's pickle) have a 128-D output layer and a 256-D (state + mask) state adaptor, so the unified layout is what the checkpoint actually computes. RDT checkpoints do not record a per-robot slot map: that lives in the fine-tuner's dataset code, so state_indices here is this repo's SO-101 mapping following the README.",
+    "No SO-101 / SO-100 / Koch RDT fine-tune exists on the HF Hub (scanned 2026-10-01). The official model card says RDT cannot yet generalize to robot platforms absent from pre-training, so rdt-1b on SO-101 is out of distribution. It wires and drives the pipeline, but a fine-tune on SO-101 data is needed for task-meaningful motion.",
+    "control_hz 30 = the ctrl_freqs conditioning (lerobot SO-101 recording rate). rdt1b_server.py returns chunk step round(30 / --client-control-hz) - 1 (14 at the default 2 Hz loop), since every chunk step is an absolute target.",
+    "Gripper: percent / 100 -> right_gripper_open, assuming lerobot's 0 % = closed. RDT's gripper_open is 1 = open.",
+    "--checkpoint must match the checkpoint rdt1b_server.py was launched with. Each step's model_version shows what the server ran."
+  ]
+}
