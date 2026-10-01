@@ -1287,3 +1287,164 @@ if 'openvla_server_process' in globals() and openvla_server_process.poll() is No
         openvla_server_process.kill()
         openvla_server_process.wait()
 ```
+
+---
+
+## Tier C: Octo resident adapter (Plan 14-10, `--backend octo`)
+
+Octo has no LeRobot `PolicyServer` integration and is **JAX/Flax**, not PyTorch. It runs as its own
+resident Flask adapter, `control/vla_bridge/octo_server.py`, built like the OpenVLA adapters above: it
+loads once, warms up (JIT-compiles), then serves. It does NOT use Steps 1-5.
+
+The code comes from **github.com/octo-models/octo**, cloned at the pinned commit `241fb35` (MIT). It is
+not on PyPI. The adapter loads through Octo's own `OctoModel.load_pretrained` / `create_tasks` /
+`sample_actions`, exactly as the repo's `examples/03` and `examples/04` do. It never uses Octo's
+`hf://` path, which downloads `main` and every checkpoint step. Instead it downloads one step of the
+pinned revision, and it pins the `t5-base` tokenizer to `google-t5/t5-base@a9723ea`.
+
+**Status:** written from upstream source and HF Hub metadata. These cells have **not yet been run
+on Colab**.
+
+Requirements:
+- **GPU:** any Colab GPU. Octo-Base is 93M parameters and Octo-Small is 27M.
+- **Dependencies:** Octo pins Python 3.10, `jax[cuda11_pip]==0.4.20`, `flax==0.7.5`,
+  `tensorflow==2.15.0` and `numpy==1.24.3`. None of those may touch the PolicyServer's environment, so
+  the adapter runs in its own venv. `octo_server.py` refuses to start on other versions.
+
+Default checkpoint: `sapanostic/octo-so101-3hz-finetune@a45ff970`, step 10000. It is a real **SO-101**
+fine-tune of `octo-base-1.5`, trained at 3 Hz with the task "pick up the cube", on primary + wrist
+cameras with a 2-frame window. Its action is a 7-D end-effector **delta**: metres, roll/pitch/yaw
+differences, and an absolute gripper. The control side converts it with IK. The official MIT
+`rail-berkeley/octo-{small,base}-1.5` checkpoints, with the `bridge_dataset` statistics, are reviewed
+alternates.
+
+
+```python
+# Octo only: the official install (README: pip install -e . + requirements.txt + jax cuda11 wheel)
+# in an isolated Python 3.10 venv, at a pinned octo-models/octo commit. Extra exact pins fix what
+# requirements.txt leaves open (orbax-checkpoint, transformers) to versions contemporary with
+# jax 0.4.20 / flax 0.7.5. Clone, install and import check are all verified by exit status.
+import subprocess, sys
+from pathlib import Path
+OCTO_COMMIT = '241fb3514b7c40957a86d869fecb7c7fc353f540'
+OCTO_DIR = '/content/octo'
+OCTO_VENV = '/content/octo_venv'
+OCTO_PYTHON = f'{OCTO_VENV}/bin/python'
+if not Path(OCTO_DIR).exists():
+    subprocess.run(['git', 'clone', 'https://github.com/octo-models/octo', OCTO_DIR], check=True)
+subprocess.run(['git', '-C', OCTO_DIR, 'checkout', '--detach', OCTO_COMMIT], check=True)
+head = subprocess.run(['git', '-C', OCTO_DIR, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True)
+if head.stdout.strip() != OCTO_COMMIT:
+    raise RuntimeError(f'octo checkout is at {head.stdout.strip()}, expected {OCTO_COMMIT}')
+if not Path(OCTO_PYTHON).exists():
+    subprocess.run([sys.executable, '-m', 'pip', 'install', 'uv'], check=True)
+    subprocess.run(['uv', 'venv', '--python', '3.10', '--seed', OCTO_VENV], check=True)
+install = subprocess.run(
+    ['uv', 'pip', 'install', '--python', OCTO_PYTHON,
+     '--find-links', 'https://storage.googleapis.com/jax-releases/jax_cuda_releases.html',
+     '-r', f'{OCTO_DIR}/requirements.txt', '-e', OCTO_DIR,
+     'jax[cuda11_pip]==0.4.20', 'flax==0.7.5', 'orbax-checkpoint==0.4.4', 'transformers==4.34.1',
+     'numpy==1.24.3', 'flask', 'opencv-python-headless==4.11.0.86', 'pillow', 'requests', 'huggingface_hub'],
+    capture_output=True, text=True)
+print(install.stdout[-2000:]); print(install.stderr[-2000:])
+if install.returncode != 0:
+    raise RuntimeError(f'Octo venv install failed (exit {install.returncode})')
+check = subprocess.run([OCTO_PYTHON, '-c', (
+    "import importlib.metadata as m, jax\n"
+    "print({p: m.version(p) for p in ('jax', 'jaxlib', 'flax', 'orbax-checkpoint', 'tensorflow', 'numpy', 'transformers')})\n"
+    "from octo.model.octo_model import OctoModel\n"
+    "assert jax.default_backend() == 'gpu', f'JAX backend is {jax.default_backend()}, expected gpu'\n"
+)], capture_output=True, text=True)
+print(check.stdout); print(check.stderr[-2000:])
+if check.returncode != 0:
+    raise RuntimeError('Octo venv import check failed; see stderr above')
+```
+
+Upload `control/vla_bridge/octo_server.py` to `/content/octo_server.py` (Files panel or Drive). Then
+launch it as a separate OS process with the venv's Python.
+
+On first start it downloads two things:
+- the pinned checkpoint revision's `config.json`, `dataset_statistics.json` and `example_batch.msgpack`,
+  plus **one** step of params (about 0.8 GB for Octo-Base)
+- the pinned `google-t5/t5-base` tokenizer files
+
+`/health` only answers after the model has loaded and the JIT warm-up has run. It reports `action_space`,
+`window_size`, `action_horizon`, the action mean/std/mask, and which rig camera feeds `image_primary` and
+`image_wrist`. Logs go to `/content/octo_server.log`.
+
+The default primary camera is `overhead_left`. To use another view, add
+`--primary-image-key overhead_right` here.
+
+To use an official alternate, add `--checkpoint rail-berkeley/octo-small-1.5` here. Its reviewed
+revision, step and `bridge_dataset` key are applied automatically. Pass the **same** `--checkpoint`
+to `run_vla_episode.py`, because it selects the client-side gripper mapping.
+
+
+```python
+import os, subprocess, time, requests
+OCTO_LOG = '/content/octo_server.log'
+env = dict(os.environ, XLA_PYTHON_CLIENT_PREALLOCATE='false', TOKENIZERS_PARALLELISM='false')
+with open(OCTO_LOG, 'w') as log:
+    octo_server_process = subprocess.Popen(
+        [OCTO_PYTHON, '/content/octo_server.py', '--port', '3004'],
+        stdout=log, stderr=subprocess.STDOUT, env=env)
+for _ in range(1200):  # ~1 GB download + load + JIT warmup
+    if octo_server_process.poll() is not None:
+        raise RuntimeError(f'Octo adapter exited; inspect {OCTO_LOG}')
+    try:
+        health = requests.get('http://127.0.0.1:3004/health', timeout=2).json()
+        if health.get('status') == 'ready':
+            print('Octo adapter ready:', {k: health['model'][k] for k in (
+                'checkpoint', 'revision', 'step', 'action_space', 'window_size', 'action_horizon', 'image_keys')})
+            break
+    except requests.RequestException:
+        pass
+    time.sleep(1)
+else:
+    octo_server_process.terminate()
+    raise RuntimeError(f'Octo warmup timed out; inspect {OCTO_LOG}')
+```
+
+```python
+from pyngrok import ngrok
+octo_tunnel = ngrok.connect(3004, "http")  # plain JSON-over-HTTP, like Step 9
+print(f"Octo endpoint: {octo_tunnel.public_url}")
+```
+
+Then, locally in `control/` (pass the base URL; the client appends `/action`):
+
+```bash
+.venv/bin/python run_vla_episode.py --backend octo \
+  --server-address https://OCTO_TUNNEL.ngrok-free.app \
+  --instruction "pick up the cube" \
+  --out outputs/octo_UNIQUE_NAME --max-steps 20
+```
+
+`--instruction` matches the default checkpoint's only training task. Each step's `model_version` should
+read `sapanostic/octo-so101-3hz-finetune@a45ff970242a`. Each delta-EEF action goes through
+`eef_to_joint.solve_ik()` before the safety validator.
+
+For an official alternate, add `--checkpoint rail-berkeley/octo-small-1.5`, the same value the server
+was launched with.
+
+A step that logs `http-error-holding-position` means the adapter returned an error. Check
+`/content/octo_server.log`:
+- 500 `octo inference failed` means the model produced a non-finite or wrong-shaped action.
+- 400 means a bad request.
+
+The default checkpoint was trained at 3 Hz. Each action is about a third of a second of motion, applied
+as a delta from the current pose, so the per-step safety clamp may trim it at higher loop rates.
+
+
+```python
+# Octo teardown -- every session, same rule as Step 6.
+if 'octo_tunnel' in globals():
+    ngrok.disconnect(octo_tunnel.public_url)
+if 'octo_server_process' in globals() and octo_server_process.poll() is None:
+    octo_server_process.terminate()
+    try:
+        octo_server_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        octo_server_process.kill()
+        octo_server_process.wait()
+```
