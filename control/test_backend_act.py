@@ -7,12 +7,16 @@ camera, or a gRPC channel.
 """
 
 import json
+import math
 from types import SimpleNamespace
 
 import pytest
+from test_backend_pi0 import _FakePiBridgeClient
+from test_run_vla_episode import _ClosableActionSource, _dispatch_main, _FakeBackendRobot
 
-from vla_bridge import backends
-from vla_bridge.backends import base_grpc
+from vla_bridge import action_contract, backends, robot_client
+from vla_bridge.action_contract import JOINT_ORDER
+from vla_bridge.backends import BackendHandles, base_grpc
 
 
 def _args(**overrides):
@@ -143,3 +147,107 @@ def test_shipped_act_checkpoint_is_the_first_act_candidate_row():
     from vla_bridge import check_checkpoint as cc
 
     assert cc.CANDIDATE_GROUPS["act"][0] == SHIPPED_ACT_CHECKPOINT
+
+
+# --- Mocked round trip (Task 2): real base_grpc + real BridgeActionSource ----------
+#
+# Only `connect_bridge()` is faked. Everything after the handshake is the
+# production code path: base_grpc wraps the client in the unmodified
+# BridgeActionSource, whose get_action() pops one queued chunk action through
+# pop_validated_action() -> safety_validator.validate_action(). The client
+# double is test_robot_client.FakeBridgeClient (+ FakeTimedAction), extended in
+# test_backend_pi0 with the handshake-time surface base_grpc touches.
+
+
+def test_act_round_trip_returns_validated_action_without_send_action(
+    monkeypatch, mock_robot, mock_calibration_file
+):
+    joint_limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    queued = {f"{joint}.pos": 12.5 for joint in JOINT_ORDER}
+    connect_calls = {}
+
+    def fake_connect_bridge(server_address, checkpoint, **kwargs):
+        connect_calls.update(server_address=server_address, checkpoint=checkpoint, **kwargs)
+        connect_calls["client"] = _FakePiBridgeClient(mock_robot, queued)
+        return connect_calls["client"]
+
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+
+    handles = backends.BACKEND_REGISTRY["act"](
+        _args(checkpoint=None), {0: "wrist", 1: "overhead"}, joint_limits
+    )
+
+    client = connect_calls["client"]
+    assert isinstance(handles, BackendHandles)
+    assert connect_calls["policy_type"] == "act"
+    assert connect_calls["checkpoint"] == SHIPPED_ACT_CHECKPOINT
+    assert connect_calls["server_address"] == "0.tcp.ngrok.io:12345"
+    assert connect_calls["wrist_camera_index"] == 0
+    assert handles.robot is mock_robot
+    assert handles.shutdown == client.stop
+    assert handles.skip_camera_names == frozenset({"overhead"})
+    assert isinstance(handles.action_source, robot_client.BridgeActionSource)
+
+    joint_state = dict.fromkeys(JOINT_ORDER, 10.0)
+    action, model_version = handles.action_source.get_action(joint_state, "pick the cube")
+
+    assert set(action) == set(JOINT_ORDER)
+    assert all(isinstance(v, float) and math.isfinite(v) for v in action.values())
+    assert action == dict.fromkeys(JOINT_ORDER, 12.5)  # executed, not held at 10.0
+    assert model_version == f"{SHIPPED_ACT_CHECKPOINT}@unknown"  # no hold/stale flags
+    assert client.observations_sent == ["pick the cube"]
+    assert mock_robot.sent_actions == []  # the source never sends; run_episode does
+
+
+def test_act_round_trip_holds_position_when_queue_is_empty(
+    monkeypatch, mock_robot, mock_calibration_file
+):
+    """What the robot does if the server never returns a chunk (e.g. a
+    checkpoint whose image keys the bridge can't satisfy): it holds."""
+    joint_limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    client = _FakePiBridgeClient(mock_robot, {f"{j}.pos": 12.5 for j in JOINT_ORDER})
+    client.action_queue.get_nowait()  # nothing queued
+    monkeypatch.setattr(robot_client, "connect_bridge", lambda *a, **k: client)
+
+    handles = backends.BACKEND_REGISTRY["act"](_args(checkpoint="x/y"), {0: "wrist"}, joint_limits)
+    joint_state = dict.fromkeys(JOINT_ORDER, 10.0)
+    action, model_version = handles.action_source.get_action(joint_state, "pick the cube")
+
+    assert action == joint_state
+    assert "holding position" in model_version
+    assert mock_robot.sent_actions == []
+
+
+# --- CLI dispatch through run_vla_episode.main() ------------------------------------
+
+
+def test_cli_backend_flag_dispatches_to_real_act_build(monkeypatch, tmp_path):
+    calls = {}
+    handles = BackendHandles(action_source=_ClosableActionSource(), robot=_FakeBackendRobot())
+
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg):
+        calls.update(policy_type=policy_type, checkpoint=checkpoint)
+        return handles
+
+    monkeypatch.setattr(base_grpc, "build_grpc_action_source", fake_build)
+
+    result = _dispatch_main(monkeypatch, tmp_path, [
+        "--backend", "act", "--server-address", "0.tcp.ngrok.io:12345", "--checkpoint", "cli/ckpt",
+    ], {})
+
+    assert calls == dict(policy_type="act", checkpoint="cli/ckpt")
+    assert result["run_episode_called"] is True
+    assert result["action_source"] is handles.action_source
+
+
+@pytest.mark.parametrize(
+    "partial_args",
+    [["--checkpoint", "cli/ckpt"], ["--server-address", "0.tcp.ngrok.io:12345"], []],
+    ids=["checkpoint-only", "server-address-only", "neither"],
+)
+def test_cli_act_requires_bridge_args(monkeypatch, tmp_path, partial_args):
+    calls, _ = _record_grpc_build(monkeypatch)
+
+    with pytest.raises(SystemExit):
+        _dispatch_main(monkeypatch, tmp_path, ["--backend", "act", *partial_args], {})
+    assert calls == {}
