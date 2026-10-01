@@ -685,17 +685,37 @@ def test_registry_contains_the_baseline_backends():
 
 
 def _action_source_bases():
+    from vla_bridge.backends.base_gemini import GeminiActionSourceBase
     from vla_bridge.backends.scripted import ScriptedActionSource
 
     # Every backend from Wave 3 onward is built on one of these shared bases,
     # so checking the bases covers the whole registry -- no per-backend
-    # conformance test is needed. Plan 14-13 (Gemini foundation) MUST add its
-    # GeminiActionSourceBase here when it lands.
+    # conformance test is needed. GeminiActionSourceBase (Plan 14-13) is the
+    # shared base of the Gemini Robotics-ER backends (Plans 14-14/14-15).
     return [
         robot_client.BridgeActionSource,
         HttpAdapterActionSource,
+        GeminiActionSourceBase,
         ScriptedActionSource,
     ]
+
+
+def test_conformance_list_covers_every_shared_action_source_base():
+    names = {cls.__name__ for cls in _action_source_bases()}
+    assert {"BridgeActionSource", "HttpAdapterActionSource", "GeminiActionSourceBase"} <= names
+
+
+def test_shared_base_modules_are_not_registered_as_backends():
+    # base_gemini.py is a shared helper (base_ prefix), so discovery must skip
+    # it; er_conversion.py registers nothing either.
+    import vla_bridge.backends.base_gemini  # noqa: F401
+    import vla_bridge.backends.er_conversion  # noqa: F401
+
+    for name, build in backends.BACKEND_REGISTRY.items():
+        assert build.__module__ not in (
+            "vla_bridge.backends.base_gemini",
+            "vla_bridge.backends.er_conversion",
+        ), name
 
 
 @pytest.mark.parametrize("cls", _action_source_bases(), ids=lambda cls: cls.__name__)

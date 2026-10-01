@@ -11,6 +11,7 @@ pointed at an `httpx.MockTransport`, so no request ever leaves the process).
 
 import ast
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,7 +21,7 @@ import pytest
 from conftest import MockRobot
 from vla_bridge import safety_validator
 from vla_bridge.action_contract import JOINT_ORDER
-from vla_bridge.backends import BackendHandles, base_gemini
+from vla_bridge.backends import BackendHandles, base_gemini, eef_to_joint, er_conversion
 from vla_bridge.backends.base_gemini import GeminiActionSourceBase
 
 API_KEY_ENV = "SOARM_TEST_GEMINI_API_KEY"
@@ -463,3 +464,194 @@ def test_build_gemini_backend_requires_a_wrist_camera_before_touching_robot(monk
             MODEL, API_KEY_ENV, LABEL, _args(), {3: "overhead"}, convert_fn=_identity_convert
         )
     assert RecordingMockRobot.instances == []
+
+
+# =============================================================================
+# Task 2: er_conversion.convert_er_output_to_action() -- bounded visual servo
+# =============================================================================
+
+# A generic, well-conditioned pose (inside the URDF limits, not singular).
+SERVO_POSE = {"shoulder_pan": 10.0, "shoulder_lift": -20.0, "elbow_flex": 30.0,
+              "wrist_flex": 40.0, "wrist_roll": 0.0, "gripper": 30.0}
+SHAPE = (480, 640)
+
+
+def _point(y, x):
+    return {"er_entries": [{"point": [y, x], "label": "target"}], "image_shape": list(SHAPE)}
+
+
+@pytest.fixture
+def ik_spy(monkeypatch):
+    calls = []
+    real = eef_to_joint.solve_ik
+
+    def spy(current, eef_delta, *args, **kwargs):
+        calls.append(dict(current=dict(current), eef_delta=dict(eef_delta), kwargs=kwargs))
+        return real(current, eef_delta, *args, **kwargs)
+
+    monkeypatch.setattr(er_conversion.eef_to_joint, "solve_ik", spy)
+    return calls
+
+
+def _eef_xyz(joints):
+    return np.array(eef_to_joint.forward_kinematics(joints)[:3])
+
+
+def _heading(joints):
+    x, y = eef_to_joint.forward_kinematics(joints)[:2]
+    r = math.hypot(x, y)
+    return np.array([x / r, y / r])
+
+
+@pytest.mark.parametrize("yx", [(0, 0), (0, 1000), (1000, 0), (1000, 1000), (0, 500), (500, 1000), (380, 560)])
+def test_well_formed_point_gives_finite_joint_order_bounded_action(yx, ik_spy):
+    action = er_conversion.convert_er_output_to_action(_point(*yx), dict(SERVO_POSE))
+    assert list(action) == list(JOINT_ORDER)
+    assert all(math.isfinite(v) for v in action.values())
+    (call,) = ik_spy
+    delta = call["eef_delta"]
+    assert math.hypot(delta["dx"], delta["dy"]) <= er_conversion.MAX_NUDGE_M + 1e-12
+    assert (delta["dz"], delta["droll"], delta["dpitch"], delta["dyaw"]) == (0.0, 0.0, 0.0, 0.0)
+    assert delta["gripper"] == SERVO_POSE["gripper"]
+    moved = np.linalg.norm(_eef_xyz(action) - _eef_xyz(SERVO_POSE))
+    assert moved <= 2 * er_conversion.MAX_NUDGE_M
+    assert max(abs(action[j] - SERVO_POSE[j]) for j in JOINT_ORDER) < 10.0
+    assert action["gripper"] == SERVO_POSE["gripper"]  # never decides to grasp
+
+
+def test_far_off_points_saturate_at_the_same_small_maximum(ik_spy):
+    for yx in [(0, 0), (1000, 1000)]:
+        er_conversion.convert_er_output_to_action(_point(*yx), dict(SERVO_POSE))
+    for call in ik_spy:
+        delta = call["eef_delta"]
+        assert math.hypot(delta["dx"], delta["dy"]) == pytest.approx(er_conversion.MAX_NUDGE_M)
+
+
+def test_nudge_is_proportional_below_saturation(ik_spy):
+    # 20 px right of centre in a 640-wide frame: x = 500 + 20/640*1000.
+    er_conversion.convert_er_output_to_action(_point(500, 500 + 20 / 640 * 1000), dict(SERVO_POSE))
+    delta = ik_spy[0]["eef_delta"]
+    expected = 20 * er_conversion.PIXELS_TO_EEF_GAIN
+    assert expected < er_conversion.MAX_NUDGE_M
+    assert math.hypot(delta["dx"], delta["dy"]) == pytest.approx(expected, rel=1e-6)
+
+
+def test_target_inside_deadband_holds_without_ik(ik_spy):
+    action = er_conversion.convert_er_output_to_action(_point(500, 501), dict(SERVO_POSE))
+    assert action == SERVO_POSE
+    assert ik_spy == []
+
+
+def test_image_up_moves_radially_outward_and_image_right_moves_tangentially(ik_spy):
+    heading = _heading(SERVO_POSE)
+    right = np.array([heading[1], -heading[0]])
+    er_conversion.convert_er_output_to_action(_point(0, 500), dict(SERVO_POSE))  # straight up
+    er_conversion.convert_er_output_to_action(_point(500, 1000), dict(SERVO_POSE))  # straight right
+    up_delta = np.array([ik_spy[0]["eef_delta"]["dx"], ik_spy[0]["eef_delta"]["dy"]])
+    right_delta = np.array([ik_spy[1]["eef_delta"]["dx"], ik_spy[1]["eef_delta"]["dy"]])
+    unit = er_conversion.MAX_NUDGE_M
+    assert up_delta @ heading == pytest.approx(er_conversion.IMAGE_UP_SIGN * unit)
+    assert right_delta @ right == pytest.approx(er_conversion.IMAGE_RIGHT_SIGN * unit)
+
+
+@pytest.mark.parametrize(
+    "er_response",
+    [
+        {"er_entries": [{"box_2d": [100, 200, 300, 400], "label": "b"}], "image_shape": [480, 640]},
+        {"er_entries": [{"y": 100, "x": 200, "y2": 300, "x2": 400, "label": "b"}], "image_shape": [480, 640]},
+        {"er_entries": [{"point": [200, 300]}], "image_shape": [480, 640]},
+        [{"point": [200, 300], "label": "bare list"}],
+        {"point": [200, 300], "label": "single entry"},
+        {"er_entries": [{"label": "no point"}, {"point": [200, 300]}], "image_shape": [480, 640]},
+    ],
+    ids=["box_2d", "box_xy", "point", "bare-list", "single-entry", "first-valid-entry"],
+)
+def test_points_and_boxes_resolve_to_the_same_target(er_response):
+    assert er_conversion.extract_target_yx(er_response) == pytest.approx((200.0, 300.0))
+
+
+def test_image_shape_comes_from_the_response_then_argument_then_default(ik_spy):
+    entry = [{"point": [500, 1000]}]  # right edge: 500 normalized units right of centre
+    # Tiny frame from the response: 500/1000*20 = 10 px -> below saturation.
+    er_conversion.convert_er_output_to_action({"er_entries": entry, "image_shape": [10, 20]}, dict(SERVO_POSE))
+    # An explicit argument overrides the response.
+    er_conversion.convert_er_output_to_action(
+        {"er_entries": entry, "image_shape": [10, 20]}, dict(SERVO_POSE), image_shape=(10, 40)
+    )
+    # Neither: DEFAULT_IMAGE_SHAPE (640 wide -> 320 px -> saturates).
+    er_conversion.convert_er_output_to_action(entry, dict(SERVO_POSE))
+    norms = [math.hypot(c["eef_delta"]["dx"], c["eef_delta"]["dy"]) for c in ik_spy]
+    gain = er_conversion.PIXELS_TO_EEF_GAIN
+    assert norms == pytest.approx([10 * gain, 20 * gain, er_conversion.MAX_NUDGE_M])
+    assert er_conversion.DEFAULT_IMAGE_SHAPE == (480, 640)
+
+
+@pytest.mark.parametrize(
+    "er_response",
+    [None, "text", 42, [], {}, {"er_entries": []}, [{"label": "x"}], [{"point": [1]}],
+     [{"point": ["a", "b"]}], [{"point": [float("nan"), 5]}], [{"point": [float("inf"), 5]}],
+     [{"point": [2000, 5]}], [{"point": [-1, 5]}], [{"point": [True, 5]}], [{"box_2d": [1, 2, 3]}],
+     {"er_entries": [{"point": [10, 10]}], "image_shape": [0, 640]},
+     {"er_entries": [{"point": [10, 10]}], "image_shape": "big"}],
+)
+def test_malformed_or_missing_point_holds_position_and_never_raises(er_response, ik_spy):
+    action = er_conversion.convert_er_output_to_action(er_response, dict(SERVO_POSE))
+    assert action == SERVO_POSE
+    assert ik_spy == []
+
+
+def test_bad_joint_state_holds_and_never_raises():
+    state = dict(SERVO_POSE)
+    del state["elbow_flex"]
+    assert er_conversion.convert_er_output_to_action(_point(0, 0), state) == state
+    nan_state = dict(SERVO_POSE, wrist_flex=float("nan"))
+    held = er_conversion.convert_er_output_to_action(_point(0, 0), nan_state)
+    assert set(held) == set(nan_state) and math.isnan(held["wrist_flex"])
+
+
+def test_ik_failure_holds_and_never_raises(monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("ik blew up")
+
+    monkeypatch.setattr(er_conversion.eef_to_joint, "solve_ik", boom)
+    assert er_conversion.convert_er_output_to_action(_point(0, 0), dict(SERVO_POSE)) == SERVO_POSE
+
+
+def test_hold_returns_a_copy(ik_spy):
+    state = dict(SERVO_POSE)
+    held = er_conversion.convert_er_output_to_action(None, state)
+    assert held == state and held is not state
+
+
+def test_make_er_convert_fn_forwards_calibrated_joint_limits(ik_spy):
+    limits = {joint: (-60.0, 60.0) for joint in JOINT_ORDER[:5]}
+    convert = er_conversion.make_er_convert_fn(limits)
+    action = convert(_point(0, 0), dict(SERVO_POSE))
+    assert ik_spy[0]["kwargs"]["joint_limits_deg"] == limits
+    assert all(-60.0 <= action[j] <= 60.0 for j in JOINT_ORDER[:5])
+
+
+def test_er_conversion_module_documents_it_is_not_a_native_vla_policy():
+    doc = er_conversion.__doc__
+    assert "NOT" in doc and "native" in doc and "D-02" in doc
+
+
+def test_gemini_source_with_real_conversion_end_to_end(api_key, fake_client):
+    fake_client["interactions"].output_text = '[{"point": [100, 900], "label": "red cube"}]'
+    source = _source(convert_fn=er_conversion.make_er_convert_fn(None))
+    action, model_version = source.get_action(dict(SERVO_POSE), "pick up the red cube")
+    assert model_version == f"{LABEL}@gemini-er-conversion"
+    assert list(action) == list(JOINT_ORDER)
+    assert all(math.isfinite(v) for v in action.values())
+    assert action != SERVO_POSE  # an actual (small) nudge, not a hold
+    assert np.linalg.norm(_eef_xyz(action) - _eef_xyz(SERVO_POSE)) <= 2 * er_conversion.MAX_NUDGE_M
+    assert source.last_details["bridge_flags"] == []
+
+
+def test_gemini_source_no_target_is_flagged_as_held(api_key, fake_client):
+    fake_client["interactions"].output_text = '[{"label": "nothing to point at"}]'
+    source = _source(convert_fn=er_conversion.make_er_convert_fn(None))
+    action, model_version = source.get_action(dict(SERVO_POSE), "go")
+    assert action == SERVO_POSE
+    assert model_version == f"{LABEL}@gemini-er-conversion"
+    assert source.last_details["bridge_flags"] == ["gemini-er-conversion-held-position"]
