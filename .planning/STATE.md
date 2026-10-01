@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: MLLM Raw-Autonomy Benchmark
-current_phase: 13
-current_phase_name: Camera Device Resolution Unification
-status: verifying
+current_phase: 14
+current_phase_name: vla-style-pipeline-backends
+status: executing
 stopped_at: Phase 14 context gathered; backend scope expanded 4->12
-last_updated: "2026-09-30T17:54:20.454Z"
-last_activity: 2026-09-30
-last_activity_desc: 4/4 plans reconciled; 208 tests pass; verification human_needed (18/19)
+last_updated: "2026-10-01T04:54:53.879Z"
+last_activity: 2026-10-01
+last_activity_desc: Phase 14 execution started
 progress:
   total_phases: 17
   completed_phases: 11
-  total_plans: 48
+  total_plans: 63
   completed_plans: 48
   percent: 65
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** A researcher types a task prompt and watches SOARM execute it in a LIBERO simulation — the loop from language to embodied action.
-**Current focus:** Phase 13 — Camera Device Resolution Unification
+**Current focus:** Phase 14 — vla-style-pipeline-backends
 
 ## Current Position
 
-Phase: 13 (Camera Device Resolution Unification) — HUMAN VERIFICATION PENDING
-Plan: 4 of 4
-Status: Implementation complete; CAMFIX-02 fresh live camera verification pending
-Last activity: 2026-09-30 — 4/4 plans reconciled; 208 tests pass; verification human_needed (18/19)
+Phase: 14 (vla-style-pipeline-backends) — EXECUTING
+Plan: 1 of 15
+Status: Executing Phase 14
+Last activity: 2026-10-01 — Phase 14 execution started
 
 Plan execution: [██████████] 100% — phase acceptance pending
 
