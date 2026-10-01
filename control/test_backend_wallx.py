@@ -496,3 +496,79 @@ def test_build_falls_back_to_config_endpoint_and_cli_checkpoint_wins(no_config, 
     wallx.build(_args(checkpoint="cli/ckpt"), {0: "wrist"}, {})
     assert [(c["endpoint_url"], c["checkpoint"]) for c in spies.http] == [
         ("https://cfg.example", "c"), ("https://cfg.example", "cli/ckpt")]
+
+
+# --- Task 2: mocked full round trip (Tier C) ------------------------------------
+
+
+class _Routed:
+    """`requests.Response` stand-in wrapping a Flask test-client response."""
+
+    def __init__(self, response):
+        self._response = response
+        self.status_code = response.status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise base_http_adapter.requests.HTTPError(f"{self.status_code}")
+
+    def json(self):
+        return self._response.get_json()
+
+
+def _route_requests_to(app, monkeypatch):
+    client, posted = app.test_client(), []
+
+    def fake_post(url, json=None, timeout=None):
+        posted.append((url, json))
+        return _Routed(client.post("/action", json=json))
+
+    monkeypatch.setattr(base_http_adapter.requests, "post", fake_post)
+    return posted
+
+
+def test_round_trip_yields_a_validated_finite_joint_action(fake_stack, monkeypatch):
+    """Real create_app() behind the real HttpAdapterActionSource with
+    convert_fn=None (as wallx.build() wires it), then the real validator."""
+    from test_backend_registry import FakeStereo, FakeWristCap
+    from vla_bridge import safety_validator
+
+    step0 = [1.0, -2.0, 3.0, -1.0, 2.0, -3.0]
+    fake_stack.policy = FakePolicy(chunk_step0=step0)
+    posted = _route_requests_to(create_app(_model()), monkeypatch)
+    source = base_http_adapter.HttpAdapterActionSource(
+        "https://abc.ngrok-free.app", "Zekai-Chen/wallx_pick_place_3cam_200ep",
+        FakeWristCap(), FakeStereo(), convert_fn=None,
+    )
+    action, model_version = source.get_action(JOINT_STATE, "Put the object in the bin")
+
+    assert [url for url, _ in posted] == ["https://abc.ngrok-free.app/action"]
+    sent = posted[0][1]
+    assert sent["joint_state"] == JOINT_STATE
+    assert set(sent["images"]) == set(wallx_server.CAMERA_SOURCES)
+    assert model_version == "Zekai-Chen/wallx_pick_place_3cam_200ep@ef8ce55f9772"
+    assert source.last_details["bridge_flags"] == []
+    assert set(action) == set(JOINT_ORDER)
+    assert all(isinstance(v, float) and math.isfinite(v) for v in action.values())
+    assert action == pytest.approx({j: v + POST_OFFSET for j, v in zip(JOINT_ORDER, step0)})
+    # The server fed the client's joint dict to the model as observation.state, in JOINT_ORDER.
+    state = fake_stack.prepared[0]["observation"]["observation.state"]
+    assert state.tolist() == [JOINT_STATE[j] for j in JOINT_ORDER]
+
+    limits = {j: (-180.0, 180.0) for j in JOINT_ORDER[:5]} | {"gripper": (0.0, 100.0)}
+    validated, _flags = safety_validator.validate_action(action, JOINT_STATE, limits)
+    assert set(validated) == set(JOINT_ORDER)
+    assert all(math.isfinite(v) for v in validated.values())
+    assert any(validated[j] != JOINT_STATE[j] for j in JOINT_ORDER)  # a real, non-held action
+
+
+def test_round_trip_holds_position_when_the_model_fails(fake_stack, monkeypatch):
+    from test_backend_registry import FakeStereo, FakeWristCap
+
+    fake_stack.policy = FakePolicy(chunk_step0=[float("nan")] * 6)
+    _route_requests_to(create_app(_model()), monkeypatch)
+    source = base_http_adapter.HttpAdapterActionSource(
+        "https://abc.ngrok-free.app", "wallx", FakeWristCap(), FakeStereo(), convert_fn=None)
+    action, model_version = source.get_action(JOINT_STATE, "Put the object in the bin")
+    assert action == JOINT_STATE
+    assert model_version == "wallx@http-error-holding-position"
