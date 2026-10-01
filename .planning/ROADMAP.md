@@ -462,7 +462,7 @@ Plans:
   3. All twelve new backends reuse `safety_validator.py` and `io_logger.py` unchanged — no backend-specific safety or logging code paths
   4. Switching between any of the 13 VLA-style backends (SmolVLA + 12 new) requires no changes to `run_vla_episode.py`'s shared control loop
 
-**Plans**: 11/15 plans executed
+**Plans**: 12/15 plans executed
 Plans:
 **Wave 1**
 
@@ -486,7 +486,7 @@ Plans:
 - [x] 14-09-PLAN.md — OpenVLA, Tier C (VLAB-06)
 - [x] 14-10-PLAN.md — Octo, Tier C (VLAB-08)
 - [x] 14-11-PLAN.md — RDT-1B, Tier C (A100-class) (VLAB-09)
-- [ ] 14-12-PLAN.md — GR00T N1.5, Tier C (VLAB-11)
+- [x] 14-12-PLAN.md — GR00T N1.5, Tier C (VLAB-11)
 
 **Wave 5** *(blocked on 14-03; sequenced after Wave 4 per D-05's "cloud-API backends last")*
 
@@ -584,7 +584,7 @@ Plans:
 | 11. VLA Hardware Connection | 5/5 | Complete    | 2026-09-24 |
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
 | 13. Camera Device Resolution Unification | 4/4 | Human verification pending | - |
-| 14. VLA-Style Pipeline & Backends | 11/15 | In Progress|  |
+| 14. VLA-Style Pipeline & Backends | 12/15 | In Progress|  |
 | 15. MLLM-Style Pipeline & Backends | 0/TBD | Not started | - |
 | 16. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
 | 17. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
