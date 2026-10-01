@@ -38,6 +38,9 @@ from lerobot.robots.so_follower.so_follower import SO101Follower
 
 from keyboard_joint_control import move_to_positions, read_positions
 from vla_bridge import action_contract, safety_validator
+# Re-exported: the class moved to vla_bridge/backends/scripted.py (Plan 14-02) so
+# the backend registry can build it without importing this script.
+from vla_bridge.backends.scripted import ScriptedActionSource  # noqa: F401
 from vla_bridge.depth_camera import DepthCameraClient
 from vla_bridge.depth_recorder import DepthRecorder
 from vla_bridge.io_logger import IOLogger
@@ -154,32 +157,6 @@ class ActionSource(Protocol):
     ) -> tuple[dict[str, float], str]:
         """Return (raw_action, model_version) for the given observation."""
         ...
-
-
-class ScriptedActionSource:
-    """Explicit stand-in for the not-yet-built Colab/SmolVLA bridge.
-
-    Returns the joint_state unchanged except it toggles `gripper` between
-    0.0 and 100.0 every 30 steps, proving the write path is genuinely live
-    (not a frozen no-op) while exercising the full safety-validator +
-    logging + e-stop plumbing against the real robot today. This is NOT a
-    real VLA and is not intended to remain in place once Plan 11-04 wires in
-    `BridgeActionSource` through this same `ActionSource` seam.
-    """
-
-    def __init__(self):
-        self._step = 0
-
-    def get_action(
-        self, joint_state: dict[str, float], instruction: str
-    ) -> tuple[dict[str, float], str]:
-        action = dict(joint_state)
-        if (self._step // 30) % 2 == 0:
-            action["gripper"] = 0.0
-        else:
-            action["gripper"] = 100.0
-        self._step += 1
-        return action, "scripted-dry-run-v1"
 
 
 def _probe_camera_indices() -> list[int]:
