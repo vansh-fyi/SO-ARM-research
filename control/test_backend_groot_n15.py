@@ -737,3 +737,122 @@ def test_build_uses_the_config_endpoint_when_no_server_address(monkeypatch, no_c
     seen = _capture_build(monkeypatch)
     groot_n15.build(_args(), {0: "wrist"}, {})
     assert seen["endpoint_url"] == "https://cfg.example" and seen["checkpoint"] == CKPT
+
+
+# --- Task 2: mocked full round trip (regression) ------------------------------
+
+
+def _route_requests_to(app, monkeypatch):
+    """Send the client's `requests.post` straight into the Flask test client."""
+    http = app.test_client()
+    posted = []
+
+    class Routed:
+        def __init__(self, response):
+            self._response = response
+            self.status_code = response.status_code
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise base_http_adapter.requests.HTTPError(f"{self.status_code}")
+
+        def json(self):
+            return self._response.get_json()
+
+    def fake_post(url, json=None, timeout=None):
+        posted.append((url, json))
+        return Routed(http.post("/action", json=json))
+
+    monkeypatch.setattr(base_http_adapter.requests, "post", fake_post)
+    return posted
+
+
+def _source_via_build(monkeypatch, checkpoint=None, limits=None):
+    """Run the real `groot_n15.build()` (robot/camera construction stubbed) and
+    return a real `HttpAdapterActionSource` with the convert_fn it wired."""
+    from test_backend_registry import FakeStereo, FakeWristCap
+
+    seen = _capture_build(monkeypatch)
+    groot_n15.build(_args(server_address="https://abc.ngrok-free.app", checkpoint=checkpoint), {0: "wrist"},
+                    limits or {})
+    return base_http_adapter.HttpAdapterActionSource(
+        seen["endpoint_url"], seen["checkpoint"], FakeWristCap(), FakeStereo(), convert_fn=seen["convert_fn"])
+
+
+LIMITS = {j: (-180.0, 180.0) for j in JOINT_ORDER[:5]} | {"gripper": (0.0, 100.0)}
+
+
+def _constant_chunk(values):
+    return {"action.single_arm": np.tile(values[:5], (16, 1)), "action.gripper": np.tile(values[5:], (16, 1))}
+
+
+def test_round_trip_absolute_joint_targets_into_a_validated_action(fake_policy, monkeypatch):
+    """Real create_app() -> real HttpAdapterActionSource with build()'s identity
+    convert_fn -> real safety_validator.validate_action()."""
+    from vla_bridge import safety_validator
+
+    fake_policy.chunk = _constant_chunk(JOINT_RAW)
+    model = GrootN15Model(local_dir="/ckpt")
+    posted = _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, limits=LIMITS)
+    action, model_version = source.get_action(JOINT_STATE, "Pick blue cube and place on red cube")
+
+    assert [url for url, _ in posted] == ["https://abc.ngrok-free.app/action"]
+    assert posted[0][1]["joint_state"] == JOINT_STATE
+    assert set(posted[0][1]["images"]) == {"wrist", "overhead_left", "overhead_right"}
+    # The model was conditioned on the rig's own degree-mode state, unconverted.
+    obs = fake_policy.calls[0]
+    assert obs["state.single_arm"][0].tolist() == [JOINT_STATE[j] for j in JOINT_ORDER[:5]]
+    assert obs["state.gripper"][0].tolist() == [JOINT_STATE["gripper"]]
+    assert model_version == f"{CKPT}@{REV[:12]}"
+    assert source.last_details["bridge_flags"] == []
+    assert source.last_details["raw_model_output"] == pytest.approx(JOINT_RAW)
+    # Absolute targets arrive unchanged: not JOINT_STATE + JOINT_RAW, and no IK.
+    assert tuple(action) == JOINT_ORDER
+    assert action == JOINT_EXPECTED
+    assert all(isinstance(v, float) and math.isfinite(v) for v in action.values())
+
+    validated, _flags = safety_validator.validate_action(action, JOINT_STATE, LIMITS)
+    assert set(validated) == set(JOINT_ORDER)
+    assert all(math.isfinite(v) for v in validated.values())
+    assert any(validated[j] != JOINT_STATE[j] for j in JOINT_ORDER)  # a real, non-held action
+
+
+def test_round_trip_far_absolute_target_is_clamped_per_step_not_held(fake_policy, monkeypatch):
+    """A far absolute target reaches the validator unchanged and is bounded by
+    its per-step clamp (Pitfall 1's 'pinned at the limit' signature cannot come
+    from this client: it never adds the target to the state)."""
+    from vla_bridge import safety_validator
+
+    far = [60.0, -80.0, 90.0, 95.0, 3.0, 55.0]
+    fake_policy.chunk = _constant_chunk(far)
+    model = GrootN15Model(local_dir="/ckpt")
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, limits=LIMITS)
+    action, _ = source.get_action(JOINT_STATE, "x")
+    assert action == dict(zip(JOINT_ORDER, far))
+    validated, flags = safety_validator.validate_action(action, JOINT_STATE, LIMITS)
+    for joint in JOINT_ORDER:
+        max_step = safety_validator.MAX_RELATIVE_TARGET_DEG[joint]
+        assert abs(validated[joint] - JOINT_STATE[joint]) <= max_step + 1e-9
+        assert validated[joint] != JOINT_STATE[joint]
+    assert validated["shoulder_lift"] == pytest.approx(JOINT_STATE["shoulder_lift"] - 40.0)  # -20 -> -80, clamped
+    assert any(flag.startswith("shoulder_lift: clamped") for flag in flags)
+
+
+def test_round_trip_client_rate_picks_the_returned_chunk_step(fake_policy, monkeypatch):
+    model = GrootN15Model(local_dir="/ckpt", client_control_hz=10.0)
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch, limits=LIMITS)
+    action, _ = source.get_action(JOINT_STATE, "x")
+    assert action == pytest.approx(dict(zip(JOINT_ORDER, [v + 2 for v in JOINT_RAW])))
+
+
+def test_round_trip_holds_position_when_the_model_fails(fake_policy, monkeypatch):
+    fake_policy.chunk = {"action.single_arm": np.full((16, 5), np.nan), "action.gripper": np.zeros((16, 1))}
+    model = GrootN15Model(local_dir="/ckpt")
+    _route_requests_to(create_app(model), monkeypatch)
+    source = _source_via_build(monkeypatch)
+    action, model_version = source.get_action(JOINT_STATE, "x")
+    assert action == JOINT_STATE
+    assert model_version == f"{CKPT}@http-error-holding-position"
