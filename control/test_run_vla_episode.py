@@ -19,6 +19,8 @@ from run_vla_episode import (
     run_episode,
 )
 from vla_bridge import action_contract
+from vla_bridge import backends as vla_backends
+from vla_bridge.backends import BackendHandles
 from vla_bridge.io_logger import IOLogger
 
 
@@ -1427,3 +1429,235 @@ def test_main_errors_when_depth_flags_given_without_server_address(monkeypatch, 
 
     with pytest.raises(SystemExit):
         run_vla_episode.main()
+
+
+# --- Plan 14-02: --backend flag and BACKEND_REGISTRY dispatch ------------------
+
+
+class _FakeBackendRobot:
+    def __init__(self):
+        self.disconnected = False
+
+    def disconnect(self):
+        self.disconnected = True
+
+
+class _ClosableActionSource:
+    def __init__(self):
+        self.closed = False
+
+    def get_action(self, joint_state, instruction):
+        return dict(joint_state), "fake"
+
+    def close(self):
+        self.closed = True
+
+
+class _ReleasableStereo:
+    def __init__(self):
+        self.released = False
+
+    def release(self):
+        self.released = True
+
+
+def _fake_builder(built, name, handles="default"):
+    """A fake `build()` that records which registry entry was dispatched to,
+    plus how many cameras `main()` had opened by the time it ran."""
+
+    def build(args, camera_names, joint_limits_deg):
+        built.append(name)
+        built_state[name] = dict(
+            backend_arg=args.backend,
+            cameras_opened_before_build=list(_TrackingCapture.constructed_indices),
+        )
+        if handles == "default":
+            return BackendHandles(action_source=_ClosableActionSource(), robot=_FakeBackendRobot())
+        return handles
+
+    built_state = {}
+    build.state = built_state
+    return build
+
+
+def _dispatch_main(monkeypatch, tmp_path, cli_args, builders):
+    """Run main() with every external seam faked. `builders` maps a backend
+    name to a fake build(), installed into the real BACKEND_REGISTRY for this
+    test only (monkeypatch.setitem restores it afterwards)."""
+    calls = {"run_episode_called": False}
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    for name, build in builders.items():
+        monkeypatch.setitem(vla_backends.BACKEND_REGISTRY, name, build)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", _TrackingCapture)
+    _TrackingCapture.constructed_indices = []
+
+    def fake_run_episode(robot, caps, camera_names, io_logger, action_source, *args, **kwargs):
+        calls.update(
+            run_episode_called=True,
+            robot=robot,
+            caps=dict(caps),
+            action_source=action_source,
+            stereo_camera=kwargs.get("stereo_camera"),
+        )
+
+    monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_vla_episode.py", "/dev/fake_port", "fake_robot_id",
+            "--out", str(tmp_path / "out"), "--camera", "0", "--camera", "1",
+            *cli_args,
+        ],
+    )
+    run_vla_episode.main()
+    return calls
+
+
+BRIDGE_ARGS = ["--server-address", "0.tcp.ngrok.io:12345", "--checkpoint", "victorvanhalst/smolvla_so101_cube"]
+
+
+def test_omitted_backend_without_server_address_dispatches_to_scripted(monkeypatch, tmp_path):
+    built = []
+    calls = _dispatch_main(monkeypatch, tmp_path, [], {
+        "scripted": _fake_builder(built, "scripted"),
+        "smolvla": _fake_builder(built, "smolvla"),
+    })
+    assert built == ["scripted"]
+    assert calls["run_episode_called"] is True
+
+
+def test_omitted_backend_with_bridge_args_dispatches_to_smolvla(monkeypatch, tmp_path):
+    """Backward-compat shim: every pre-Phase-14 `--server-address X
+    --checkpoint Y` invocation keeps selecting SmolVLA."""
+    built = []
+    smolvla = _fake_builder(built, "smolvla")
+    _dispatch_main(monkeypatch, tmp_path, BRIDGE_ARGS, {
+        "scripted": _fake_builder(built, "scripted"),
+        "smolvla": smolvla,
+    })
+    assert built == ["smolvla"]
+    assert smolvla.state["smolvla"]["backend_arg"] == "smolvla"
+
+
+@pytest.mark.parametrize("extra_args", [[], BRIDGE_ARGS], ids=["no-bridge-args", "with-bridge-args"])
+def test_explicit_backend_is_dispatched_regardless_of_server_address(monkeypatch, tmp_path, extra_args):
+    built = []
+    _dispatch_main(monkeypatch, tmp_path, ["--backend", "fake-explicit", *extra_args], {
+        "scripted": _fake_builder(built, "scripted"),
+        "smolvla": _fake_builder(built, "smolvla"),
+        "fake-explicit": _fake_builder(built, "fake-explicit"),
+    })
+    assert built == ["fake-explicit"]
+
+
+@pytest.mark.parametrize(
+    "partial_args",
+    [["--checkpoint", "victorvanhalst/smolvla_so101_cube"], ["--server-address", "0.tcp.ngrok.io:12345"]],
+    ids=["checkpoint-only", "server-address-only"],
+)
+@pytest.mark.parametrize("backend_args", [[], ["--backend", "smolvla"]], ids=["implicit", "explicit-smolvla"])
+def test_partial_bridge_args_error_for_grpc_backends(monkeypatch, tmp_path, partial_args, backend_args):
+    built = []
+    with pytest.raises(SystemExit):
+        _dispatch_main(monkeypatch, tmp_path, [*backend_args, *partial_args], {
+            "scripted": _fake_builder(built, "scripted"),
+            "smolvla": _fake_builder(built, "smolvla"),
+        })
+    assert built == []
+
+
+@pytest.mark.parametrize(
+    "partial_args",
+    [["--checkpoint", "some/ckpt"], ["--server-address", "0.tcp.ngrok.io:12345"]],
+    ids=["checkpoint-only", "server-address-only"],
+)
+def test_partial_bridge_args_do_not_error_for_non_grpc_backends(monkeypatch, tmp_path, partial_args):
+    built = []
+    _dispatch_main(monkeypatch, tmp_path, ["--backend", "fake-plain", *partial_args], {
+        "fake-plain": _fake_builder(built, "fake-plain"),
+    })
+    assert built == ["fake-plain"]
+    assert "fake-plain" not in vla_backends.GRPC_BRIDGE_BACKENDS
+
+
+def test_unknown_backend_is_rejected_by_argparse_before_any_construction(monkeypatch, tmp_path):
+    built = []
+    with pytest.raises(SystemExit):
+        _dispatch_main(monkeypatch, tmp_path, ["--backend", "not-a-backend"], {
+            "scripted": _fake_builder(built, "scripted"),
+        })
+    assert built == []
+
+
+def test_backend_returning_none_writes_bridge_unreachable_before_opening_logger(monkeypatch, tmp_path):
+    """The unreachable path now applies to ANY backend whose build() returns
+    None, not only the old --server-address branch."""
+    built = []
+    calls = _dispatch_main(monkeypatch, tmp_path, ["--backend", "fake-down"], {
+        "fake-down": _fake_builder(built, "fake-down", handles=None),
+    })
+    out = tmp_path / "out"
+    assert built == ["fake-down"]
+    assert calls["run_episode_called"] is False
+    termination = json.loads((out / "termination.json").read_text())
+    assert termination == {**termination, "reason": "bridge_unreachable", "steps_completed": 0}
+    assert not (out / "episode.jsonl").exists()
+    assert _TrackingCapture.constructed_indices == []
+
+
+def test_cameras_open_after_backend_build_honouring_its_skip_names(monkeypatch, tmp_path):
+    built = []
+    robot = _FakeBackendRobot()
+    stereo = _ReleasableStereo()
+    handles = BackendHandles(
+        action_source=_ClosableActionSource(),
+        robot=robot,
+        stereo_camera=stereo,
+        skip_camera_names=frozenset({"overhead"}),
+    )
+    builder = _fake_builder(built, "fake-skip", handles=handles)
+    calls = _dispatch_main(monkeypatch, tmp_path, ["--backend", "fake-skip"], {"fake-skip": builder})
+
+    assert builder.state["fake-skip"]["cameras_opened_before_build"] == []
+    # --camera 0 --camera 1 -> {0: "wrist", 1: "overhead"}; overhead is skipped.
+    assert _TrackingCapture.constructed_indices == [0]
+    assert list(calls["caps"]) == [0]
+    assert calls["robot"] is robot
+    assert calls["action_source"] is handles.action_source
+    assert calls["stereo_camera"] is stereo
+
+
+def test_backend_without_shutdown_hook_is_disconnected_and_closed(monkeypatch, tmp_path):
+    built = []
+    robot = _FakeBackendRobot()
+    source = _ClosableActionSource()
+    stereo = _ReleasableStereo()
+    handles = BackendHandles(action_source=source, robot=robot, stereo_camera=stereo)
+    _dispatch_main(monkeypatch, tmp_path, ["--backend", "fake-http"], {
+        "fake-http": _fake_builder(built, "fake-http", handles=handles),
+    })
+    assert robot.disconnected is True
+    assert source.closed is True
+    assert stereo.released is True
+
+
+def test_backend_shutdown_hook_replaces_robot_disconnect(monkeypatch, tmp_path):
+    """gRPC-lane backends own a RobotClient whose stop() disconnects the robot
+    and closes the channel; main() must call that instead of a bare disconnect."""
+    built = []
+    order = []
+    robot = _FakeBackendRobot()
+    stereo = _ReleasableStereo()
+    stereo.release = lambda: order.append("stereo_release")
+    handles = BackendHandles(
+        action_source=_ClosableActionSource(),
+        robot=robot,
+        stereo_camera=stereo,
+        shutdown=lambda: order.append("shutdown"),
+    )
+    _dispatch_main(monkeypatch, tmp_path, ["--backend", "fake-grpc"], {
+        "fake-grpc": _fake_builder(built, "fake-grpc", handles=handles),
+    })
+    assert robot.disconnected is False
+    assert order == ["shutdown", "stereo_release"]
