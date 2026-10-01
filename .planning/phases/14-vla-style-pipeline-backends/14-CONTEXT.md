@@ -14,6 +14,19 @@ Depends on Phase 13 (corrected camera pipeline). Parallel-capable with Phase 15 
 
 </domain>
 
+<execution_discipline>
+## Execution Discipline (added 2026-10-01, applies to every plan in this phase)
+
+**Actively search the web for official documentation, source code, and implementation references before writing any backend-specific logic — never guess or assume when stuck.** This phase integrates 12 unfamiliar backends across genuinely different ecosystems (LeRobot-native checkpoints, NVIDIA GR00T, Physical Intelligence's π0 family, Google's Gemini API); `14-RESEARCH.md` itself rates several findings as MEDIUM confidence (checkpoint loading conventions, LeRobot async dispatch support for Tier B backends, package legitimacy), not HIGH.
+
+Concretely, for every task in every plan (14-01 through 14-15):
+- Before implementing a backend's model-loading, observation-format, or action-output handling, fetch that backend's actual current docs/model card/source (HF Hub model card, official GitHub repo, or official API docs) rather than relying solely on what `14-RESEARCH.md` recorded — research is dated 2026-09-30 and explicitly flagged "valid until: 14 days" given how fast this domain moves.
+- When a task's `<read_first>` or `<action>` references an assumed API shape, signature, or config key that turns out not to match the live source/docs, stop and verify against the real thing before proceeding — do not silently paper over the mismatch or invent a plausible-looking substitute.
+- This mirrors the project's existing "verify against live source" discipline already used for this repo's Colab/library work (see `policy_server_launch.md`'s precedent and Phase 11/12's checkpoint-verification pattern) — extend it to every new backend's upstream ecosystem, not just this repo's own code.
+- Two items `14-RESEARCH.md` flagged as open/unresolved and requiring a live check at execution time, not an assumption: (1) whether the installed `lerobot` version's `async_inference.PolicyServer` actually dispatches `policy_type="groot"`/`"wall_oss"` (Tier B, VLAB-04/VLAB-10) — grep the installed source directly; (2) each backend's actual action-space (joint vs. EEF-delta) per its real checkpoint config, not assumed from the model family name.
+
+</execution_discipline>
+
 <decisions>
 ## Implementation Decisions
 
