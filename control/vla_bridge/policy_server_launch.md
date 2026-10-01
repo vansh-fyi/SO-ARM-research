@@ -706,3 +706,95 @@ if "policy_server_process" in dir() and policy_server_process.poll() is None:
         policy_server_process.kill()
     print("PolicyServer subprocess terminated.")
 ```
+
+---
+
+## Tier C: OpenVLA-OFT resident adapter (Plan 14-03, `--backend openvla-oft`)
+
+OpenVLA-OFT has no LeRobot `PolicyServer` integration. It runs as its own
+resident Flask adapter, `control/vla_bridge/openvla_oft_server.py`, built the
+same way as the Step 8 depth service: it loads once, warms up, then serves.
+It does NOT use Steps 1-5. Those are the gRPC lane only.
+
+**Status:** these cells were written from upstream source (github.com/moojink/openvla-oft
+@ `e4287e9`, `SETUP.md` + `vla-scripts/deploy.py`) and have **not yet been run on
+Colab**. The package-legitimacy human check in 14-03-SUMMARY.md must pass before
+the clone and install cell runs. `pip install -e .` pulls two more GitHub-source
+forks, `moojink/transformers-openvla-oft` and `moojink/dlimp_openvla`.
+
+Requirements: an A100 or L4 runtime (a 7B model in bf16 needs about 16 GB of VRAM).
+openvla-oft pins `torch==2.2.0` and `tensorflow==2.15.0`, so it needs Python 3.10
+in its own isolated environment, never the PolicyServer's.
+
+```python
+import subprocess, sys
+from pathlib import Path
+OFT_DIR = Path('/content/openvla-oft')
+OFT_COMMIT = 'e4287e94541f459edc4feabc4e181f537cd569a8'  # reviewed revision
+OFT_VENV = '/content/openvla_oft_venv'
+OFT_PYTHON = f'{OFT_VENV}/bin/python'
+if not (OFT_DIR / '.git').exists():
+    subprocess.run(['git', 'clone', 'https://github.com/moojink/openvla-oft.git', str(OFT_DIR)], check=True)
+subprocess.run(['git', '-C', str(OFT_DIR), 'checkout', OFT_COMMIT], check=True)
+if not Path(OFT_PYTHON).exists():
+    subprocess.run([sys.executable, '-m', 'pip', 'install', 'uv'], check=True)
+    subprocess.run(['uv', 'venv', '--python', '3.10', '--seed', OFT_VENV], check=True)
+subprocess.run(['uv', 'pip', 'install', '--python', OFT_PYTHON, '-e', str(OFT_DIR)], check=True)
+subprocess.run(['uv', 'pip', 'install', '--python', OFT_PYTHON, 'flask', 'opencv-python-headless'], check=True)
+```
+
+Upload `control/vla_bridge/openvla_oft_server.py` to `/content/openvla_oft_server.py`
+(Files panel or Drive), then launch it as a separate OS process. On first start
+it downloads the pinned checkpoint revision
+(`moojink/openvla-7b-oft-finetuned-libero-object@4c89574e1c53`, about 15 GB). `/health`
+only answers after the model has loaded and warmed up. Logs go to
+`/content/openvla_oft_server.log`.
+
+```python
+import os, subprocess, time, requests
+OFT_LOG = '/content/openvla_oft_server.log'
+env = dict(os.environ, KMP_DUPLICATE_LIB_OK='TRUE', OMP_NUM_THREADS='1')
+with open(OFT_LOG, 'w') as log:
+    oft_server_process = subprocess.Popen(
+        [OFT_PYTHON, '/content/openvla_oft_server.py', '--repo', str(OFT_DIR), '--port', '3001'],
+        stdout=log, stderr=subprocess.STDOUT, env=env)
+for _ in range(1800):  # checkpoint download + load + warmup
+    if oft_server_process.poll() is not None:
+        raise RuntimeError(f'OpenVLA-OFT adapter exited; inspect {OFT_LOG}')
+    try:
+        if requests.get('http://127.0.0.1:3001/health', timeout=2).json().get('status') == 'ready':
+            print('OpenVLA-OFT adapter ready'); break
+    except requests.RequestException:
+        pass
+    time.sleep(1)
+else:
+    oft_server_process.terminate()
+    raise RuntimeError(f'OpenVLA-OFT warmup timed out; inspect {OFT_LOG}')
+```
+
+```python
+from pyngrok import ngrok
+oft_tunnel = ngrok.connect(3001, "http")  # plain JSON-over-HTTP, like Step 9
+print(f"OpenVLA-OFT endpoint: {oft_tunnel.public_url}")
+```
+
+Then, locally in `control/` (pass the base URL; the client appends `/action`):
+
+```bash
+.venv/bin/python run_vla_episode.py --backend openvla-oft \
+  --server-address https://OFT_TUNNEL.ngrok-free.app \
+  --out outputs/openvla_oft_UNIQUE_NAME --max-steps 20
+```
+
+```python
+# OpenVLA-OFT teardown -- every session, same rule as Step 6.
+if 'oft_tunnel' in globals():
+    ngrok.disconnect(oft_tunnel.public_url)
+if 'oft_server_process' in globals() and oft_server_process.poll() is None:
+    oft_server_process.terminate()
+    try:
+        oft_server_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        oft_server_process.kill()
+        oft_server_process.wait()
+```
