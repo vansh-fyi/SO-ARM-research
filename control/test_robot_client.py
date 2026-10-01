@@ -412,6 +412,45 @@ def test_connect_bridge_leaves_cameras_untouched_when_wrist_camera_index_omitted
     assert isinstance(result, FakeRobotClientHandshakeSucceeds)
 
 
+def test_connect_bridge_forwards_explicit_policy_type_to_robot_client_config(monkeypatch):
+    """Phase 14 (PIPE-01): connect_bridge() must forward an explicit
+    policy_type into the real RobotClientConfig it constructs, so Tier A/B
+    backends (pi0, act, diffusion, ...) reuse the same gRPC bridge lane."""
+    monkeypatch.setattr(robot_client, "RobotClient", FakeRobotClientHandshakeSucceeds)
+    monkeypatch.setattr(robot_client, "StereoSplitCamera", FakeStereoSplitCamera)
+
+    result = robot_client.connect_bridge(
+        server_address="0.tcp.ngrok.io:12345",
+        checkpoint="lerobot/pi0_base",
+        robot_config=object(),
+        task="Pick the red cube and place it in the bowl",
+        policy_type="pi0",
+    )
+
+    from lerobot.async_inference.configs import RobotClientConfig
+
+    assert isinstance(result.config, RobotClientConfig)
+    assert result.config.policy_type == "pi0"
+    assert result.config.pretrained_name_or_path == "lerobot/pi0_base"
+
+
+def test_connect_bridge_defaults_policy_type_to_smolvla_when_omitted(monkeypatch):
+    """Zero behavior change for every existing caller: omitting policy_type
+    must still produce policy_type == "smolvla", byte-identical to the
+    previously hardcoded literal."""
+    monkeypatch.setattr(robot_client, "RobotClient", FakeRobotClientHandshakeSucceeds)
+    monkeypatch.setattr(robot_client, "StereoSplitCamera", FakeStereoSplitCamera)
+
+    result = robot_client.connect_bridge(
+        server_address="0.tcp.ngrok.io:12345",
+        checkpoint="victorvanhalst/smolvla_so101_cube",
+        robot_config=object(),
+        task="Pick the red cube and place it in the bowl",
+    )
+
+    assert result.config.policy_type == "smolvla"
+
+
 # --- BridgeActionSource --------------------------------------------------------
 
 

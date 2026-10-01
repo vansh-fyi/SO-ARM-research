@@ -105,6 +105,7 @@ def connect_bridge(
     checkpoint: str,
     robot_config: Any,
     task: str,
+    policy_type: str = "smolvla",
     actions_per_chunk: int = 50,
     chunk_size_threshold: float = 0.5,
     policy_device: str = "cuda",
@@ -158,6 +159,19 @@ def connect_bridge(
     When `wrist_camera_index` is `None` (default), `robot_config.cameras`
     is left untouched -- unchanged prior behavior.
 
+    `policy_type` (Phase 14, PIPE-01) is forwarded verbatim into
+    `RobotClientConfig.policy_type`, letting every gRPC-bridge-lane backend
+    (Tier A/B: e.g. "pi0", "pi05", "act", "diffusion", "groot") reuse this
+    exact function. It defaults to "smolvla" -- the literal previously
+    hardcoded here -- so every existing caller (`run_vla_episode.py`'s
+    current bridge branch never passes this kwarg) is byte-identical to
+    before: a pure default-preserving addition, not a behavior change.
+    Verified against the installed `lerobot==0.6.1` source: the client-side
+    `RobotClientConfig.__post_init__` only rejects an EMPTY policy_type; the
+    allow-list (`async_inference/constants.py::SUPPORTED_POLICIES`) is
+    enforced server-side in `PolicyServer`, so an unsupported value surfaces
+    as a failed handshake (`None` below), never an exception here.
+
     Returns the connected, handshaken `RobotClient` on success, or `None`
     (never an exception) if the bridge handshake fails -- calling `.stop()`
     on the half-connected client first, for cleanup.
@@ -166,7 +180,7 @@ def connect_bridge(
         robot_config.cameras["camera1"] = OpenCVCameraConfig(index_or_path=wrist_camera_index)
 
     config = RobotClientConfig(
-        policy_type="smolvla",
+        policy_type=policy_type,
         pretrained_name_or_path=checkpoint,
         robot=robot_config,
         actions_per_chunk=actions_per_chunk,
