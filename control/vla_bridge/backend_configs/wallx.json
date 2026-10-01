@@ -1,0 +1,12 @@
+{
+  "checkpoint": "Zekai-Chen/wallx_pick_place_3cam_200ep",
+  "revision": "ef8ce55f9772c4c76728228324eebe1d2c373ff6",
+  "base_model": "x-square-robot/wall-oss-flow",
+  "base_revision": "44e827683819957d8c574e8b746a1a97e77f518a",
+  "endpoint_url": null,
+  "action_space": "absolute_joint",
+  "action_units": "degrees",
+  "camera_map": {"wrist": "wrist", "top": "overhead_left", "side": "overhead_right"},
+  "trained_instruction": "Put the object in the bin",
+  "notes": "Tier C: installed lerobot 0.6.1's async PolicyServer does not dispatch 'wall_x' (async_inference/constants.py SUPPORTED_POLICIES), so the Colab side runs vla_bridge/wallx_server.py, which loads lerobot's own WallXPolicy (lerobot[wallx]==0.6.1; no X-Square-Robot/wall-x GitHub install, no CUDA-operator compile). endpoint_url is the per-session ngrok https:// URL; pass it with --server-address. checkpoint/revision are informational on the client (model_version, io_logger) and mirror wallx_server.py's pinned defaults; the server loads its own pinned copy. The plan's x-square-robot/wall-oss-0.5 is the raw Qwen2.5-VL foundation model (no type wall_x, no SO-101 normalizer stats), so it cannot produce SO-101 joint actions. Default checkpoint: Apache-2.0, type wall_x, diffusion head, attn eager, chunk 32, 60k steps on 200 episodes of Zekai-Chen/so101_pi05_pick_place_3cam (Apache-2.0, so_follower, 300 episodes, 30 fps, single task 'Put the object in the bin', state/action names exactly shoulder_pan.pos .. gripper.pos, degree mode: shoulder_lift down to -103.5, wrist_roll down to -135.3, gripper 0..63). Cameras wrist/top/side (480x640); our rig has no side camera, so side gets the right AR0144 stereo half (out of distribution). Alternates (same dataset, all type wall_x, 6-D): Zekai-Chen/wallx_pick_place_3cam_100ep@75f1bd290df7 (eager), Zekai-Chen/wallx_pick_place_3cam@2f10b7f5e189 (80k steps, full dataset, saved with attn sdpa: wallx_server.py's eager override is what makes it load on 0.6.1). Colab needs an A100 (two 8.4 GB safetensors; WallXPolicy builds the model in fp32 before casting to bf16) and likely a High-RAM runtime; not yet run. Evidence: .planning/phases/14-vla-style-pipeline-backends/14-08-SUMMARY.md."
+}

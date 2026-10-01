@@ -245,7 +245,7 @@ def test_action_endpoint_returns_joint_dict_and_model_version(fake_stack):
     response = http.post("/action", json=_payload())
     assert response.status_code == 200
     body = response.get_json()
-    assert list(body["action"]) == list(JOINT_ORDER)
+    assert set(body["action"]) == set(JOINT_ORDER)  # Flask sorts JSON keys; order is irrelevant
     assert body["action"] == pytest.approx({j: v + POST_OFFSET for j, v in zip(JOINT_ORDER, CHUNK_STEP0)})
     assert body["model_version"] == "Zekai-Chen/wallx_pick_place_3cam_200ep@ef8ce55f9772"
     assert body["inference_ms"] >= 0
@@ -370,7 +370,7 @@ def test_server_main_warms_model_before_serving(monkeypatch):
     assert load_kwargs["checkpoint"] == wallx_server.DEFAULT_CHECKPOINT
     assert load_kwargs["revision"] == wallx_server.DEFAULT_REVISION
     assert load_kwargs["camera_map"] == {"front": "overhead_left", "wrist": "wrist"}
-    assert events[1][1] == list(wallx_server.CAMERA_SOURCES)
+    assert events[1][1] == sorted(wallx_server.CAMERA_SOURCES)
     assert events[2][1]["port"] == 3999
 
 
