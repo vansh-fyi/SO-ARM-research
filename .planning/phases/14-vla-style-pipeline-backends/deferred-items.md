@@ -67,3 +67,38 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
   `test_diffusion_policy_server.py::test_stock_policy_server_cannot_run_diffusion` will start
   failing on that upgrade, which is the signal.
 - **Version guard:** the launcher refuses any lerobot other than 0.6.1.
+
+## From 14-07 (GR00T N1.7)
+
+### No public SO-101 GR00T N1.7 checkpoint declares `camera1`
+
+- **Not fixed here; recorded for the bridge follow-up above.**
+- GR00T itself tolerates missing views: `GrootN17PackInputsStep` feeds whichever declared cameras
+  arrive and only logs a warning. The KeyError comes earlier, in the server's
+  `prepare_raw_observation()`, which indexes `policy.config.image_features[key]` for every
+  delivered key. So GR00T is NOT a `NO_CAMERA_MASKING_BACKENDS` case. It only needs `camera1`
+  declared, or the client to send the wrist frame under the checkpoint's own key.
+- About 36 LeRobot-format SO-101 N1.7 checkpoints were scanned on 2026-10-01. Their camera keys
+  are things like `front`/`wrist`, `wrist`/`top`, `ego`/`external_D455` and `main`. None uses
+  `camera1`. So `backend_configs/groot_n17.json` ships no default `checkpoint`.
+- **Unlocked by the follow-up:** `tsangb34/groot-n17-so101-cube-drawer-40k` (front + wrist, relative
+  joints) and `geonmin-kim/GR00T-N1.7-3B-SO101-D6231-step95000` (wrist + top, absolute joints).
+  Both need our wrist frame sent as `wrist`.
+
+### lerobot 0.6.1's PolicyServer decodes GR00T relative-action chunks one step at a time (worked around)
+
+- **Workaround shipped in 14-07:** `control/vla_bridge/groot_n17_server.py`. For
+  `policy_type == "groot"` it post-processes the whole `(B, T, D)` chunk in one call.
+- No upstream issue or PR was found (GitHub search, 2026-10-01). Upstream `main`'s
+  `policy_server.py` still decodes per step. Worth filing upstream.
+- **Removal signal:**
+  `test_backend_groot_n17.py::test_stock_policy_server_cannot_decode_a_relative_groot_chunk`
+  starts failing once a lerobot release decodes GR00T chunks whole. The launcher also refuses any
+  lerobot other than 0.6.1.
+
+### `check_checkpoint.py` has no `groot` candidate group
+
+- The GR00T candidate scan for 14-07 was done ad hoc and is recorded in `groot_n17.json`'s notes
+  and in 14-07-SUMMARY.md. `check_checkpoint.py --backend groot` does not exist yet.
+- Adding it would also need a units check (degree vs range-normalized vs radians normalizer stats).
+  The radians case is real: `alexhegit/so101-simstudio-lab01-pnp-groot-n17`.

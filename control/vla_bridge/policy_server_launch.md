@@ -908,3 +908,120 @@ failures look different:
   bridge doesn't deliver.
 
 Tear down with Step 6 as usual.
+
+---
+
+## Tier B -> gRPC: GR00T N1.7 (Plan 14-07, `--backend groot-n17`)
+
+GR00T N1.7 uses the same gRPC lane as Steps 1-5 (`policy_type="groot"`). The installed
+`lerobot==0.6.1` lists `"groot"` in `async_inference/constants.py::SUPPORTED_POLICIES`, and
+`GrootPolicy` wraps N1.7 only (N1.5 support was removed). Three differences from Step 3, all
+verified against that installed source:
+
+1. **It needs the `groot` extra** (`transformers>=5.4,<5.6`, `peft`, `diffusers`, `timm`,
+   `dm-tree`, `decord`), plus the gated **`nvidia/Cosmos-Reason2-2B`** backbone processor. Accept
+   that model's license on huggingface.co with the account whose token Step 3 logs in with,
+   or the server fails while loading the processors.
+2. **The stock server can't decode relative-action N1.7 checkpoints.** It post-processes one
+   action at a time, and `GrootN17ActionDecodeStep` raises
+   `NotImplementedError: ... cannot decode native relative actions one step at a time` (most
+   SO-101 N1.7 fine-tunes, including the candidate below, are relative). So start the server with
+   `control/vla_bridge/groot_n17_server.py`. For `policy_type == "groot"` it decodes the whole
+   chunk in one call, and leaves every other policy on the stock path.
+3. **GPU:** a 3B model kept in fp32 with bf16 autocast. Use an **L4 or A100**, not a T4.
+
+**What the robot receives:** absolute joint targets in degrees, decoded server-side. Nothing is
+converted relative-to-absolute on the laptop (see `backends/relative_ee_conversion.py`).
+
+**Status:** not yet run on Colab.
+
+**Checkpoint:** no default is shipped. No public SO-101 N1.7 checkpoint declares `camera1`, the only
+camera today's bridge delivers, so the server raises `KeyError: 'observation.images.camera1'`
+until the bridge camera-key follow-up in `deferred-items.md` lands. The recorded candidate is
+`tsangb34/groot-n17-so101-cube-drawer-40k` (front + wrist, relative joints, degree units). See
+`backend_configs/groot_n17.json`.
+
+Run Steps 1, 2 and the token/torchaudio cells of Step 3 as usual, then the cells below
+**instead of** Step 3's launch cell.
+
+```python
+# GR00T N1.7 only: lerobot's `groot` extra, same lerobot pin as Step 1.
+!pip install 'lerobot[async,groot]==0.6.1'
+!pip show torch transformers | grep -E "^(Name|Version)"
+```
+
+Upload `control/vla_bridge/groot_n17_server.py` to `/content/groot_n17_server.py`
+(Files panel or Drive), then run the launch cell. It replaces Step 3's launch cell. It uses the
+same port (5173), log file, and `policy_server_process` handle, so Steps 4-6 and the teardown
+cells work unchanged. The first handshake downloads the 3B base (`nvidia/GR00T-N1.7-3B`),
+the backbone processor and the fine-tune, so expect the first chunk to take minutes.
+
+```python
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+POLICY_SERVER_LOG = "/content/policy_server.log"
+GROOT_LAUNCHER = Path("/content/groot_n17_server.py")
+if not GROOT_LAUNCHER.exists():
+    raise FileNotFoundError(f"Upload control/vla_bridge/groot_n17_server.py to {GROOT_LAUNCHER} first.")
+
+# Kill a stock OR patched PolicyServer left over from an earlier attempt (same port, GPU memory).
+subprocess.run(["pkill", "-9", "-f", "lerobot.async_inference.policy_server"], check=False)
+subprocess.run(["pkill", "-9", "-f", "diffusion_policy_server.py"], check=False)
+subprocess.run(["pkill", "-9", "-f", "groot_n17_server.py"], check=False)
+time.sleep(1)
+
+_env = os.environ.copy()
+_env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+_env.setdefault("OMP_NUM_THREADS", "1")
+
+_log_fh = open(POLICY_SERVER_LOG, "w", buffering=1)
+policy_server_process = subprocess.Popen(
+    [sys.executable, str(GROOT_LAUNCHER), "--host", "0.0.0.0", "--port", "5173"],
+    stdout=_log_fh,
+    stderr=subprocess.STDOUT,
+    env=_env,
+)
+
+for _ in range(60):
+    if policy_server_process.poll() is not None:
+        raise RuntimeError(
+            f"GR00T PolicyServer exited early (code {policy_server_process.returncode}) -- see {POLICY_SERVER_LOG}"
+        )
+    try:
+        with socket.create_connection(("127.0.0.1", 5173), timeout=1):
+            break
+    except OSError:
+        time.sleep(1)
+else:
+    raise RuntimeError(f"GR00T PolicyServer did not start listening in time -- see {POLICY_SERVER_LOG}")
+
+print(f"Patched PolicyServer running as PID {policy_server_process.pid}. Logs -> {POLICY_SERVER_LOG}")
+print("The log's first line should read 'Patched PolicyServer._predict_action_chunk: GR00T N1.7 ...'.")
+```
+
+Then open the Step 4 tunnel, and run this locally in `control/`:
+
+```bash
+.venv/bin/python run_vla_episode.py <port> <robot_id> --backend groot-n17 \
+  --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint <SO-101 N1.7 checkpoint declaring camera1> \
+  --out outputs/groot_n17_UNIQUE_NAME --max-steps 20
+```
+
+A healthy server log shows `Policy type: groot`, then
+`Preprocessing and inference took ...s, action shape: torch.Size([1, 32, 6])`-style lines and
+`(GR00T whole-chunk decode)` timing lines. Failures look different:
+- `Error in StreamActions: GrootN17ActionDecodeStep cannot decode native relative actions one step
+  at a time`: the stock server is running instead of the patched launcher.
+- `KeyError: 'observation.images.camera1'`: the checkpoint doesn't declare the bridge's camera.
+- A 401/403 or "gated repo" error for `nvidia/Cosmos-Reason2-2B`: accept its license first.
+
+On the robot, watch for the known N1.7 SO-ARM failure (14-RESEARCH.md Pitfall 1): every joint
+pinned at its per-step clamp in the first steps. If you see it, stop. It means the checkpoint's
+units are not degrees (check its normalizer stats) or something is converting the action twice.
+
+Tear down with Step 6 as usual.
