@@ -233,3 +233,44 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
 - If live motion is jerky or too slow, streaming the chunk to the client's local waypoint
   interpolation (`--execution-hz`) is a contained follow-up. It would change `HttpAdapterActionSource`'s
   one-action contract.
+
+## From 14-12 (GR00T N1.5)
+
+### Range-normalized SO-101 N1.5 checkpoints are refused, not converted
+
+- Of 33 Isaac-GR00T-format SO-100/SO-101 N1.5 checkpoints on the Hub, 19 were recorded in lerobot's
+  range mode (arm joints in [-100, 100], clamped at the calibration limits). That includes NVIDIA's own
+  `nvidia/SO_ARM_Starter_Gr00t`. Three more use the pre-0.2 offset calibration (shoulder_lift up to
+  ~199). `groot_n15_server.py` refuses all of them; only degree-mode checkpoints are identity-mapped.
+- **Contained follow-up:** a `range_m100_100` profile that converts on both sides with THIS robot's
+  calibration (`action_contract.CALIBRATION_PATH`). The arithmetic is
+  `deg = norm / 100 * (range_max - range_min) / 2 * 360 / 4095`, sign-flipped by `drive_mode`
+  (lerobot 0.6.1 `MotorsBus._normalize`). The gripper is RANGE_0_100 in both modes.
+  - The server would need the same scale for the proprio. So the wire contract would have to carry
+    the calibration, or the client would have to send pre-converted state.
+  - The offset-calibration mode has no reliable conversion and should stay refused.
+
+### `check_checkpoint.py` has no `groot-n15` group
+
+- The 14-12 scan was ad hoc. It is recorded in `checkpoint_candidates.md` (`backend:groot-n15` /
+  `backend:groot-n15-selection`, both hand-written) and in 14-12-SUMMARY.md.
+- A group would read `config.json` (`model_type: gr00t_n1_5`) and `experiment_cfg/metadata.json`'s
+  `new_embodiment` entry, then reuse `groot_n15_server._check_checkpoint_layout()` /
+  `classify_action_units()`.
+
+### GR00T N1.5 returns one chunk step per request, not eval_lerobot.py's chunk execution
+
+- NVIDIA's client executes 8 of the 16 chunk steps at about 50 Hz before inferring again.
+  `groot_n15_server.py` returns one absolute target about one client control period ahead (step 14
+  of 16 at 2 Hz), the same receding-horizon choice as RDT-1B (14-11).
+- A blog commenter reports jerky N1.5 SO-101 motion even with NVIDIA's client. If live motion is
+  jerky, streaming the chunk to the client's `--execution-hz` interpolation is the same contained
+  follow-up as RDT's.
+
+### No SO-101 GR00T N1.5 fine-tune on this rig
+
+- The default is a community fine-tune on another rig and scene (3 tasks). Task-meaningful motion
+  needs a fine-tune on this repo's own SO-101 lerobot data with NVIDIA's tutorial:
+  `scripts/gr00t_finetune.py --data-config so100_dualcam` at `n1.5-release`, in degree mode, ~25 GB of
+  VRAM (or `--no-tune_diffusion_model`). Add the result as a reviewed profile in both
+  `groot_n15_server.CHECKPOINT_PROFILES` and `groot_n15.json`.

@@ -1630,3 +1630,186 @@ if 'rdt_server_process' in globals() and rdt_server_process.poll() is None:
         rdt_server_process.kill()
         rdt_server_process.wait()
 ```
+
+---
+
+## Tier C: GR00T N1.5 resident adapter (Plan 14-12, `--backend groot-n15`)
+
+GR00T N1.5 has no LeRobot path in this repo's lerobot 0.6.1: its `groot` policy is N1.7-only and rejects
+N1.5 checkpoints (Plan 14-07). N1.5 therefore runs as its own resident Flask adapter,
+`control/vla_bridge/groot_n15_server.py`, built like the RDT-1B and Octo adapters above: it loads once,
+warms up, then serves. It does NOT use Steps 1-5, and it is a **separate code path from the GR00T N1.7
+section** (14-RESEARCH Pitfall 3).
+
+The code comes from **github.com/NVIDIA/Isaac-GR00T**, cloned at the tag `n1.5-release`
+(= branch `n1d5`, commit `4af2b62`, Apache-2.0). It is not on PyPI. The adapter loads checkpoints with the
+repo's own `gr00t.model.policy.Gr00tPolicy` and the `so100_dualcam` data config, exactly as NVIDIA's SO-101
+tutorial (huggingface.co/blog/nvidia/gr00t-n1-5-so101-tuning) and `examples/SO-100/eval_lerobot.py` do.
+
+**Status:** written from upstream source and HF Hub metadata. These cells have **not yet been run
+on Colab**.
+
+Requirements:
+- **GPU: an L4 or A100 runtime.** The bundled Eagle 2.5 backbone hard-codes `flash_attention_2`, which
+  needs an Ampere-or-newer GPU. A T4 cannot run it, so `groot_n15_server.py` refuses to start there. The
+  model card measures about 6 GB of VRAM for PyTorch inference.
+- **Disk: about 10 GB free** (7.6 GB of checkpoint safetensors; optimizer state is not downloaded).
+- **Dependencies:** Isaac-GR00T pins Python 3.10, `torch==2.5.1`, `transformers==4.51.3` and
+  `flash-attn==2.7.1.post4`, so the adapter runs in its own venv. `groot_n15_server.py` refuses other
+  versions, and refuses an Isaac-GR00T checkout at any other commit.
+
+Default checkpoint: `quangnd58/GR00T-N1.5-3B-so101-multitask@488f3b6`, a documented SO-101 fine-tune of
+`nvidia/GR00T-N1.5-3B` (Isaac-GR00T `n1d5`, `new_embodiment`, `so100_dualcam`: `video.front` = top camera
++ `video.wrist`). The base `nvidia/GR00T-N1.5-3B` cannot drive SO-101: SO-101 is not in its pre-training,
+and its metadata has no `new_embodiment` entry. The action is an **absolute joint target in lerobot
+degree mode**, so the client passes it straight through. **No IK, no delta.** The adapter re-derives the
+unit mode from the checkpoint's own `metadata.json` and refuses to start if it is not degrees.
+
+
+```python
+# GR00T N1.5 only: the official install (README / NVIDIA's SO-101 tutorial: python 3.10,
+# `pip install -e .[base]`, then flash-attn 2.7.1.post4 without build isolation) in an isolated venv,
+# at the pinned NVIDIA/Isaac-GR00T n1.5-release commit. flash-attn's setup fetches its prebuilt
+# wheel from github.com/Dao-AILab/flash-attention releases (or compiles, which takes a long time).
+# Clone, installs and import check are all verified by exit status.
+import subprocess, sys
+from pathlib import Path
+GROOT_N15_COMMIT = '4af2b622892f7dcb5aae5a3fb70bcb02dc217b96'  # tag n1.5-release == branch n1d5
+GROOT_N15_DIR = '/content/Isaac-GR00T'
+GROOT_N15_VENV = '/content/groot_n15_venv'
+GROOT_N15_PYTHON = f'{GROOT_N15_VENV}/bin/python'
+if not Path(GROOT_N15_DIR).exists():
+    subprocess.run(['git', 'clone', 'https://github.com/NVIDIA/Isaac-GR00T', GROOT_N15_DIR], check=True)
+subprocess.run(['git', '-C', GROOT_N15_DIR, 'checkout', '--detach', GROOT_N15_COMMIT], check=True)
+head = subprocess.run(['git', '-C', GROOT_N15_DIR, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True)
+if head.stdout.strip() != GROOT_N15_COMMIT:
+    raise RuntimeError(f'Isaac-GR00T checkout is at {head.stdout.strip()}, expected {GROOT_N15_COMMIT}')
+if not Path(GROOT_N15_PYTHON).exists():
+    subprocess.run([sys.executable, '-m', 'pip', 'install', 'uv'], check=True)
+    subprocess.run(['uv', 'venv', '--python', '3.10', '--seed', GROOT_N15_VENV], check=True)
+for packages in (
+    ['--upgrade', 'setuptools'],
+    ['-e', f'{GROOT_N15_DIR}[base]'],
+    ['packaging', 'psutil', 'ninja', 'wheel', 'flask'],
+    ['--no-build-isolation', 'flash-attn==2.7.1.post4'],
+):
+    install = subprocess.run(['uv', 'pip', 'install', '--python', GROOT_N15_PYTHON, *packages],
+                             capture_output=True, text=True)
+    print(install.stdout[-2000:]); print(install.stderr[-2000:])
+    if install.returncode != 0:
+        raise RuntimeError(f'GR00T N1.5 venv install failed (exit {install.returncode}): {packages}')
+check = subprocess.run([GROOT_N15_PYTHON, '-c', (
+    "import importlib.metadata as m, torch\n"
+    "print({p: m.version(p) for p in ('torch', 'transformers', 'flash_attn', 'numpy', 'huggingface_hub')})\n"
+    "import flash_attn, gr00t\n"
+    "from gr00t.model.policy import Gr00tPolicy\n"
+    "from gr00t.experiment.data_config import DATA_CONFIG_MAP\n"
+    "assert 'so100_dualcam' in DATA_CONFIG_MAP\n"
+    "print('gr00t from', gr00t.__file__)\n"
+    "assert torch.cuda.is_available(), 'no CUDA GPU'\n"
+    "cap = torch.cuda.get_device_capability(0)\n"
+    "print(torch.cuda.get_device_name(0), cap, round(torch.cuda.get_device_properties(0).total_memory / 2**30, 1), 'GiB')\n"
+    "assert cap >= (8, 0), 'flash-attn 2 needs Ampere or newer (T4 is sm75): switch the runtime to an L4/A100'\n"
+)], cwd='/content', capture_output=True, text=True)
+print(check.stdout); print(check.stderr[-2000:])
+if check.returncode != 0:
+    raise RuntimeError('GR00T N1.5 venv import check failed; see stderr above')
+```
+
+Upload `control/vla_bridge/groot_n15_server.py` to `/content/groot_n15_server.py` (Files panel or
+Drive). Then launch it as a separate OS process with the venv's Python.
+
+On first start it downloads the checkpoint at its pinned revision (`config.json`, `experiment_cfg/`, the
+safetensors and their index: about 7.6 GB). Before declaring the model ready, it:
+- checks the clone is at the reviewed commit, and that `gr00t` is imported from it;
+- checks the checkpoint's `metadata.json` is the reviewed layout (`video.front` + `video.wrist`,
+  `single_arm` [5] + `gripper` [1], both `absolute`) and that its action statistics are **degree mode**;
+- loads `Gr00tPolicy(..., embodiment_tag='new_embodiment', so100_dualcam, denoising_steps=4)` and checks
+  every weight key against the checkpoint's index;
+- runs one warm-up inference.
+
+`/health` only answers after that. It reports `action_space` (`absolute_joint`), `action_units`
+(`degrees`), `detected_action_units`, `chunk_step` and `video_sources`. The log at
+`/content/groot_n15_server.log` records the GPU and the **peak VRAM** after warm-up.
+
+The server returns the chunk step about one client control period ahead. By default that is
+`--client-control-hz 2.0` (step 14 of 16), matching `run_vla_episode.py`'s default `--control-hz`. If you
+run the client at another rate, pass the same value here. `video.front` is the dataset's top camera; it is
+fed from this rig's `overhead_left` (`--front-image-key overhead_right` to change it).
+
+
+```python
+import os, shutil, subprocess, time, requests
+GROOT_N15_LOG = '/content/groot_n15_server.log'
+free_gb = shutil.disk_usage('/content').free / 1e9
+if free_gb < 12:
+    raise RuntimeError(f'only {free_gb:.0f} GB free on /content; GR00T N1.5 needs ~10 GB (7.6 GB checkpoint)')
+env = dict(os.environ, TOKENIZERS_PARALLELISM='false')
+with open(GROOT_N15_LOG, 'w') as log:
+    groot_n15_server_process = subprocess.Popen(
+        [GROOT_N15_PYTHON, '/content/groot_n15_server.py', '--port', '3006', '--groot-repo', GROOT_N15_DIR],
+        stdout=log, stderr=subprocess.STDOUT, env=env, cwd='/content')
+for _ in range(3600):  # ~7.6 GB download + load + warmup
+    if groot_n15_server_process.poll() is not None:
+        print(open(GROOT_N15_LOG).read()[-3000:])
+        raise RuntimeError(f'GR00T N1.5 adapter exited (wrong GPU, bad dependency, or a refused checkpoint?); inspect {GROOT_N15_LOG}')
+    try:
+        health = requests.get('http://127.0.0.1:3006/health', timeout=2).json()
+        if health.get('status') == 'ready':
+            print('GR00T N1.5 adapter ready:', {k: health['model'][k] for k in (
+                'checkpoint', 'revision', 'isaac_groot_commit', 'action_space', 'action_units',
+                'detected_action_units', 'chunk_step', 'video_sources')})
+            break
+    except requests.RequestException:
+        pass
+    time.sleep(1)
+else:
+    groot_n15_server_process.terminate()
+    raise RuntimeError(f'GR00T N1.5 warmup timed out; inspect {GROOT_N15_LOG}')
+print([line for line in open(GROOT_N15_LOG) if 'GiB' in line or 'OutOfMemory' in line])
+```
+
+```python
+from pyngrok import ngrok
+groot_n15_tunnel = ngrok.connect(3006, "http")  # plain JSON-over-HTTP, like Step 9
+print(f"GR00T N1.5 endpoint: {groot_n15_tunnel.public_url}")
+```
+
+Then, locally in `control/` (pass the base URL; the client appends `/action`):
+
+```bash
+.venv/bin/python run_vla_episode.py --backend groot-n15 \
+  --server-address https://GROOT_N15_TUNNEL.ngrok-free.app \
+  --instruction "Pick blue cube and place on red cube" \
+  --out outputs/groot_n15_UNIQUE_NAME --max-steps 20
+```
+
+Each step's `model_version` should read `quangnd58/GR00T-N1.5-3B-so101-multitask@488f3b6da322`. The action
+is an absolute joint target in degrees (gripper in percent), passed straight through: no unit change, no
+IK, and the current joint state is never added to it. Every action then goes through the safety validator.
+The checkpoint was trained on three prompts; use one verbatim: "Pick up the banana and place it in the bot,
+then close the lid", "Pick blue cube and place on red cube", "Pick all cubes and place into cup".
+
+A step that logs `http-error-holding-position` means the adapter returned an error. Check
+`/content/groot_n15_server.log`:
+- 500 `groot n1.5 inference failed` means the model produced a non-finite or wrong-shaped action chunk.
+- 400 means a bad request, e.g. a missing camera or joint.
+
+What a units mistake would look like (it is checked at startup, so this should not happen): a joint driven
+toward its limit on the very first step, every step clamped by the per-step limit in the same direction.
+If you see that, stop and compare `/health`'s `detected_action_units` with the checkpoint's metadata.
+Expect motion that is not task-meaningful: the checkpoint was trained on another rig and scene.
+
+
+```python
+# GR00T N1.5 teardown -- every session, same rule as Step 6.
+if 'groot_n15_tunnel' in globals():
+    ngrok.disconnect(groot_n15_tunnel.public_url)
+if 'groot_n15_server_process' in globals() and groot_n15_server_process.poll() is None:
+    groot_n15_server_process.terminate()
+    try:
+        groot_n15_server_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        groot_n15_server_process.kill()
+        groot_n15_server_process.wait()
+```

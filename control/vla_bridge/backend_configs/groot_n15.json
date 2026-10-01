@@ -1,0 +1,35 @@
+{
+  "checkpoint": "quangnd58/GR00T-N1.5-3B-so101-multitask",
+  "revision": "488f3b6da322e55a316a562a00567fb4a1fe130a",
+  "base_model": "nvidia/GR00T-N1.5-3B",
+  "isaac_groot_commit": "4af2b622892f7dcb5aae5a3fb70bcb02dc217b96",
+  "endpoint_url": null,
+  "action_space": "absolute_joint",
+  "action_units": "degrees",
+  "instruction": "Pick blue cube and place on red cube",
+  "checkpoints": {
+    "quangnd58/GR00T-N1.5-3B-so101-multitask": {
+      "revision": "488f3b6da322e55a316a562a00567fb4a1fe130a",
+      "subfolder": "",
+      "data_config": "so100_dualcam",
+      "embodiment_tag": "new_embodiment",
+      "video_sources": {"front": "overhead_left", "wrist": "wrist"},
+      "action_space": "absolute_joint",
+      "action_units": "degrees",
+      "control_hz": 30,
+      "action_horizon": 16,
+      "denoising_steps": 4
+    }
+  },
+  "notes": [
+    "Verified live on 2026-10-01 against github.com/NVIDIA/Isaac-GR00T @ 4af2b62 (tag n1.5-release = branch n1d5), NVIDIA's SO-101 tutorial (huggingface.co/blog/nvidia/gr00t-n1-5-so101-tuning) and the HF Hub. See 14-12-SUMMARY.md and checkpoint_candidates.md (backend:groot-n15).",
+    "GR00T N1.5 is served through NVIDIA's own Isaac-GR00T Gr00tPolicy, not lerobot: lerobot 0.6.1's groot policy is N1.7-only and rejects N1.5 (14-07). This backend shares no code with groot-n17 (Pitfall 3).",
+    "action_space absolute_joint was confirmed, not assumed. SO-101 N1.5 fine-tunes use the so100_dualcam data config (min_max normalization, un-applied by Gr00tPolicy.get_action), every SO-101 N1.5 checkpoint's experiment_cfg/metadata.json marks single_arm and gripper absolute: true, and NVIDIA's examples/SO-100/eval_lerobot.py sends each chunk step straight to robot.send_action(). So the client convert_fn is an identity reshape into JOINT_ORDER and never re-applies the joint state.",
+    "action_units degrees: the default's dataset hungho77/so101-multitask (Apache-2.0) is lerobot v3.0 with robot_type so_follower (use_degrees=True, the mode action_contract.py speaks). Its action stats reach 100.4 on wrist_flex (past the range mode's +/-100 clamp) and no joint sits at exactly +/-100. groot_n15_server.py re-derives the unit mode from the downloaded metadata.json and refuses to start on a mismatch.",
+    "nvidia/GR00T-N1.5-3B (the plan's checkpoint) cannot be served for SO-101: its experiment_cfg/metadata.json has only gr1, oxe_droid and agibot_genie1, so Gr00tPolicy(..., embodiment_tag='new_embodiment') raises 'No metadata found for embodiment tag'. NVIDIA's tutorial fine-tunes SO-101 as new_embodiment. It is recorded here as base_model only.",
+    "Default quangnd58/GR00T-N1.5-3B-so101-multitask: a documented community fine-tune (Isaac-GR00T n1d5, so100_dualcam, video.front = top camera + video.wrist, 640x480, horizon 16), license other (NVIDIA License, derived from the base). 899 weight keys, identical to the base's. Prompts: 'Pick up the banana and place it in the bot, then close the lid', 'Pick blue cube and place on red cube', 'Pick all cubes and place into cup'. Out of distribution for this rig's scene: expect pipeline-proving motion.",
+    "Not reviewed / refused: nvidia/SO_ARM_Starter_Gr00t (NVIDIA's own SO-ARM101 N1.5 fine-tune) is range-normalized (+/-100 clamp) and a surgical-scene model; most community SO-101 N1.5 checkpoints are range-normalized too, and shenjianliang/* and SrikrishnaIyer/* use the pre-0.2 offset calibration (shoulder_lift up to ~199). A range-mode checkpoint needs a calibration-based conversion (deferred-items.md).",
+    "groot_n15_server.py returns chunk step round(30 / --client-control-hz) - 1, clamped to the 16-step chunk (14 at the default 2 Hz loop), since every chunk step is an absolute target 1/30 s apart.",
+    "--checkpoint must match the checkpoint groot_n15_server.py was launched with. Each step's model_version shows what the server ran."
+  ]
+}

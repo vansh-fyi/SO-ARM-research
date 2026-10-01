@@ -460,3 +460,71 @@ Caveats:
 - **Pacing.** Each of the 64 chunk steps is an absolute target at 30 Hz. The server returns the step
   about one client control period ahead (step 14 at the default 2 Hz loop).
 <!-- backend:rdt1b-selection:end -->
+
+<!-- backend:groot-n15:start -->
+## GR00T N1.5 (Phase 14, Plan 14-12; hand-written, the script never rewrites this section)
+
+`check_checkpoint.py` has no `groot-n15` group. An Isaac-GR00T N1.5 checkpoint is a transformers
+directory (`config.json` with `model_type: gr00t_n1_5`, sharded safetensors) plus
+`experiment_cfg/metadata.json`, which holds the per-embodiment modalities and normalization statistics.
+It has no lerobot `input_features`. These rows come from an ad hoc live fetch on 2026-10-01
+(unauthenticated): the HF API metadata and card of each repo, and every candidate's `config.json` and
+`experiment_cfg/metadata.json` (including `checkpoint-*/` subfolders).
+
+How the scan was run:
+- **Search:** paginated Hub searches `gr00t` (2,815 ids), `groot` (1,326), plus `GR00T-N1.5`,
+  `gr00t-n1.5`, `groot-n1.5`, `n1.5`, `gr00tn15`, `groot_n15`, `gr00t_n1_5`, `so101-gr00t`,
+  `so100-gr00t`: 4,141 unique ids.
+- **Filter:** ids naming SO-100/SO-101/SO-ARM/Koch, minus N1.6/N1.7 names: 317 repos. Each was
+  checked for `experiment_cfg/metadata.json` + `config.json`: 80 hits, **33 repos with
+  `model_type: gr00t_n1_5`** (17 more are N1 `gr00t_n1`, a different release).
+- **Classification:** the `new_embodiment` entry's layout and the unit mode of its `single_arm` action
+  statistics, using `groot_n15_server.classify_action_units()`. The server's own
+  `_check_checkpoint_layout()` was then run over every downloaded `metadata.json`: **only the default
+  is accepted**. Of the 33: 19 are range-normalized, 8 use another layout (phosphobot `arm_0` /
+  `action_space`, bimanual), 3 use the pre-0.2 offset calibration, 1 is ambiguous, and 2 are degree mode
+  (the default and `SGPatil/...`).
+- LeRobot-format N1.5 checkpoints (`library_name: lerobot`, from lerobot 0.4's since-removed N1.5
+  policy) are a different format and are not loadable by either path; they are not listed.
+
+| Repo ID | Revision | License | Layout / cameras | Action units (from its stats) | SO-101 fit |
+|---|---|---|---|---|---|
+| `quangnd58/GR00T-N1.5-3B-so101-multitask` | `488f3b6da322e55a316a562a00567fb4a1fe130a` | other (NVIDIA License, derived from the base) | `so100_dualcam`: `front` (top camera) + `wrist`, 640x480; `single_arm` [5] + `gripper` [1], absolute; horizon 16; 899 weight keys = the base's | **degrees** (wrist_flex reaches 100.4; dataset `hungho77/so101-multitask`: lerobot v3.0, `robot_type: so_follower`, 143 episodes, 30 fps) | **default**. Documented card (Isaac-GR00T `n1d5`, prompts listed), real SO-101 data in the current lerobot degree mode. Community fine-tune on another rig and scene |
+| `nvidia/GR00T-N1.5-3B` | `869830fc749c35f34771aa5209f923ac57e4564e` | NVIDIA One-Way Noncommercial | `gr1`, `oxe_droid`, `agibot_genie1` only | n/a | NO. The base: no `new_embodiment` entry, so `Gr00tPolicy` refuses SO-101. SO-101 is not in its pre-training (NVIDIA tutorial) |
+| `nvidia/SO_ARM_Starter_Gr00t` | `5c01635c34ec7c234da2d2719145b1020c5c40e1` | card metadata apache-2.0, text says NSCL V1 (mismatch) | `room` + `wrist`; `single_arm` + `gripper`, absolute | **range_m100_100** (shoulder_lift and elbow_flex at exactly -100 / 100) | NO for now. NVIDIA's own SO-ARM101 fine-tune, but range-normalized and trained for an Isaac-for-Healthcare surgical scene. Needs the calibration-based conversion in deferred-items |
+| `SGPatil/GR00T-N1.5-SO101-finetune-table-cleanup` | `c2c739640b3dab4828d792fd98689f2e47283d7d` | none | `front` + `laptop` (a custom data config, not `so100_dualcam`) | degrees | NO. No license, no card, and its data config is unpublished |
+| `shenjianliang/so101_{pick,tower}_GR00T-N1.5-3B`, `SrikrishnaIyer/gr00t_so100_picknplace` | `7cb23ff` / `42a0f0b` / `19d8180` | none | `front` + `wrist` | **legacy_offset** (shoulder_lift 35 to 199: pre-0.2 calibration) | NO. Passing these through would drive joints to their limits |
+| `jtz18/gr00t-so101-finetuned*`, `5hadytru/so101_GR00T-N1.5-3B_v*`, `HelloCephalopod/gr00t-n1.5-so100-finetuned*`, `tfaith/...`, `flrs/...`, `cieclr/...`, `jnm38/...`, `Auryal/...`, `KavitShah1998/...`, `NeuramateSUSU/...`, `Pushpakcc/...`, `Cache-SCA/gr00t_n15_official_so101_11task`, `cerealkiller2527/...`, `mingxueg/so_arm_starter_GR00T` | various | none / apache-2.0 | `so100` / `so100_dualcam`-style, some with other camera names | **range_m100_100** | NO for now (range mode; see deferred-items) |
+| `jtz18/gr00t-so101-finetuned-duck` | `3d3a3c2` | none | `front` + `wrist` | ambiguous (all within +/-100; state elbow_flex at exactly 100) | NO. Unit mode not provable |
+| `phospho-app/*` (7 repos), `lucasngoo/GR00T-N1.5-bimanual-so101-box-folding` | various | none | `arm_0` [6] / `action_space` [6] (phosphobot), or bimanual | n/a | NO. Different layouts |
+<!-- backend:groot-n15:end -->
+
+<!-- backend:groot-n15-selection:start -->
+## GR00T N1.5 selection (Plan 14-12, hand-written; the script never rewrites this section)
+
+**Chosen default:** `quangnd58/GR00T-N1.5-3B-so101-multitask` @ `488f3b6da322e55a316a562a00567fb4a1fe130a`,
+action space `absolute_joint`, units `degrees` (`backend_configs/groot_n15.json`). Code path: NVIDIA
+`Isaac-GR00T` @ `4af2b62` (tag `n1.5-release`), `Gr00tPolicy` + `so100_dualcam`, `new_embodiment`.
+It is not lerobot, and shares nothing with `groot-n17` (Pitfall 3).
+
+**Action convention, confirmed rather than assumed:**
+- NVIDIA's SO-101 tutorial (huggingface.co/blog/nvidia/gr00t-n1-5-so101-tuning) fine-tunes SO-101 as
+  `new_embodiment` with `--data-config so100_dualcam`, then deploys with `examples/SO-100/eval_lerobot.py`.
+- `so100_dualcam` min-max normalizes `single_arm` and `gripper`; `Gr00tPolicy.get_action()` un-applies
+  that, so the chunk is in the dataset's raw lerobot `.pos` units.
+- `eval_lerobot.py` passes `robot.get_observation()` values straight in as state, and sends each chunk
+  step straight to `robot.send_action()`. Every SO-101 N1.5 checkpoint's metadata marks both groups
+  `absolute: true`.
+- So the action is an **absolute joint target**. With a degree-mode dataset that is exactly
+  `action_contract.py`'s contract, and the client conversion is an identity reshape into `JOINT_ORDER`.
+  The unit mode is the per-checkpoint risk (14-07 found the same for N1.7), so the server re-derives it
+  from the downloaded statistics and refuses a mismatch.
+
+Caveats:
+- **Out of distribution scene.** The fine-tune's tasks (banana/lid, blue-on-red cube, cubes into a cup)
+  and camera placement are someone else's. Expect pipeline-proving motion, not task success.
+- **Compute.** flash-attn 2 is mandatory (bundled Eagle config), so the GPU must be Ampere or newer
+  (L4/A100). About 6 GB of VRAM for inference.
+- **Pacing.** The 16 chunk steps are absolute targets 1/30 s apart. The server returns the step about
+  one client control period ahead (step 14 at the default 2 Hz loop).
+<!-- backend:groot-n15-selection:end -->
