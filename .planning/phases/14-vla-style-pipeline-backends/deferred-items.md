@@ -78,7 +78,7 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
   `prepare_raw_observation()`, which indexes `policy.config.image_features[key]` for every
   delivered key. So GR00T is NOT a `NO_CAMERA_MASKING_BACKENDS` case. It only needs `camera1`
   declared, or the client to send the wrist frame under the checkpoint's own key.
-- About 36 LeRobot-format SO-101 N1.7 checkpoints were scanned on 2026-10-01. Their camera keys
+- 41 LeRobot-format SO-101 N1.7 checkpoints were scanned on 2026-10-01. Their camera keys
   are things like `front`/`wrist`, `wrist`/`top`, `ego`/`external_D455` and `main`. None uses
   `camera1`. So `backend_configs/groot_n17.json` ships no default `checkpoint`.
 - **Unlocked by the follow-up:** `tsangb34/groot-n17-so101-cube-drawer-40k` (front + wrist, relative
