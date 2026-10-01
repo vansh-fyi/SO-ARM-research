@@ -7,12 +7,16 @@ port, a camera, or a gRPC channel.
 """
 
 import json
+import math
 from types import SimpleNamespace
 
 import pytest
+from test_backend_pi0 import _FakePiBridgeClient
+from test_run_vla_episode import _ClosableActionSource, _dispatch_main, _FakeBackendRobot
 
-from vla_bridge import backends
-from vla_bridge.backends import base_grpc
+from vla_bridge import action_contract, backends, robot_client
+from vla_bridge.action_contract import JOINT_ORDER
+from vla_bridge.backends import BackendHandles, base_grpc
 
 
 def _args(**overrides):
@@ -161,3 +165,133 @@ def test_check_checkpoint_treats_diffusion_as_non_masking():
     assert "diffusion" in cc.NO_CAMERA_MASKING_BACKENDS
     assert "diffusion" in cc.SECTION_TITLES
     assert cc.CANDIDATE_GROUPS["diffusion"][0] == CANDIDATE_DIFFUSION_CHECKPOINT
+
+
+# --- Mocked round trip (Task 2): real base_grpc + real BridgeActionSource ----------
+#
+# Only `connect_bridge()` is faked. Everything after the handshake is the
+# production code path: base_grpc wraps the client in the unmodified
+# BridgeActionSource, whose get_action() pops one queued chunk action through
+# pop_validated_action() -> safety_validator.validate_action(). The client
+# double is test_robot_client.FakeBridgeClient (+ FakeTimedAction), extended in
+# test_backend_pi0 with the handshake-time surface base_grpc touches.
+
+ROUND_TRIP_CHECKPOINT = "someone/so101-diffusion-camera1-only"
+
+
+def test_diffusion_round_trip_returns_validated_action_without_send_action(
+    monkeypatch, mock_robot, mock_calibration_file
+):
+    joint_limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    queued = {f"{joint}.pos": 12.5 for joint in JOINT_ORDER}
+    connect_calls = {}
+
+    def fake_connect_bridge(server_address, checkpoint, **kwargs):
+        connect_calls.update(server_address=server_address, checkpoint=checkpoint, **kwargs)
+        connect_calls["client"] = _FakePiBridgeClient(mock_robot, queued)
+        return connect_calls["client"]
+
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+
+    handles = backends.BACKEND_REGISTRY["diffusion"](
+        _args(checkpoint=ROUND_TRIP_CHECKPOINT), {0: "wrist", 1: "overhead"}, joint_limits
+    )
+
+    client = connect_calls["client"]
+    assert isinstance(handles, BackendHandles)
+    assert connect_calls["policy_type"] == "diffusion"
+    assert connect_calls["checkpoint"] == ROUND_TRIP_CHECKPOINT
+    assert connect_calls["server_address"] == "0.tcp.ngrok.io:12345"
+    assert connect_calls["wrist_camera_index"] == 0
+    assert handles.robot is mock_robot
+    assert handles.shutdown == client.stop
+    assert handles.skip_camera_names == frozenset({"overhead"})
+    assert isinstance(handles.action_source, robot_client.BridgeActionSource)
+
+    joint_state = dict.fromkeys(JOINT_ORDER, 10.0)
+    action, model_version = handles.action_source.get_action(joint_state, "pick the cube")
+
+    assert set(action) == set(JOINT_ORDER)
+    assert all(isinstance(v, float) and math.isfinite(v) for v in action.values())
+    assert action == dict.fromkeys(JOINT_ORDER, 12.5)  # executed, not held at 10.0
+    assert model_version == f"{ROUND_TRIP_CHECKPOINT}@unknown"  # no hold/stale flags
+    assert client.observations_sent == ["pick the cube"]
+    assert mock_robot.sent_actions == []  # the source never sends; run_episode does
+
+
+def test_diffusion_round_trip_clamps_an_out_of_range_chunk_action(
+    monkeypatch, mock_robot, mock_calibration_file
+):
+    """A server-returned action outside the joint limits still goes through
+    safety_validator.validate_action() (T-14-02): it is clamped, never sent raw."""
+    joint_limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    queued = {f"{joint}.pos": 12.5 for joint in JOINT_ORDER}
+    queued["elbow_flex.pos"] = 10_000.0
+    monkeypatch.setattr(
+        robot_client, "connect_bridge", lambda *a, **k: _FakePiBridgeClient(mock_robot, queued)
+    )
+
+    handles = backends.BACKEND_REGISTRY["diffusion"](
+        _args(checkpoint=ROUND_TRIP_CHECKPOINT), {0: "wrist"}, joint_limits
+    )
+    action, _ = handles.action_source.get_action(dict.fromkeys(JOINT_ORDER, 10.0), "pick the cube")
+
+    low, high = joint_limits["elbow_flex"]
+    assert low <= action["elbow_flex"] <= high
+    assert action["elbow_flex"] != 10_000.0
+    assert mock_robot.sent_actions == []
+
+
+def test_diffusion_round_trip_holds_position_when_queue_is_empty(
+    monkeypatch, mock_robot, mock_calibration_file
+):
+    """What the robot does if the server never returns a chunk (the stock 0.6.1 server's
+    n_obs_steps assertion, or an undelivered camera key): it holds."""
+    joint_limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    client = _FakePiBridgeClient(mock_robot, {f"{j}.pos": 12.5 for j in JOINT_ORDER})
+    client.action_queue.get_nowait()  # nothing queued
+    monkeypatch.setattr(robot_client, "connect_bridge", lambda *a, **k: client)
+
+    handles = backends.BACKEND_REGISTRY["diffusion"](_args(checkpoint="x/y"), {0: "wrist"}, joint_limits)
+    joint_state = dict.fromkeys(JOINT_ORDER, 10.0)
+    action, model_version = handles.action_source.get_action(joint_state, "pick the cube")
+
+    assert action == joint_state
+    assert "holding position" in model_version
+    assert mock_robot.sent_actions == []
+
+
+# --- CLI dispatch through run_vla_episode.main() ------------------------------------
+
+
+def test_cli_backend_flag_dispatches_to_real_diffusion_build(monkeypatch, tmp_path):
+    calls = {}
+    handles = BackendHandles(action_source=_ClosableActionSource(), robot=_FakeBackendRobot())
+
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg):
+        calls.update(policy_type=policy_type, checkpoint=checkpoint)
+        return handles
+
+    monkeypatch.setattr(base_grpc, "build_grpc_action_source", fake_build)
+
+    result = _dispatch_main(monkeypatch, tmp_path, [
+        "--backend", "diffusion", "--server-address", "0.tcp.ngrok.io:12345",
+        "--checkpoint", "cli/ckpt",
+    ], {})
+
+    assert calls == dict(policy_type="diffusion", checkpoint="cli/ckpt")
+    assert result["run_episode_called"] is True
+    assert result["action_source"] is handles.action_source
+
+
+@pytest.mark.parametrize(
+    "partial_args",
+    [["--checkpoint", "cli/ckpt"], ["--server-address", "0.tcp.ngrok.io:12345"], []],
+    ids=["checkpoint-only", "server-address-only", "neither"],
+)
+def test_cli_diffusion_requires_bridge_args(monkeypatch, tmp_path, partial_args):
+    calls, _ = _record_grpc_build(monkeypatch)
+
+    with pytest.raises(SystemExit):
+        _dispatch_main(monkeypatch, tmp_path, ["--backend", "diffusion", *partial_args], {})
+    assert calls == {}
