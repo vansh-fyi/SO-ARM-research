@@ -203,7 +203,7 @@ def test_only_the_wrist_frame_is_sent_but_capture_matches_the_http_lane(api_key,
 
 
 def test_success_last_details_hold_parsed_er_output_and_path_marker(api_key, fake_client):
-    source = _source()
+    source = _source(convert_fn=lambda er, js: {joint: value + 0.5 for joint, value in js.items()})
     source.get_action(dict(JOINT_STATE), "go")
     details = source.last_details
     assert details["raw_model_output"]["er_entries"] == [{"point": [376, 508], "label": "red cube"}]

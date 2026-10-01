@@ -85,6 +85,7 @@ from lerobot.robots.so_follower.config_so_follower import SOFollowerRobotConfig
 from lerobot.robots.so_follower.so_follower import SO101Follower
 
 from vla_bridge import safety_validator
+from vla_bridge.action_contract import JOINT_ORDER
 from vla_bridge.backends import BackendHandles
 from vla_bridge.backends.base_http_adapter import _is_joint_action, capture_observation_images
 from vla_bridge.robot_client import OBSERVATION_MAX_SIDE
@@ -278,6 +279,11 @@ class GeminiActionSourceBase:
                 return self._hold(joint_state, "gemini-error-holding-position", exc)
             if not _is_joint_action(converted):
                 return self._hold(joint_state, "action-format-error-holding-position")
+            if all(converted[joint] == joint_state.get(joint) for joint in JOINT_ORDER):
+                # The conversion chose not to move (no usable point, target
+                # already centred, ...): keep the conversion marker but make
+                # the no-op visible in validator_flags.
+                self.last_details["bridge_flags"] = ["gemini-er-conversion-held-position"]
             return converted, f"{self.checkpoint_label}@{CONVERSION_SUFFIX}"
         finally:
             self._inflight_lock.release()
