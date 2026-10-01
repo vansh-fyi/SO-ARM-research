@@ -534,7 +534,9 @@ def test_server_main_checks_deps_checkout_gpu_then_warms_and_serves_on_3006(monk
     assert events[1] == ("checkout", "/content/Isaac-GR00T")
     init = events[2]
     assert init[1] == CKPT
-    assert init[2]["client_control_hz"] == 2.0 and init[2]["front_image_key"] == "overhead_left"
+    # front_image_key None = the profile's own mapping (overhead_left); denoising None = the profile's 4.
+    assert init[2]["client_control_hz"] == 2.0 and init[2]["front_image_key"] is None
+    assert init[2]["denoising_steps"] is None and init[2]["groot_repo"] == "/content/Isaac-GR00T"
     assert events[3][1] == ["overhead_left", "wrist"]
     assert set(events[3][2].values()) == {(480, 640, 3)}
     assert events[3][4] == {j: 0.0 for j in JOINT_ORDER}
