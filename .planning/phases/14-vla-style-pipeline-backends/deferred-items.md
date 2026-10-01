@@ -113,7 +113,7 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
 - **Alternative not taken:** a version-pinned launcher like `groot_n17_server.py` that appends
   `"wall_x"` to `SUPPORTED_POLICIES` would put Wall-X on the gRPC lane. It would also inherit the
   bridge's `camera1`-only limitation above. No SO-101 `wall_x` checkpoint on the Hub declares
-  `camera1` only: grahamwichhh's declare camera1-3 (some also camera4). The HTTP lane sends all
+  `camera1` only: grahamwichhh's declare camera1 plus camera2 and up. The HTTP lane sends all
   three rig frames and maps them server-side, so it is the better lane today anyway.
 - **Revisit signal:** `test_backend_wallx.py::test_installed_lerobot_policy_server_does_not_dispatch_wall_x`
   starts failing when a lerobot release adds `wall_x`. `wallx.build()` already takes the gRPC
