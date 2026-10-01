@@ -241,3 +241,127 @@ def test_module_docstring_states_it_is_er_plus_conversion_not_native_vla():
     assert PUBLIC_ER_MODEL in doc
     assert "VLAB-02" in doc  # documents how it relates to gemini-robotics-2
     assert "waitlist" in doc.lower() or "trusted tester" in doc.lower()
+
+
+# =============================================================================
+# Task 2: full mocked round trip -- registry -> shipped config -> real pinned
+# google-genai SDK (in-process httpx.MockTransport) -> er_conversion -> action
+# =============================================================================
+
+ROUND_TRIP_KEY_ENV = "GEMINI_API_KEY"  # the shipped config's api_key_env
+POINT_TEXT = '[{"point": [100, 900], "label": "red cube"}]'
+
+
+class FakeWristCap:
+    def __init__(self):
+        self.released = False
+
+    def isOpened(self):
+        return True
+
+    def read(self):
+        return True, np.full((480, 640, 3), 90, dtype=np.uint8)
+
+    def release(self):
+        self.released = True
+
+
+class FakeStereo:
+    def read_left(self):
+        return np.full((480, 640, 3), 40, dtype=np.uint8)
+
+    def read_right(self):
+        return np.full((480, 640, 3), 50, dtype=np.uint8)
+
+
+def _wire_round_trip(monkeypatch, status=200, text=POINT_TEXT):
+    """Patch only the hardware and the SDK's HTTP transport; everything else is real."""
+    httpx = pytest.importorskip("httpx")
+    pytest.importorskip("google.genai")
+    monkeypatch.setenv(ROUND_TRIP_KEY_ENV, SECRET)
+    monkeypatch.setattr(base_gemini, "SO101Follower", lambda config: MockRobot())
+    monkeypatch.setattr(base_gemini, "StereoSplitCamera", lambda index=1: FakeStereo())
+    monkeypatch.setattr(base_gemini.cv2, "VideoCapture", lambda index: FakeWristCap())
+    requests_seen = []
+
+    def handler(request):
+        requests_seen.append(request)
+        if status != 200:
+            return httpx.Response(status, json={"error": {"code": status, "message": "denied",
+                                                          "status": "PERMISSION_DENIED"}})
+        return httpx.Response(200, json={
+            "id": "interaction-1",
+            "status": "completed",
+            "steps": [{"type": "model_output", "content": [{"type": "text", "text": text}]}],
+        })
+
+    real_make_client = base_gemini._make_genai_client
+
+    def make_client(api_key_value, timeout_s):
+        return real_make_client(
+            api_key_value, timeout_s, httpx_client=httpx.Client(transport=httpx.MockTransport(handler))
+        )
+
+    monkeypatch.setattr(base_gemini, "_make_genai_client", make_client)
+    return requests_seen
+
+
+def test_full_mocked_round_trip_returns_a_validated_finite_er_conversion_action(monkeypatch):
+    requests_seen = _wire_round_trip(monkeypatch)
+
+    handles = BACKEND_REGISTRY[BACKEND_NAME](_args(), CAMERA_NAMES, JOINT_LIMITS_DEG)
+    source = handles.action_source
+    action, model_version = source.get_action(dict(SERVO_POSE), "pick up the red cube")
+
+    # Tagged as ER + conversion, never as a native policy.
+    assert model_version == "gemini-robotics@gemini-er-conversion"
+    assert model_version.endswith("@gemini-er-conversion")
+    assert source.last_details["action_path"] == base_gemini.ACTION_PATH
+    assert source.last_details["er_model"] == PUBLIC_ER_MODEL
+    assert source.last_details["bridge_flags"] == []  # a real nudge, not a held no-op
+
+    # Validated shape: full JOINT_ORDER, all finite, a small bounded step.
+    assert list(action) == list(JOINT_ORDER)
+    assert all(math.isfinite(value) for value in action.values())
+    assert action != SERVO_POSE
+    assert action["gripper"] == SERVO_POSE["gripper"]  # the conversion never grasps
+    safe_action, flags = safety_validator.validate_action(action, SERVO_POSE, JOINT_LIMITS_DEG)
+    assert list(safe_action) == list(JOINT_ORDER)
+    assert all(math.isfinite(value) for value in safe_action.values())
+    assert safe_action == action and flags == []  # the bounded nudge needs no clamping
+
+    # The request went to the verified public ER 2 model with the configured settings.
+    (request,) = requests_seen
+    assert request.url.path == "/v1beta/interactions"
+    body = json.loads(request.content)
+    assert body["model"] == PUBLIC_ER_MODEL
+    assert body["generation_config"]["thinking_level"] == "medium"
+    assert "pick up the red cube" in request.content.decode()
+    # The key travels only in the auth header, never in the body or the logged details.
+    assert request.headers["x-goog-api-key"] == SECRET
+    assert SECRET not in request.content.decode()
+    assert SECRET not in json.dumps(source.last_details, default=repr)
+    assert SECRET not in repr(source)
+
+
+def test_round_trip_api_rejection_holds_position_and_never_raises(monkeypatch):
+    # 403 is what the docs say an UNRESTRICTED key gets; the SDK does not retry it.
+    requests_seen = _wire_round_trip(monkeypatch, status=403)
+
+    handles = BACKEND_REGISTRY[BACKEND_NAME](_args(), CAMERA_NAMES, JOINT_LIMITS_DEG)
+    action, model_version = handles.action_source.get_action(dict(SERVO_POSE), "pick up the red cube")
+
+    assert action == SERVO_POSE
+    assert model_version == "gemini-robotics@gemini-error-holding-position"
+    assert len(requests_seen) == 1
+    assert SECRET not in json.dumps(handles.action_source.last_details, default=repr)
+
+
+def test_round_trip_teardown_handles_match_the_gemini_lane(monkeypatch):
+    _wire_round_trip(monkeypatch)
+    handles = BACKEND_REGISTRY[BACKEND_NAME](_args(), CAMERA_NAMES, JOINT_LIMITS_DEG)
+    assert handles.shutdown is None  # default robot.disconnect(); no RobotClient on this lane
+    assert handles.skip_camera_names == frozenset({"overhead"})
+    wrist = handles.action_source.wrist_cap
+    handles.action_source.close()
+    assert wrist.released is True
