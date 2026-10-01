@@ -1,0 +1,5 @@
+{
+  "checkpoint": "yathAg/pi05_so101_pick_place",
+  "verified_revision": "8913fc8168dfada97c676598897ac3deaaaf6f0d",
+  "notes": "SO-101 joint-space pi0.5 fine-tune of lerobot/pi05_base (dataset yathAg/so101_pick_place). Inputs: observation.state [6] (QUANTILES-normalized, tokenized into the prompt by pi05), observation.images.camera1 + camera2 (480x640); output action [6] = JOINT_ORDER .pos. Only camera1 (our wrist) reaches the server; camera2 is masked as empty. verified_revision is informational: the bridge cannot pin a revision, so the server loads main. Evidence: vla_bridge/checkpoint_candidates.md."
+}

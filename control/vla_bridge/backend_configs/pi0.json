@@ -1,0 +1,5 @@
+{
+  "checkpoint": "amindt/pi0_so101_pickandplace_redblue",
+  "verified_revision": "6d052c61e84eec978070c361d7f86e7d71e08b4f",
+  "notes": "SO-101 joint-space pi0 fine-tune of lerobot/pi0_base (dataset amindt/so101_pickandplace_redblue). Inputs: observation.state [6], observation.images.camera1 + camera2 (480x640); output action [6] = JOINT_ORDER .pos. Only camera1 (our wrist) reaches the server; camera2 is masked as empty. verified_revision is informational: the bridge cannot pin a revision, so the server loads main. Evidence: vla_bridge/checkpoint_candidates.md."
+}
