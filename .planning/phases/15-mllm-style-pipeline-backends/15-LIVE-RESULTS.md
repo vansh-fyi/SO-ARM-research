@@ -41,7 +41,7 @@ marked "user decision" record explicit user decisions (2026-10-02) driven by sec
 
 | file | flag | old value | new value | evidence |
 |------|------|-----------|-----------|----------|
-| none so far (2026-10-02) | — | — | — | GPT accepted `reasoning.summary` (A5 holds, `summary_supported` stays true); Kimi honoured json_schema and the 4-image png request (no C2/A6 flip). Qwen and DeepSeek not yet evaluated (provider-side failures, section 1). |
+| none so far (2026-10-02) | — | — | — | GPT accepted `reasoning.summary` (A5 holds, `summary_supported` stays true); Kimi honoured json_schema and the 4-image png request (no C2/A6 flip). Qwen and DeepSeek first attempts failed provider-side (section 1); their 2026-10-02 attempt-3 re-smokes (deepinfra, streaming) honoured json_schema and the 4-image png request, so no C2/A6 flip for any HF variant. Task 2 (2026-10-02) applied no evidence-driven flag flip. |
 | control/vla_bridge/backend_configs/mllm_hf_qwen.json | `hf_provider`, `prices`, `context_window` (user decision 2026-10-02) | `cerebras`; $0.99 / $1.49 per M; 65536 | `deepinfra` (request model `Qwen/Qwen3.8-27B:deepinfra`); $0.20 / $2.50 per M, verified_on 2026-10-02, source router.huggingface.co/v1/models; 262144 | Section 1 row mllm-hf-qwen: HTTP 503 circuit breaker on cerebras twice; the 2026-10-02 router listing has no cerebras provider for this model, and deepinfra is live with supports_structured_output true and context 262144. |
 | control/vla_bridge/backend_configs/mllm_hf_deepseek.json | `model`, `prices`, `context_window` (user decision 2026-10-02; supersedes the locked D-23 model id and D-27) | `deepseek-ai/DeepSeek-V4-Flash-Vision-Exp`; $0.44 / $1.32 per M; not set | `deepseek-ai/DeepSeek-V4.1-Flash` (request model `deepseek-ai/DeepSeek-V4.1-Flash:deepinfra`; backend name and effort `max` unchanged); $0.20 / $0.60 per M, verified_on 2026-10-02, source router.huggingface.co/v1/models; 1048576 | Section 1 row mllm-hf-deepseek: HTTP 504 at 120.9 s and 121.2 s; DeepSeek retired V4-Flash-Vision-Exp upstream (aliases route to V4.1-Flash; api-docs.deepseek.com/news/news260910/, api-docs.deepseek.com/updates/); the router lists V4.1-Flash with text+image input, deepinfra live with supports_structured_output true and context 1048576. |
 | control/vla_bridge/backends/base_mllm_chat.py | request mode (user decision 2026-10-02, Rule 1 bug fix) | non-streaming `chat.completions.with_raw_response.create(...)`; raw payload = verbatim wire body | `chat.completions.create(..., stream=True, stream_options={"include_usage": true})`; content/reasoning/refusal deltas assembled, finish_reason from the last choice chunk, usage from the usage chunk, request id from the stream's `x-request-id` header; raw payload = JSON-safe reconstruction (message, ids, model, finish_reason, usage, chunk counts); max_retries 0 and timeout_s unchanged | Section 1 row mllm-hf-deepseek: the router's edge proxy cut the idle non-streaming connection at ~120 s (HTTP 504) although timeout_s is 900; section 1 row mllm-hf-kimi passed only because it answered in 8.1 s. |
@@ -87,8 +87,17 @@ step_dt_s 0.785. Compare against `mllm_defaults.json` `chunk_len_derivation`.
 
 | backend | measured API latency (s) | source (smoke / episode) | duty cycle at chunk_len 20 | exceeds timeout_s | below 10 percent duty cycle | recommended alternative N (if any) | user decision |
 |---------|--------------------------|--------------------------|----------------------------|-------------------|-----------------------------|------------------------------------|---------------|
-| mllm-hf-qwen | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| mllm-hf-deepseek | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| mllm-gpt | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| mllm-claude | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| mllm-hf-kimi | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
+| mllm-hf-qwen | 276.5 | smoke (2026-10-02, attempt 3, deepinfra, 3-step chunk, synthetic images) | 5.3% | no (276.5 s < 900 s) | YES | 41 (smallest N with duty cycle >= 10 percent at 276.5 s: 41 x 0.785 = 32.2 s open loop, 10.2 percent; N 40 gives 9.998 percent). Breaks the N <= 20 open-loop horizon bound and, if applied to all backends, the shared fixed N (D-17). Alternatives that keep N = 20: accept the low Qwen duty cycle (Qwen is a long thinker at xhigh: 9949 output tokens at ~36 tok/s), or treat a lower Qwen effort as a Phase 16 ablation. | PENDING user decision (raised 2026-10-02 at the Task 3 checkpoint); chunk_len unchanged at 20 |
+| mllm-hf-deepseek | 22.4 | smoke (2026-10-02, attempt 3, V4.1-Flash on deepinfra, 3-step chunk, synthetic images) | 35.5% | no (22.4 s < 900 s) | no | none | not needed; chunk_len unchanged at 20 |
+| mllm-gpt | 32.1 | smoke (2026-10-02, 3-step chunk, synthetic images) | 29.1% | no (32.1 s < 900 s) | no | none | not needed; chunk_len unchanged at 20 |
+| mllm-claude | 51.5 | smoke (2026-10-02, 3-step chunk, synthetic images) | 21.4% | no (51.5 s < 900 s) | no | none | not needed; chunk_len unchanged at 20 |
+| mllm-hf-kimi | 8.1 | smoke (2026-10-02, baseten, 3-step chunk, synthetic images) | 52.4% | no (8.1 s < 900 s) | no | none | not needed; chunk_len unchanged at 20 |
+
+Finding (Plan 15-10 Task 2, 2026-10-02): all five values are 3-step smoke latencies with synthetic
+images; chunk_len 20 episode latencies from latency_ms.api replace or extend them in Task 3 (source
+"episode"). No call exceeded timeout_s 900 (slowest: mllm-hf-qwen at 276.5 s). Four backends sit at or
+above the ~21 percent the derivation assumed for 60 s calls; mllm-hf-qwen falls below 10 percent
+(5.3 percent: about 15.7 s of motion per ~298 s cycle). chunk_len is NOT changed: the shared fixed N
+(D-17) needs an explicit user decision, raised at the Task 3 checkpoint. Recorded in
+`mllm_defaults.json` `chunk_len_derivation.measured_mllm_api_latency_s` and
+`duty_cycle_at_measured_latency`.
