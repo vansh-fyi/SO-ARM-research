@@ -1,0 +1,24 @@
+{
+  "provider": "anthropic",
+  "model": "claude-fable-5-1",
+  "api_key_env": "ANTHROPIC_API_KEY",
+  "effort": "xhigh",
+  "max_tokens": 64000,
+  "thinking": {"type": "adaptive", "display": "summarized"},
+  "prices": {
+    "input_per_mtok": 10.0,
+    "output_per_mtok": 50.0,
+    "cached_input_per_mtok": 0.25,
+    "verified_on": "2026-10-02",
+    "source": "platform.claude.com/docs/en/models/overview (claude-fable-5-1: $10 input, $50 output, $0.25 cache read per million tokens)"
+  },
+  "capabilities": {
+    "sampling_supported": false,
+    "effort_levels": ["low", "medium", "high", "xhigh", "max"],
+    "summary_supported": true
+  },
+  "data_retention_note": "claude-fable-5-1 is an Anthropic Covered Model with 30-day retention of request data; it is NOT zero-data-retention. Lab camera images and depth data sent with every call leave this machine and are retained by Anthropic for 30 days.",
+  "requirement": "MLLM-02",
+  "model_verified": "2026-10-02: platform.claude.com/docs/en/models/overview and models/fable-5-1/overview list claude-fable-5-1 (released 2026-09-01, 1M context, 128K max output, vision input, retirement not before 2027-09-01). claude-mythos-5-1 has the same capabilities but is invitation-only (Project Glasswing). claude-opus-5-5 is Anthropic's default 'start here' recommendation, but D-14 asks for the top generally available vision-capable flagship, which is claude-fable-5-1. Request shape checked against the installed anthropic==1.11.0 Messages.stream signature.",
+  "notes": "MLLM-02 per 15-CONTEXT.md D-14/D-15/D-20/D-21. effort xhigh is the default highest sensible level; max is reserved as a Phase 16 ablation because the docs warn it can overthink structured-output tasks (research C11). Sampling parameters are fixed by the provider: claude-fable-5-1 rejects non-default temperature/top_p/top_k with HTTP 400 and the SDK has no such parameters, so the shared nominal sampling is logged as requested and omitted, never sent (research C3). Adaptive thinking is always on for this model; display 'summarized' returns readable summaries while all raw thinking tokens are billed and count toward max_tokens (64000 covers thinking plus the JSON answer; research Pitfall 10). A refusal (stop_details.category, e.g. reasoning_extraction) or a max_tokens stop is a failed call held for chunk_len ticks (research C4). api_key_env names the environment variable holding a restricted, workspace-scoped key; never put the key itself in this file. Chunk length, timing, depth and image settings are inherited from mllm_defaults.json."
+}
