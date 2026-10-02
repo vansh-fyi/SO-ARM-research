@@ -519,12 +519,12 @@ Plans:
   4. Each backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured in `io_logger.py` alongside its action chunk, per step
   5. The action-chunk size used by all 3 backends is derived from Phase 12's measured real latency data, documented as such rather than guessed
 
-**Plans**: 10 plans
+**Plans**: 2/10 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 15-01-PLAN.md — Thin end-to-end slice: schema from action_contract, shared prompt, chunk-drain MllmActionSourceBase with a fake provider through the real loop (PIPE-02, MLLM-04, MLLM-05, MLLM-06, MLLM-07)
-- [ ] 15-02-PLAN.md — Human-gated install and exact pins for anthropic and openai into control/.venv (MLLM-01, MLLM-02, MLLM-03)
+- [x] 15-01-PLAN.md — Thin end-to-end slice: schema from action_contract, shared prompt, chunk-drain MllmActionSourceBase with a fake provider through the real loop (PIPE-02, MLLM-04, MLLM-05, MLLM-06, MLLM-07)
+- [x] 15-02-PLAN.md — Human-gated install and exact pins for anthropic and openai into control/.venv (MLLM-01, MLLM-02, MLLM-03)
 
 **Wave 2** *(blocked on 15-01)*
 
@@ -613,6 +613,6 @@ Plans:
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
 | 13. Camera Device Resolution Unification | 4/4 | Human verification pending | - |
 | 14. VLA-Style Pipeline & Backends | 15/15 | Complete   | 2026-10-01 |
-| 15. MLLM-Style Pipeline & Backends | 0/TBD | Not started | - |
+| 15. MLLM-Style Pipeline & Backends | 2/10 | In Progress|  |
 | 16. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
 | 17. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |

@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: MLLM Raw-Autonomy Benchmark
-current_phase: 14
-current_phase_name: vla-style-pipeline-backends
+current_phase: 15
+current_phase_name: mllm-style-pipeline-backends
 status: executing
 stopped_at: Phase 15 context updated (D-16..D-22)
-last_updated: "2026-10-02T11:33:00.099Z"
-last_activity: 2026-10-01
-last_activity_desc: Phase 14 execution started
+last_updated: "2026-10-02T12:30:47.002Z"
+last_activity: 2026-10-02
+last_activity_desc: Phase 15 execution started
 progress:
   total_phases: 17
   completed_phases: 12
-  total_plans: 63
+  total_plans: 73
   completed_plans: 63
   percent: 71
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** A researcher types a task prompt and watches SOARM execute it in a LIBERO simulation — the loop from language to embodied action.
-**Current focus:** Phase 14 — vla-style-pipeline-backends
+**Current focus:** Phase 15 — mllm-style-pipeline-backends
 
 ## Current Position
 
-Phase: 14 (vla-style-pipeline-backends) — EXECUTING
-Plan: 1 of 15
-Status: Ready to execute
-Last activity: 2026-10-01 — Phase 14 execution started
+Phase: 15 (mllm-style-pipeline-backends) — EXECUTING
+Plan: 1 of 10
+Status: Executing Phase 15
+Last activity: 2026-10-02 — Phase 15 execution started
 
 Plan execution: [██████████] 100% — phase acceptance pending
 
