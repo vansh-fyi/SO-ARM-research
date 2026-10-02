@@ -92,3 +92,7 @@ Numeric safety-cap disclosure toggle; task_complete chunk tail rule; sidecar fil
 ## Deferred Ideas
 
 None.
+
+## HF model lineup (follow-up, web search)
+
+Candidates found via HF Hub API and web search: Qwen3.8-27B, DeepSeek-V4-Flash-Vision-Exp, Kimi-K3, GLM-5.3-Flash, Gemma-4-31B-it. **Selected:** Qwen3.8-27B, DeepSeek-V4-Flash-Vision-Exp, Kimi-K3 as registered variants; researcher verifies vision/thinking/JSON support and drops failures.
