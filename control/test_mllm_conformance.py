@@ -553,6 +553,90 @@ def test_every_backend_inherits_the_shared_presentation_defaults_or_documents_an
 
 
 # =============================================================================
+# Live-evidence config sanity (Plan 15-10 Task 2; MLLM-05, D-20/D-21/D-23, research C2, A5, A6)
+# =============================================================================
+
+LIVE_RESULTS_MD = (REPO_ROOT / ".planning" / "phases" / "15-mllm-style-pipeline-backends"
+                   / "15-LIVE-RESULTS.md")
+SECTION_6_HEADING = "## 6. Chunk-size re-derivation record"
+ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
+
+def _duty_cycle(chunk_len: int, step_dt_s: float, depth_s: float, api_s: float) -> float:
+    motion = chunk_len * step_dt_s
+    return motion / (motion + depth_s + api_s)
+
+
+def _section_6_rows() -> dict[str, list[str]]:
+    """Backend name -> cells of its row in section 6 of the live results file."""
+    section = LIVE_RESULTS_MD.read_text().split(SECTION_6_HEADING, 1)[1]
+    rows = {}
+    for line in section.splitlines():
+        if line.startswith("| mllm-"):
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            rows[cells[0]] = cells
+    return rows
+
+
+def _flip_violations(raw: dict, is_hf: bool) -> list[str]:
+    """Evidence-driven flips (A5 summary_supported, C2 structured_mode, A6 image_format) that lack a
+    dated evidence sentence naming the flag in the config notes."""
+    flipped = []
+    if raw.get("capabilities", {}).get("summary_supported") is False and not is_hf:
+        flipped.append("summary_supported")
+    if raw.get("structured_mode") == "json_object":
+        flipped.append("structured_mode")
+    if "image_format" in raw:
+        flipped.append("image_format")
+    sentences = re.split(r"(?<=\.)\s+", raw.get("notes", ""))
+    return [flag for flag in flipped
+            if not any(flag in s and ISO_DATE_RE.search(s) and "evidence" in s.lower() for s in sentences)]
+
+
+def test_measured_mllm_api_latency_record_matches_the_live_results_file():
+    defaults = json.loads((CONFIG_DIR / "mllm_defaults.json").read_text())
+    derivation = defaults["chunk_len_derivation"]
+    measured = derivation["measured_mllm_api_latency_s"]
+    duty = derivation["duty_cycle_at_measured_latency"]
+    assert measured and set(measured) <= set(FIVE_BACKENDS), sorted(measured)
+    assert set(duty) == set(measured)
+    depth_s = derivation["measured"]["depth_roundtrip_s"]["median"]
+    rows = _section_6_rows()
+    for name, api_s in measured.items():
+        assert isinstance(api_s, (int, float)) and not isinstance(api_s, bool) and api_s > 0, name
+        assert 0 < duty[name] < 1, name
+        expected = _duty_cycle(SHIPPED_CHUNK_LEN, defaults["step_dt_s"], depth_s, api_s)
+        assert duty[name] == pytest.approx(expected, abs=1e-3), name
+        # The results file carries the same measured latency and duty cycle (key_link pattern).
+        assert name in rows, (name, "missing from section 6")
+        assert float(rows[name][1]) == pytest.approx(api_s), name
+        assert float(rows[name][3].rstrip("%").split()[0]) == pytest.approx(100 * expected, abs=0.1), name
+        assert api_s < defaults["timeout_s"], name
+    assert "measured_mllm_api_latency_s" in derivation["not_measured"]
+
+
+def test_flipped_flags_carry_dated_evidence_and_chunk_len_needs_a_user_decision():
+    for name in FIVE_BACKENDS:
+        raw = json.loads((CONFIG_DIR / f"{_config_name(name)}.json").read_text())
+        assert _flip_violations(raw, name in HF_BACKENDS) == [], name
+    # The guard catches a planted undocumented flip and accepts a documented one.
+    planted = {"capabilities": {"summary_supported": False}, "structured_mode": "json_object",
+               "image_format": "jpeg", "notes": "No reason given."}
+    assert _flip_violations(planted, is_hf=False) == ["summary_supported", "structured_mode", "image_format"]
+    documented = dict(planted, notes=("image_format set to jpeg on 2026-10-02; evidence: results row 1. "
+                                      "structured_mode json_object on 2026-10-02, evidence in section 2. "
+                                      "summary_supported false 2026-10-02 per evidence (section 1)."))
+    assert _flip_violations(documented, is_hf=False) == []
+    # chunk_len only moves with a user decision recorded in section 6 of the results file.
+    defaults = json.loads((CONFIG_DIR / "mllm_defaults.json").read_text())
+    rows = _section_6_rows()
+    assert set(rows) == set(FIVE_BACKENDS)
+    assert all("PENDING" not in cells[1] for cells in rows.values()), "section 6 latency not recorded"
+    if defaults["chunk_len"] != SHIPPED_CHUNK_LEN or defaults["chunk_len_derivation"]["chosen"] != SHIPPED_CHUNK_LEN:
+        assert any("chunk_len" in cells[-1] and ISO_DATE_RE.search(cells[-1]) for cells in rows.values())
+
+
+# =============================================================================
 # Documentation matches the five-backend reality (research C9, D-06, D-23)
 # =============================================================================
 
