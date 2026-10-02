@@ -1,4 +1,4 @@
-"""`--backend mllm-hf-qwen`: Qwen3.8-27B on the HF router, pinned to Cerebras (Phase 15, MLLM-01).
+"""`--backend mllm-hf-qwen`: Qwen3.8-27B on the HF router, pinned to DeepInfra (Phase 15, MLLM-01).
 
 What this is
 ============
@@ -13,12 +13,17 @@ Router facts (router.huggingface.co/v1/models, verified 2026-10-02)
 -------------------------------------------------------------------
 `Qwen/Qwen3.8-27B` (Apache-2.0) takes image+text input and thinks by default;
 `reasoning_effort` xhigh (default) / medium / low; model-card thinking
-sampling temperature 1.0, top_p 0.95. Providers: novita ($0.42/$3, NO
-structured output), cerebras ($0.99/$1.49, structured output, ~831 tok/s,
-65,536-token context), ovhcloud, deepinfra ($0.20/$2.50, structured output,
-262K context). Pinned to `cerebras` for speed; the 65,536 context forces
-max_tokens 32000 (prompt reserve 16000). Unpinned `:fastest` routing could
-land on a provider without structured output (research C2, Pitfall 2).
+sampling temperature 1.0, top_p 0.95. Providers on the 2026-10-02 re-fetch:
+novita ($0.42/$3, NO structured output), featherless-ai, ovhcloud
+($0.47/$3.19, structured output) and deepinfra ($0.20/$2.50, structured
+output, 262,144-token context). Unpinned `:fastest` routing could land on a
+provider without structured output (research C2, Pitfall 2).
+
+Decision (user, 2026-10-02): the original pin `cerebras` failed the Plan
+15-10 live smoke twice with HTTP 503 (provider paused by the router's
+circuit breaker) and is no longer listed for this model, so the config is
+re-pinned to `deepinfra` (15-LIVE-RESULTS.md section 2). max_tokens stays
+32000 (prompt reserve 16000) inside the 262,144-token context.
 """
 
 from vla_bridge.backends import base_mllm_build, base_mllm_chat

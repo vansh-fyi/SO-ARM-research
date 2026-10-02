@@ -499,7 +499,7 @@ Plans:
 
 ### Phase 15: MLLM-Style Pipeline & Backends
 
-**Goal**: A consistent MLLM-style `ActionSource` pattern (shared prompt construction, output JSON schema generated from `action_contract.py`, staged reasoning-trace capture) exists, and five registered raw-JSON-reasoning MLLM backends — three HuggingFace-hosted open reasoning-model variants (Qwen3.8-27B, DeepSeek-V4-Flash-Vision-Exp, Kimi-K3), Claude, and GPT — each drive the real SO-ARM101 through it with no pre-built movement primitives.
+**Goal**: A consistent MLLM-style `ActionSource` pattern (shared prompt construction, output JSON schema generated from `action_contract.py`, staged reasoning-trace capture) exists, and five registered raw-JSON-reasoning MLLM backends — three HuggingFace-hosted open reasoning-model variants (Qwen3.8-27B, DeepSeek-V4.1-Flash, Kimi-K3), Claude, and GPT — each drive the real SO-ARM101 through it with no pre-built movement primitives.
 **Mode:** mvp
 **Depends on**: Phase 12 (action-chunk sizing needs Phase 12's real measured latency/timing data) and Phase 13 (needs the corrected camera pipeline for trustworthy vision input)
 **Requirements**: PIPE-02, MLLM-01, MLLM-02, MLLM-03, MLLM-04, MLLM-05, MLLM-06, MLLM-07

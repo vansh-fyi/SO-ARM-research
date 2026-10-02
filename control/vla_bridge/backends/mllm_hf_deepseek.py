@@ -1,4 +1,4 @@
-"""`--backend mllm-hf-deepseek`: DeepSeek-V4-Flash-Vision-Exp on the HF router, pinned to DeepInfra (Phase 15, MLLM-01).
+"""`--backend mllm-hf-deepseek`: DeepSeek-V4.1-Flash on the HF router, pinned to DeepInfra (Phase 15, MLLM-01).
 
 What this is
 ============
@@ -10,20 +10,22 @@ builder and base (PIPE-02, D-00a). Same shape as `mllm_hf_qwen.py` and
 
 Router facts (router.huggingface.co/v1/models, verified 2026-10-02)
 -------------------------------------------------------------------
-`deepseek-ai/DeepSeek-V4-Flash-Vision-Exp` (MIT, marked experimental; the
-card calls it the first experimental multimodal model in the V4 family)
-takes image+text input and reasons with effort levels (card benchmarks use
-`max`, temperature 1.0, top_p 0.95). Providers: novita ($0.44/$1.32, NO
-structured output) and deepinfra ($0.44/$1.32, structured output, ~89
-tok/s).
+`deepseek-ai/DeepSeek-V4.1-Flash` takes image+text input. Providers:
+novita ($0.30/$1.20, NO structured output), fireworks-ai, featherless-ai,
+baseten ($0.30/$1.20, structured output) and deepinfra ($0.20/$0.60,
+structured output, 1,048,576-token context).
 
 Decisions
 ---------
   - D-23 named Novita as the host, but Novita has no structured output and
-    the default `:fastest` routing lands there (research C2, C12), so the
+    the default `:fastest` routing can land there (research C2, C12), so the
     config pins `deepinfra`.
-  - D-27 keeps this Exp model even though the newer sibling
-    `deepseek-ai/DeepSeek-V4.1-Flash` is on the router (research C12).
+  - User decision 2026-10-02 (15-LIVE-RESULTS.md section 2) supersedes the
+    locked D-23 model id and D-27: DeepSeek retired
+    `deepseek-ai/DeepSeek-V4-Flash-Vision-Exp` upstream (its aliases route to
+    V4.1-Flash), and both live smoke attempts on it got HTTP 504 from the
+    router, so the model is now `deepseek-ai/DeepSeek-V4.1-Flash`. The
+    backend name and effort `max` are unchanged.
 """
 
 from vla_bridge.backends import base_mllm_build, base_mllm_chat

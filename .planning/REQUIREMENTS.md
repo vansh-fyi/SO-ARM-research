@@ -191,7 +191,7 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 
 ### MLLM Backends (raw-JSON reasoning prompt, no movement primitives)
 
-- [ ] **MLLM-01**: One or more HuggingFace-hosted open reasoning models (Qwen3.8-27B, DeepSeek-V4-Flash-Vision-Exp, Kimi-K3, registered as variants on one shared adapter) are integrated as MLLM-style backends via HF Inference Providers; Phase 16 decides which variants run
+- [ ] **MLLM-01**: One or more HuggingFace-hosted open reasoning models (Qwen3.8-27B, DeepSeek-V4.1-Flash, Kimi-K3, registered as variants on one shared adapter) are integrated as MLLM-style backends via HF Inference Providers; Phase 16 decides which variants run
 - [ ] **MLLM-02**: Claude (paid tier) is integrated as an MLLM-style backend
 - [ ] **MLLM-03**: GPT is integrated as an MLLM-style backend
 - [ ] **MLLM-04**: Each MLLM backend's action-chunk JSON schema is generated programmatically from `action_contract.py`'s constants (`JOINT_ORDER`, units) and validated through the unmodified `safety_validator.py`
