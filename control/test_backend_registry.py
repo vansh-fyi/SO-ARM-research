@@ -689,23 +689,27 @@ def test_registry_contains_the_baseline_backends():
 
 def _action_source_bases():
     from vla_bridge.backends.base_gemini import GeminiActionSourceBase
+    from vla_bridge.backends.base_mllm import MllmActionSourceBase
     from vla_bridge.backends.scripted import ScriptedActionSource
 
     # Every backend from Wave 3 onward is built on one of these shared bases,
     # so checking the bases covers the whole registry -- no per-backend
     # conformance test is needed. GeminiActionSourceBase (Plan 14-13) is the
     # shared base of the Gemini Robotics-ER backends (Plans 14-14/14-15).
+    # MllmActionSourceBase (Plan 15-01) is the shared base of every MLLM backend.
     return [
         robot_client.BridgeActionSource,
         HttpAdapterActionSource,
         GeminiActionSourceBase,
+        MllmActionSourceBase,
         ScriptedActionSource,
     ]
 
 
 def test_conformance_list_covers_every_shared_action_source_base():
     names = {cls.__name__ for cls in _action_source_bases()}
-    assert {"BridgeActionSource", "HttpAdapterActionSource", "GeminiActionSourceBase"} <= names
+    assert {"BridgeActionSource", "HttpAdapterActionSource", "GeminiActionSourceBase",
+            "MllmActionSourceBase"} <= names
 
 
 def test_shared_base_modules_are_not_registered_as_backends():
