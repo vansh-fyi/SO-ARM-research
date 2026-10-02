@@ -47,7 +47,7 @@ from vla_bridge.mllm_schema import SCHEMA_NAME, build_action_chunk_schema
 
 BACKEND_NAME = "mllm-claude"
 CONFIG_NAME = "mllm_claude"
-MODEL = "claude-fable-5-1"
+MODEL = "claude-opus-5-5"  # user decision 2026-10-02 (was claude-fable-5-1)
 SECRET = "sk-ant-api03-TEST-SECRET-mllm-claude-0123456789abcdef"
 CAMERA_NAMES = {5: "wrist", 3: "overhead"}
 MODULE_PATH = Path(mllm_claude.__file__)
@@ -225,7 +225,7 @@ def test_shipped_config_passes_the_strict_validator_with_pinned_values():
     assert settings["max_tokens"] == 64000
     assert settings["thinking"] == {"type": "adaptive", "display": "summarized"}
     prices = settings["prices"]
-    assert (prices["input_per_mtok"], prices["output_per_mtok"], prices["cached_input_per_mtok"]) == (10.0, 50.0, 0.25)
+    assert (prices["input_per_mtok"], prices["output_per_mtok"], prices["cached_input_per_mtok"]) == (4.0, 20.0, 0.20)
     assert prices["verified_on"] == "2026-10-02"
     assert prices["source"]
     caps = settings["capabilities"]
@@ -236,6 +236,21 @@ def test_shipped_config_passes_the_strict_validator_with_pinned_values():
     assert "2026" in settings["model_verified"] and MODEL in settings["model_verified"]
     assert settings["requirement"] == "MLLM-02"
     assert settings["timeout_s"] == 900  # inherited from mllm_defaults.json
+
+
+def test_shipped_config_records_the_opus_5_5_switch_and_its_sources():
+    raw = json.loads(SHIPPED_CONFIG_PATH.read_text())
+    assert raw["prices"]["source"].startswith("https://platform.claude.com/docs/en/models/opus-5-5/overview")
+    notes = raw["notes"]
+    assert "Switched from claude-fable-5-1 to claude-opus-5-5 by user decision 2026-10-02" in notes
+    assert "15-LIVE-RESULTS.md section 2" in notes
+    assert "effort kept xhigh explicitly (Opus 5.5 default is medium)" in notes
+    assert "re-smoke required" in notes
+    assert "claude-fable-5-1 rejects" not in notes
+    assert "whats-new-opus-5-5" in raw["model_verified"]
+    # Fable 5.1's Covered Model retention requirement is not documented for Opus 5.5.
+    assert "claude-fable-5-1 is" not in raw["data_retention_note"]
+    assert "claude-opus-5-5" in raw["data_retention_note"]
 
 
 def test_shipped_config_holds_a_key_name_never_a_key():
@@ -421,7 +436,7 @@ def test_request_id_falls_back_to_the_stream_header_value():
 # =============================================================================
 
 
-def test_settings_summary_logs_requested_applied_and_provider_fixed_omissions():
+def test_settings_summary_logs_requested_applied_and_never_sent_sampling():
     adapter, _c = _adapter()
     summary = adapter.settings_summary
     thinking = {"type": "adaptive", "display": "summarized"}
@@ -430,7 +445,10 @@ def test_settings_summary_logs_requested_applied_and_provider_fixed_omissions():
     assert summary["applied"] == {"effort": "xhigh", "max_tokens": 64000, "thinking": thinking}
     assert set(summary["omitted"]) == {"temperature", "top_p", "top_k"}
     for reason in summary["omitted"].values():
-        assert "provider-fixed" in reason
+        # Never claims a provider HTTP 400 for sampling (not stated in the Opus 5.5 docs).
+        assert reason.startswith("not sent:"), reason
+        assert "400" not in reason and "rejects" not in reason, reason
+        assert "never sends sampling parameters" in reason
     json.dumps(summary)
     assert adapter.provider == "anthropic"
     assert adapter.model == MODEL
@@ -570,7 +588,7 @@ def test_end_to_end_one_chunk_through_run_episode(monkeypatch, tmp_path, mock_ca
     assert call["request_id"] == "req_fake_123"
     assert call["sdk"] == {"name": "anthropic", "version": "1.11.0"}
     assert call["usage"]["reasoning_tokens"] == 120
-    expected_cost = ((1200 - 200) * 10.0 + 200 * 0.25 + 300 * 50.0) / 1e6
+    expected_cost = ((1200 - 200) * 4.0 + 200 * 0.20 + 300 * 20.0) / 1e6
     assert math.isclose(call["cost_usd_est"], expected_cost)
     assert call["sidecar_dir"] == "mllm_calls/0000"
     assert call["settings"]["omitted"].keys() == {"temperature", "top_p", "top_k"}

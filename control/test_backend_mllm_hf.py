@@ -1129,7 +1129,7 @@ def _fake_anthropic_client():
             return False
 
         def get_final_message(self):
-            return SimpleNamespace(id="msg_1", model="claude-fable-5-1", stop_reason="end_turn",
+            return SimpleNamespace(id="msg_1", model="claude-opus-5-5", stop_reason="end_turn",
                                    stop_details=None, usage=None,
                                    content=[SimpleNamespace(type="text", text=make_chunk_text(20))])
 

@@ -40,7 +40,7 @@ REAL_DEFAULTS = backends.BACKEND_CONFIG_DIR / "mllm_defaults.json"
 MODULE_PATH = Path(mllm_smoke.__file__)
 FIVE_BACKENDS = ("mllm-claude", "mllm-gpt", "mllm-hf-qwen", "mllm-hf-deepseek", "mllm-hf-kimi")
 REQUEST_MODEL_STRINGS = {
-    "mllm-claude": "claude-fable-5-1",
+    "mllm-claude": "claude-opus-5-5",
     "mllm-gpt": "gpt-6-astra",
     "mllm-hf-qwen": "Qwen/Qwen3.8-27B:deepinfra",
     "mllm-hf-deepseek": "deepseek-ai/DeepSeek-V4.1-Flash:deepinfra",
