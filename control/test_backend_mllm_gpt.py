@@ -500,6 +500,19 @@ def test_stream_without_a_terminal_event_raises_for_the_base_to_hold():
     assert len(client.state.calls) == 1
 
 
+def test_stream_error_event_detail_is_surfaced_when_no_terminal_event_arrives():
+    class ErrorStream(FakeStream):
+        def __iter__(self):
+            yield SimpleNamespace(type="response.created", sequence_number=0)
+            yield SimpleNamespace(type="error", sequence_number=1, code="server_error", message="overloaded")
+
+    adapter, client = _adapter([make_response(text="{}")])
+    client.responses.stream = lambda **kwargs: client.state.calls.append(kwargs) or ErrorStream(make_response())
+    with pytest.raises(RuntimeError, match="server_error.*overloaded"):
+        adapter.call(_request())
+    assert len(client.state.calls) == 1
+
+
 # =============================================================================
 # The real SDK stream helper (openai 3.23.0) drives the adapter correctly
 # =============================================================================

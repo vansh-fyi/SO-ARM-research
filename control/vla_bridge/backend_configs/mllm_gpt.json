@@ -1,0 +1,23 @@
+{
+  "provider": "openai",
+  "model": "gpt-6-astra",
+  "api_key_env": "OPENAI_API_KEY",
+  "effort": "xhigh",
+  "max_tokens": 64000,
+  "prices": {
+    "input_per_mtok": 10.0,
+    "output_per_mtok": 50.0,
+    "cached_input_per_mtok": 1.0,
+    "verified_on": "2026-10-02",
+    "source": "developers.openai.com/api/docs/models/gpt-6-astra (gpt-6-astra: $10 input, $1 cached input, $50 output per million tokens; inputs above 272K tokens are billed 2x input / 1.5x output)"
+  },
+  "capabilities": {
+    "sampling_supported": false,
+    "effort_levels": ["low", "medium", "high", "xhigh", "max"],
+    "summary_supported": true
+  },
+  "data_retention_note": "store=false is sent on every request, so OpenAI does not keep the response for later retrieval, but lab camera images and depth data still leave this machine with every call. Check the organization's data-controls and retention settings (OpenAI platform -> Settings -> Data controls) before live runs.",
+  "requirement": "MLLM-03",
+  "model_verified": "2026-10-02: developers.openai.com/api/docs/models/gpt-6-astra lists gpt-6-astra (default snapshot gpt-6-astra; 1.05M context, 922K max input, 128K max output; image input, structured outputs, streaming; Responses API recommended). guides/reasoning: reasoning.effort low/medium/high/xhigh/max, none/minimal unsupported (HTTP 400); reasoning.summary auto/concise/detailed is opt-in. Request shape checked against the installed openai==3.23.0 Responses.stream signature.",
+  "notes": "MLLM-03 per 15-CONTEXT.md D-14/D-15/D-20/D-21. effort xhigh is the default highest sensible level; max is reserved as a Phase 16 ablation because OpenAI advises xhigh/max only when evals justify the latency and it can overthink structured-output tasks (research C11). temperature and top_p must be removed whenever reasoning effort is not none and gpt-6-astra does not support none, so the shared nominal sampling is logged as requested and omitted, never sent (research C3). Reasoning tokens are billed as output and count toward max_output_tokens (64000 covers reasoning plus the JSON answer; OpenAI suggests reserving at least 25,000; research Pitfall 10); status incomplete is a failed call held for chunk_len ticks. summary_supported true is assumption A5: confirm it with the first live call in Plan 15-10 and flip the flag to false if the provider rejects reasoning.summary for this organization (the adapter then omits it up front; it never retries). api_key_env names the environment variable holding a project-scoped key; never put the key itself in this file. Chunk length, timing, depth and image settings are inherited from mllm_defaults.json."
+}
