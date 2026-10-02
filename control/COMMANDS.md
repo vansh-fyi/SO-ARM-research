@@ -118,3 +118,54 @@ python -c "import cv2; [print(i, cv2.VideoCapture(i).isOpened()) for i in range(
 ```bash
 ls /dev/cu.usbmodem*
 ```
+
+---
+
+## MLLM backends (Phase 15)
+
+Five registered backends share one prompt, schema and chunk loop: `mllm-claude`,
+`mllm-gpt`, `mllm-hf-qwen`, `mllm-hf-deepseek`, `mllm-hf-kimi`.
+
+API keys are read only from environment variables exported in the shell, and are
+never written to files (configs hold only the variable name):
+
+```bash
+export ANTHROPIC_API_KEY=...   # mllm-claude
+export OPENAI_API_KEY=...      # mllm-gpt
+export HF_TOKEN=...            # mllm-hf-* (fine-grained token with Inference Providers permission)
+```
+
+- **Spend:** about $1 per call for Claude/GPT at xhigh effort; HF variants need purchased HF Inference Providers credits (the free tier is $0.10/month), and Kimi-K3 is not cheap (about $0.35 per call).
+- **Retention:** images leave this machine on every call (camera images and depth); Anthropic keeps request data for 30 days (30-day retention, not zero-data-retention), and each build prints the provider's retention NOTICE.
+
+Show exactly what every backend is told (keyless, no provider call):
+
+```bash
+python -m vla_bridge.mllm_prompt --chunk-len 5
+```
+
+Preview one live set of model inputs (cameras plus depth heatmap/grid; no model call):
+
+```bash
+python -m vla_bridge.mllm_inputs --out outputs/mllm_inputs_preview \
+  --wrist-camera-index 0 --stereo-camera-index "CCB Camera" \
+  --calibration stereo_calibration.json --endpoint https://xxxx.ngrok-free.app/depth
+```
+
+One tiny paid smoke call per backend (synthetic images, 3-step chunk, no hardware;
+refuses to spend without `--confirm-spend`):
+
+```bash
+python -m vla_bridge.mllm_smoke --backend mllm-claude --chunk-len 3 --out outputs/smoke --confirm-spend
+```
+
+Episode on the real arm:
+
+```bash
+python run_vla_episode.py --out outputs/mllm_001 --backend mllm-claude --max-steps 120 \
+  --depth-endpoint https://xxxx.ngrok-free.app/depth --depth-calibration stereo_calibration.json \
+  --instruction "Pick up the pen"
+```
+
+- Raise `--max-steps` for MLLM runs: with chunk_len 20, the default 60 ticks is only about 3 chunks (3 calls).
+- Omit both depth flags to run without depth (the prompt then says depth is unavailable).

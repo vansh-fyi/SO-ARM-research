@@ -637,10 +637,12 @@ def test_roadmap_md_says_five_registered_mllm_backends():
     assert "onboard 5 raw-JSON MLLM backends (3 HF open-model variants, Claude, GPT)" in phase_list
     assert "onboard 3 raw-JSON MLLM backends" not in text
 
-    phase_16 = text[text.index("### Phase 16: Cross-Backend Pen Transfer Benchmark"):]
+    phase_16 = text[text.index("### Phase 16: Cross-Backend Pen Transfer Benchmark"):
+                    text.index("### Phase 17:")]
     goal_16 = _line_starting(phase_16, "**Goal**")
     assert "(up to 3 HF variants are registered in Phase 15; Phase 16 selects which run)" in goal_16
     assert "a free/cheap HuggingFace-hosted reasoning model" not in text
+    assert "a free HF-hosted reasoning model" not in text  # milestone overview paragraph
 
 
 def test_commands_md_has_the_mllm_section_with_commands_keys_and_warnings():

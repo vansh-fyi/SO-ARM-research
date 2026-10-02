@@ -155,7 +155,7 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 
 - [x] **DEPTH-CAL-01**: A checkerboard-based stereo calibration (`cv2.stereoCalibrate`/`stereoRectify` against the AR0144's live left/right split) produces a saved calibration file in Fast-FoundationStereo's required format (flattened 3x3 intrinsics + baseline in meters), with a human-confirmed low reprojection error
 - [x] **DEPTH-CAL-02**: A Colab-hosted Fast-FoundationStereo endpoint is documented and reachable, and a local `depth_camera.py` rectifies + downsamples a live AR0144 stereo pair to its input constraints (<1000px width, dimensions divisible by 32) and requests a metric depth map from it
-- [x] **DEPTH-CAL-03**: Computed depth is recorded to the episode output directory and referenced in `episode.jsonl` via `IOLogger` — never added to the PolicyServer's observation dict (`BridgeActionSource`/`connect_bridge`) this phase — with a human-verified real-world-known-distance-vs-computed-depth check within a documented tolerance
+- [x] **DEPTH-CAL-03**: Computed depth is recorded to the episode output directory and referenced in `episode.jsonl` via `IOLogger` — never added to the PolicyServer's observation dict (`BridgeActionSource`/`connect_bridge`) this phase — with a human-verified real-world-known-distance-vs-computed-depth check within a documented tolerance (Phase 15 note: MLLM-style backends are the one deliberate exception; depth is fed into the MLLM prompt only, computed per chunk by the backend per 15-CONTEXT.md D-06/D-28, and is still never added to the PolicyServer observation dict)
 
 ### Safety Validator
 
@@ -191,7 +191,7 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 
 ### MLLM Backends (raw-JSON reasoning prompt, no movement primitives)
 
-- [ ] **MLLM-01**: A free/cheap HuggingFace-hosted reasoning model is integrated as the first MLLM-style backend
+- [ ] **MLLM-01**: One or more HuggingFace-hosted open reasoning models (Qwen3.8-27B, DeepSeek-V4-Flash-Vision-Exp, Kimi-K3, registered as variants on one shared adapter) are integrated as MLLM-style backends via HF Inference Providers; Phase 16 decides which variants run
 - [ ] **MLLM-02**: Claude (paid tier) is integrated as an MLLM-style backend
 - [ ] **MLLM-03**: GPT is integrated as an MLLM-style backend
 - [ ] **MLLM-04**: Each MLLM backend's action-chunk JSON schema is generated programmatically from `action_contract.py`'s constants (`JOINT_ORDER`, units) and validated through the unmodified `safety_validator.py`
@@ -201,7 +201,7 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 
 ### Cross-Backend Benchmark
 
-- [ ] **EVAL-01**: One live Pen Transfer episode is run and recorded end-to-end (I/O log + camera footage + termination reason) for each of the 16 backends (SmolVLA baseline + Gemini Robotics + Gemini Robotics 2 + π0/π0.5 + Wall-X + ACT + OpenVLA + OpenVLA-OFT + Octo + RDT-1B + GR00T N1.7 + GR00T N1.5 + Diffusion Policy + HF reasoning model + Claude + GPT)
+- [ ] **EVAL-01**: One live Pen Transfer episode is run and recorded end-to-end (I/O log + camera footage + termination reason) for each of the 16 backends (SmolVLA baseline + Gemini Robotics + Gemini Robotics 2 + π0/π0.5 + Wall-X + ACT + OpenVLA + OpenVLA-OFT + Octo + RDT-1B + GR00T N1.7 + GR00T N1.5 + Diffusion Policy + HF reasoning model variant(s) + Claude + GPT; 16 backends minimum with one HF variant, up to 18 if all three HF variants registered in Phase 15 are run; Phase 16 decides)
 - [ ] **EVAL-02**: All 16 episodes are directly compared, human-judged, using Yu & Qiu 2026's 4-category failure taxonomy (Grasp Instability, Repetition Loop, State Mismatch, Precision Misalignment) where applicable
 
 ### Tech Debt (from v2.0 audit)
@@ -222,7 +222,7 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 | New microcontroller/embedded hardware (ESP32) for the v2.0 control path | Existing USB-serial LeRobot bridge already covers arm control; ESP32 remains a possible future physical kill-switch, not a control-path component |
 | Fine-tuning any policy on v2.0-collected data | This milestone evaluates VLA/MLLM behavior via inference/prompting, not training |
 | Arbitrary code-as-policy execution without a sandboxing/safety design | Superseded (2026-09-24): MLLM backends emit validated JSON through the unmodified `safety_validator.py`, never execute code, so no sandboxing design is needed |
-| Provider-agnostic MLLM router beyond the 3 v2.1 backends (OpenAI/Anthropic/HF only) | Deferred; v2.1 proves out the MLLM-style pattern with 3 concrete backends before generalizing to a full router |
+| Provider-agnostic MLLM router beyond the v2.1 MLLM backends (Claude, GPT and three HF variants; OpenAI/Anthropic/HF only) | Deferred; v2.1 proves out the MLLM-style pattern with these concrete backends before generalizing to a full router |
 | Full 4-task suite beyond Pen Transfer (Selective Color Sorting, Multi-Object Packing, Precision Pen Placement) | Deferred to a later milestone once the 8-backend Pen Transfer comparison validates both pipelines |
 | StereoPatch's own custom RGB-depth fusion architecture (DeFM encoder + cross-attention "StereoPatch Tokens") | No public code release exists; explicitly out of scope for the Phase 12 depth-calibration extension (2026-09-26) |
 | Fine-tuning a depth-aware VLA checkpoint / wiring depth into the PolicyServer's observation dict | Deferred to a later milestone — the current SmolVLA checkpoint has no depth input feature and no fusion architecture exists yet to consume it usefully (see `12-CONTEXT.md` D-08/D-09) |

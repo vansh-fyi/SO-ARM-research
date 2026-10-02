@@ -24,8 +24,13 @@ and an import failure here is deliberately NOT swallowed -- a broken
 backend module should fail loudly, not silently vanish from `--backend`'s
 choices.
 
-Depth is out of scope for every backend (14-CONTEXT.md D-03): nothing in
-this package touches `depth_camera.py`/`fastfs_server.py`/`depth_recorder.py`.
+Depth is out of scope for every VLA-style backend (14-CONTEXT.md D-03): no
+VLA backend touches `depth_camera.py`/`fastfs_server.py`/`depth_recorder.py`.
+The MLLM base is the one deliberate exception (15-CONTEXT.md D-06, D-28):
+`base_mllm_build.py` builds the single FastFS depth client from
+`--depth-endpoint`/`--depth-calibration`, and `mllm_inputs.py` fetches depth
+once per chunk and feeds it (heatmap image and/or numeric grid) into the
+MLLM prompt only. Depth never enters a PolicyServer observation dict.
 """
 
 import importlib
