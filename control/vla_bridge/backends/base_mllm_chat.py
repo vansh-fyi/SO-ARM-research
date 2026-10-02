@@ -19,8 +19,8 @@ Router facts: verified, not guessed (2026-10-02, research "Provider Facts")
     no suffix, routing defaults to the `:fastest` policy
     (huggingface.co/docs/inference-providers).
   - `supports_structured_output` is PER PROVIDER (router.huggingface.co/v1/
-    models): e.g. DeepSeek-V4-Flash-Vision-Exp is structured on deepinfra but
-    NOT on novita, and `:fastest` lands it on novita. A silently unpinned
+    models): e.g. DeepSeek-V4.1-Flash is structured on deepinfra but NOT on
+    novita, and `:fastest` can land it on novita. A silently unpinned
     request therefore loses JSON-schema mode (research C2, Pitfall 2), which
     is why every config must pin one provider by name and the routing-policy
     names fastest/cheapest/preferred are rejected.
@@ -33,15 +33,36 @@ Router facts: verified, not guessed (2026-10-02, research "Provider Facts")
 Installed SDK (openai==3.23.0, read from site-packages on 2026-10-02)
 ---------------------------------------------------------------------
 `Completions.create(messages, model, ..., max_tokens, reasoning_effort,
-response_format, temperature, top_p, ..., extra_body, timeout)`;
-`client.chat.completions.with_raw_response.create(...)` returns a
-`LegacyAPIResponse` with `.http_response.text` (the exact wire body),
-`.headers` and `.parse()` (a typed `ChatCompletion` built without
-validation, so unknown finish reasons survive). `ChatCompletionMessage` has
-`content` and `refusal`; provider extras such as `reasoning` or
-`reasoning_content` exist only as pydantic extras (`model_extra`).
+response_format, stream, stream_options, temperature, top_p, ...,
+extra_body, timeout)`. With `stream=True` it returns `openai.Stream`
+(`openai/_streaming.py`): iterating it yields typed `ChatCompletionChunk`s
+built without validation (unknown finish reasons and provider extras
+survive), `.response` is the underlying HTTP response (its headers carry
+`x-request-id`), and `.close()` releases the connection. An SSE event whose
+JSON has an `error` key makes the iterator raise `openai.APIError` mid-stream.
+`ChoiceDelta` has `content` and `refusal`; provider extras such as
+`reasoning` or `reasoning_content` exist only as pydantic extras
+(`model_extra`). `stream_options={"include_usage": True}` adds a final chunk
+with empty `choices` and the `usage`;
 `CompletionUsage.completion_tokens_details.reasoning_tokens` and
 `prompt_tokens_details.cached_tokens` are optional.
+
+Why the adapter streams (Plan 15-10 live smoke, 2026-10-02)
+-----------------------------------------------------------
+A non-streaming reasoning call sends no bytes until the whole answer is
+done. The HF router's edge proxy cut such idle connections at about 120 s
+(live HTTP 504 Gateway Time-out at 120.9 s and 121.2 s for mllm-hf-deepseek,
+with timeout_s 900), so every long reasoning call failed. Streaming keeps
+bytes flowing (reasoning deltas) for the whole call, as the Claude and GPT
+adapters already do. The adapter assembles the deltas into one answer:
+`delta.content` into the text, `reasoning` / `reasoning_content` (first
+non-empty, attribute or `model_extra`) into the raw thinking text,
+`delta.refusal` into the refusal, `finish_reason` from the last choice chunk
+that carries one, and `usage` from the include_usage chunk. The sidecar's
+raw payload is a JSON-safe reconstruction (the assembled message, ids,
+model, finish_reason, usage dump and chunk counts), never SDK objects; the
+recorder redacts it before writing. `timeout_s` now bounds each wait for the
+next streamed byte rather than one silent wait for the whole answer.
 
 `reasoning_effort` travels inside `extra_body`, not as the typed keyword:
 the effort names are per model (Qwen `xhigh`, Kimi-K3 and DeepSeek `max`),
@@ -80,7 +101,7 @@ The HF token reaches this module only as the `api_key` argument of
 `max_retries=0` (no hidden paid retry). The adapter keeps no copy, never puts
 it in `repr()`, `settings_summary` or a result, and never catches exceptions:
 the base turns a failure into chunk_len holds and redacts any error text,
-and the recorder redacts the wire body before writing the sidecar.
+and the recorder redacts the reconstructed raw payload before writing the sidecar.
 """
 
 import base64
@@ -107,7 +128,8 @@ DEFAULT_STRUCTURED_MODE = "json_schema"
 
 # Keys the adapter itself sends; extra_body may not override them silently.
 _RESERVED_EXTRA_BODY_KEYS = ("model", "messages", "response_format", "max_tokens", "temperature",
-                             "top_p", "reasoning_effort", "stream", "tools", "tool_choice")
+                             "top_p", "reasoning_effort", "stream", "stream_options", "tools",
+                             "tool_choice")
 _PROVIDER_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _HTTPS_URL_RE = re.compile(r"^https://[^/\s]+(/\S*)?$")
 
@@ -117,6 +139,8 @@ _FINISH_MAP = {
     "content_filter": STOP_REFUSAL,
 }
 _REASONING_FIELDS = ("reasoning", "reasoning_content")
+STREAM_OPTIONS = {"include_usage": True}
+REQUEST_ID_HEADER = "x-request-id"
 
 JSON_OBJECT_SCHEMA_BLOCK = (
     "\n\nRESPONSE FORMAT\n"
@@ -170,7 +194,7 @@ def validate_chat_config(config: dict, backend_name: str) -> None:
 
     hf_provider = config.get("hf_provider")
     if not isinstance(hf_provider, str) or not hf_provider.strip():
-        fail("hf_provider", "a non-blank provider name (e.g. cerebras, deepinfra, baseten)")
+        fail("hf_provider", "a non-blank provider name (e.g. deepinfra, baseten)")
     if hf_provider in ROUTING_POLICY_NAMES:
         fail("hf_provider", f"a pinned provider name, not the routing policy {hf_provider!r} "
                             "(policy routing can land on a provider without structured output; "
@@ -243,13 +267,13 @@ def _normalise_usage(usage) -> dict:
     }
 
 
-def _reasoning_text(message) -> str | None:
-    """`message.reasoning`, else `reasoning_content`, else either one from `model_extra`."""
-    extra = getattr(message, "model_extra", None) or {}
-    for source in (message, extra):
+def _delta_reasoning(delta) -> str | None:
+    """`delta.reasoning`, else `reasoning_content`, else either one from `model_extra` (first non-empty)."""
+    extra = getattr(delta, "model_extra", None) or {}
+    for source in (delta, extra):
         for name in _REASONING_FIELDS:
             value = _get(source, name)
-            if isinstance(value, str) and value.strip():
+            if isinstance(value, str) and value:
                 return value
     return None
 
@@ -269,24 +293,112 @@ def _stop(finish_reason, refusal) -> dict:
     }
 
 
-def completion_to_result(completion, wire_text: str, request_id: str | None) -> ProviderResult:
-    """Map a typed chat completion plus its verbatim wire body to the shared `ProviderResult`."""
-    choices = list(_get(completion, "choices") or [])
-    choice = choices[0] if choices else None
-    message = _get(choice, "message")
-    content = _get(message, "content")
-    thinking = _reasoning_text(message) if message is not None else None
-    return ProviderResult(
-        text=content if isinstance(content, str) else None,
-        raw_payload=wire_text,
-        usage=_normalise_usage(_get(completion, "usage")),
-        stop=_stop(_get(choice, "finish_reason"), _get(message, "refusal")),
-        native_thinking_text=thinking,
-        native_thinking_kind="raw" if thinking is not None else "none",
-        request_id=request_id if isinstance(request_id, str) and request_id else None,
-        response_id=_get(completion, "id"),
-        model_returned=_get(completion, "model"),
-    )
+class StreamAssembly:
+    """Folds streamed `ChatCompletionChunk`s into one answer (choice index 0 only)."""
+
+    def __init__(self):
+        self._content: list[str] = []
+        self._reasoning: list[str] = []
+        self._refusal: list[str] = []
+        self.finish_reason = None
+        self.usage = None
+        self.model = None
+        self.response_id = None
+        self.created = None
+        self.chunk_count = 0
+        self.choice_chunk_count = 0
+
+    def add(self, chunk) -> None:
+        self.chunk_count += 1
+        for key in ("model", "id"):
+            value = _get(chunk, key)
+            if isinstance(value, str) and value:
+                setattr(self, "response_id" if key == "id" else "model", value)
+        created = _get(chunk, "created")
+        if _is_int(created):
+            self.created = created
+        usage = _get(chunk, "usage")
+        if usage is not None:
+            self.usage = usage
+        for choice in _get(chunk, "choices") or []:
+            if _get(choice, "index") not in (None, 0):
+                continue
+            self.choice_chunk_count += 1
+            delta = _get(choice, "delta")
+            if delta is not None:
+                content = _get(delta, "content")
+                if isinstance(content, str):
+                    self._content.append(content)
+                refusal = _get(delta, "refusal")
+                if isinstance(refusal, str):
+                    self._refusal.append(refusal)
+                reasoning = _delta_reasoning(delta)
+                if reasoning is not None:
+                    self._reasoning.append(reasoning)
+            finish_reason = _get(choice, "finish_reason")
+            if finish_reason is not None:
+                self.finish_reason = finish_reason
+
+    @property
+    def text(self) -> str | None:
+        return "".join(self._content) if self._content else None
+
+    @property
+    def refusal(self) -> str | None:
+        return "".join(self._refusal) if self._refusal else None
+
+    @property
+    def thinking(self) -> str | None:
+        joined = "".join(self._reasoning)
+        return joined if joined.strip() else None
+
+    def raw_record(self) -> dict:
+        """A JSON-safe reconstruction of the streamed answer for the (redacted) sidecar."""
+        choices = []
+        if self.choice_chunk_count:
+            choices.append({
+                "index": 0,
+                "finish_reason": self.finish_reason if isinstance(self.finish_reason, str) else None,
+                "message": {"role": "assistant", "content": self.text, "refusal": self.refusal,
+                            "reasoning": self.thinking},
+            })
+        return {
+            "object": "chat.completion",
+            "reconstructed_from_stream": True,
+            "id": self.response_id,
+            "model": self.model,
+            "created": self.created,
+            "choices": choices,
+            "usage": _normalise_usage(self.usage)["raw"],
+            "stream": {"chunk_count": self.chunk_count, "choice_chunk_count": self.choice_chunk_count},
+        }
+
+    def to_result(self, request_id: str | None) -> ProviderResult:
+        thinking = self.thinking
+        return ProviderResult(
+            text=self.text,
+            raw_payload=self.raw_record(),
+            usage=_normalise_usage(self.usage),
+            stop=_stop(self.finish_reason, self.refusal),
+            native_thinking_text=thinking,
+            native_thinking_kind="raw" if thinking is not None else "none",
+            request_id=request_id if isinstance(request_id, str) and request_id else None,
+            response_id=self.response_id,
+            model_returned=self.model,
+        )
+
+
+def _header_request_id(stream) -> str | None:
+    """The `x-request-id` header of the stream's HTTP response (`.response`, else `._response`)."""
+    for attr in ("response", "_response"):
+        try:
+            headers = getattr(getattr(stream, attr, None), "headers", None)
+            value = headers.get(REQUEST_ID_HEADER) if headers is not None else None
+        except Exception:
+            value = None
+        if isinstance(value, str) and value:
+            return value
+    return None
 
 
 class OpenAIChatAdapter:
@@ -374,7 +486,7 @@ class OpenAIChatAdapter:
                 "json_schema": {"name": request.schema_name, "strict": True, "schema": request.schema}}
 
     def request_kwargs(self, request) -> dict:
-        """Exactly what `chat.completions.with_raw_response.create()` receives (no tools, no prefill)."""
+        """Exactly what `chat.completions.create()` receives (streamed; no tools, no prefill)."""
         extra_body = dict(self.extra_body)
         if self.effort is not None:
             extra_body["reasoning_effort"] = self.effort
@@ -387,17 +499,25 @@ class OpenAIChatAdapter:
             "response_format": self._response_format(request),
             "max_tokens": self.max_tokens,
             **self._sampling,
+            "stream": True,
+            "stream_options": dict(STREAM_OPTIONS),
             "extra_body": extra_body,
         }
 
     def call(self, request) -> ProviderResult:
-        # Exceptions propagate on purpose: the base holds, counts and redacts them.
-        raw = self._client.chat.completions.with_raw_response.create(**self.request_kwargs(request))
-        wire_text = raw.http_response.text
-        completion = raw.parse()
-        headers = getattr(raw, "headers", None) or getattr(raw.http_response, "headers", None) or {}
-        request_id = headers.get("x-request-id") if hasattr(headers, "get") else None
-        return completion_to_result(completion, wire_text, request_id)
+        # Exceptions propagate on purpose (including a mid-stream APIError): the base holds,
+        # counts and redacts them. The stream is always closed so the connection is released.
+        stream = self._client.chat.completions.create(**self.request_kwargs(request))
+        assembly = StreamAssembly()
+        try:
+            request_id = _header_request_id(stream)
+            for chunk in stream:
+                assembly.add(chunk)
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
+        return assembly.to_result(request_id)
 
     def close(self) -> None:
         close = getattr(self._client, "close", None)
@@ -418,8 +538,9 @@ __all__ = [
     "OpenAIChatAdapter",
     "PROMPT_TOKEN_RESERVE",
     "ROUTING_POLICY_NAMES",
+    "STREAM_OPTIONS",
     "STRUCTURED_MODES",
-    "completion_to_result",
+    "StreamAssembly",
     "make_chat_adapter",
     "validate_chat_config",
 ]
