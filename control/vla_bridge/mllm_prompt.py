@@ -36,6 +36,20 @@ Templates are module-level constants substituted with `str.replace`, never
 `str.format`, so literal braces never need escaping. `template_sha256()`
 hashes PROMPT_TEMPLATE_VERSION plus every template constant; bump the
 version whenever a template changes (D-22b provenance).
+
+Prompt-inspection CLI (keyless; no provider call, no hardware):
+
+    cd control
+    python -m vla_bridge.mllm_prompt --joint-calibration <follower calibration json> \\
+        --chunk-len 5
+
+prints PROMPT_TEMPLATE_VERSION, the template / system prompt / schema
+hashes, the full system prompt (with the ARM KINEMATICS (URDF) block unless
+--no-urdf or include_urdf is false), an example user text for a joint state
+at each joint's calibrated midpoint, and the JSON schema. Optional:
+--config <backend config name>, --instruction "...", --depth-presentation
+heatmap|grid|both. --joint-calibration defaults to
+action_contract.CALIBRATION_PATH.
 """
 
 import hashlib
@@ -286,8 +300,84 @@ def build_user_text(
     return "\n\n".join(parts)
 
 
+EXAMPLE_DEPTH_NOTE = (
+    "[depth note: supplied per call by the input collector; preview a live one with "
+    "python -m vla_bridge.mllm_inputs]"
+)
+
+
+def main(argv=None) -> int:
+    """Print the exact system prompt, an example user text, the schema and their hashes."""
+    import argparse
+    from pathlib import Path
+
+    from vla_bridge import action_contract
+
+    # Imported here: base_mllm imports this module, so a top-level import of
+    # base_mllm (or of the backends package that discovers it) would be circular.
+    from vla_bridge.backends.base_mllm import load_mllm_settings
+    from vla_bridge.mllm_schema import build_action_chunk_schema, schema_sha256
+    from vla_bridge.mllm_urdf import urdf_kinematics_text
+
+    parser = argparse.ArgumentParser(
+        description="Show exactly what every MLLM backend is told (no API key, no provider call)."
+    )
+    parser.add_argument("--config", type=str, default=None,
+                        help="Optional backend config name overriding mllm_defaults.json")
+    parser.add_argument("--chunk-len", type=int, default=None, help="Override chunk_len (steps per call)")
+    parser.add_argument("--no-urdf", action="store_true", help="Leave out the ARM KINEMATICS (URDF) block")
+    parser.add_argument("--joint-calibration", type=Path, default=action_contract.CALIBRATION_PATH,
+                        help="LeRobot follower calibration JSON used for the joint limits "
+                        "(default: action_contract.CALIBRATION_PATH)")
+    parser.add_argument("--instruction", type=str, default="Pick up the pen", help="Example task text")
+    parser.add_argument("--depth-presentation", choices=("heatmap", "grid", "both"), default=None)
+    args = parser.parse_args(argv)
+
+    settings = load_mllm_settings(args.config)
+    if args.chunk_len is not None:
+        if args.chunk_len < 1:
+            parser.error("--chunk-len must be >= 1")
+        settings["chunk_len"] = args.chunk_len
+    if args.depth_presentation is not None:
+        settings["depth_presentation"] = args.depth_presentation
+    try:
+        limits = action_contract.load_joint_limits_deg(args.joint_calibration)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"Joint calibration not found: {exc}") from exc
+
+    include_urdf = not args.no_urdf and settings["include_urdf"] is True
+    urdf_text = urdf_kinematics_text() if include_urdf else None
+    system_prompt = build_system_prompt(settings, limits, urdf_text)
+    midpoints = {joint: (float(lo) + float(hi)) / 2 for joint, (lo, hi) in limits.items()}
+    user_text = build_user_text(midpoints, args.instruction, settings, None, EXAMPLE_DEPTH_NOTE)
+    schema = build_action_chunk_schema(settings["chunk_len"])
+
+    print(f"prompt_template_version: {PROMPT_TEMPLATE_VERSION}")
+    print(f"template_sha256: {template_sha256()}")
+    print(f"system_prompt_sha256: {text_sha256(system_prompt)}")
+    print(f"schema_sha256: {schema_sha256(schema)}")
+    print(f"include_urdf: {include_urdf}")
+    print(f"chunk_len: {settings['chunk_len']}  depth_presentation: {settings['depth_presentation']}")
+    print(f"joint_calibration: {args.joint_calibration}")
+    print()
+    print("===== SYSTEM PROMPT =====")
+    print(system_prompt)
+    print()
+    print("===== EXAMPLE USER TEXT (follows the labelled images) =====")
+    print(user_text)
+    print()
+    print("===== SCHEMA =====")
+    print(json.dumps(schema, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
 __all__ = [
     "CAPS_HEADING",
+    "EXAMPLE_DEPTH_NOTE",
     "FIRST_CALL_PLAN_MARKER",
     "FORBIDDEN_PROMPT_TERMS",
     "MAX_PREVIOUS_PLAN_CHARS",
@@ -298,6 +388,7 @@ __all__ = [
     "build_user_text",
     "depth_scale_text",
     "lint_prompt_text",
+    "main",
     "template_sha256",
     "text_sha256",
 ]
