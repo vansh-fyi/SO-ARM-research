@@ -96,3 +96,12 @@ None.
 ## HF model lineup (follow-up, web search)
 
 Candidates found via HF Hub API and web search: Qwen3.8-27B, DeepSeek-V4-Flash-Vision-Exp, Kimi-K3, GLM-5.3-Flash, Gemma-4-31B-it. **Selected:** Qwen3.8-27B, DeepSeek-V4-Flash-Vision-Exp, Kimi-K3 as registered variants; researcher verifies vision/thinking/JSON support and drops failures.
+
+## Post-research questions (2026-10-02)
+
+| Question | Selected |
+|----------|----------|
+| Prompt dt: measured 0.785 s vs nominal 0.5 s | Measured 0.785 s |
+| task_complete meaning | User: "when the model judges the goal is done or when the max steps are reached" (recorded as D-25) |
+| Left image: aligned vs raw | User did not know about rectification and expected raw left/right with depth computed from them; decided by Claude as raw default plus `left_image_source` toggle (D-26) |
+| DeepSeek: Vision-Exp vs V4.1-Flash | Keep Vision-Exp |
