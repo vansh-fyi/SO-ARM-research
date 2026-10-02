@@ -1,0 +1,27 @@
+{
+  "provider": "huggingface",
+  "model": "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
+  "hf_provider": "deepinfra",
+  "base_url": "https://router.huggingface.co/v1",
+  "api_key_env": "HF_TOKEN",
+  "effort": "max",
+  "max_tokens": 32000,
+  "structured_mode": "json_schema",
+  "extra_body": {},
+  "capabilities": {
+    "sampling_supported": true,
+    "effort_levels": null,
+    "summary_supported": false
+  },
+  "prices": {
+    "input_per_mtok": 0.44,
+    "output_per_mtok": 1.32,
+    "cached_input_per_mtok": null,
+    "verified_on": "2026-10-02",
+    "source": "router.huggingface.co/v1/models (deepseek-ai/DeepSeek-V4-Flash-Vision-Exp provider deepinfra: $0.44 input, $1.32 output per million tokens)"
+  },
+  "data_retention_note": "Hugging Face forwards each request to the pinned third-party provider (DeepInfra), whose own data-retention policy applies. Lab camera images and depth data sent with every call leave this machine.",
+  "requirement": "MLLM-01",
+  "model_verified": "2026-10-02: router.huggingface.co/v1/models lists deepseek-ai/DeepSeek-V4-Flash-Vision-Exp (MIT, experimental) with image+text input on novita (supports_structured_output false) and deepinfra (supports_structured_output true, ~89 tok/s). The model card describes it as the first experimental multimodal model in the V4 family, with reasoning effort levels; its benchmarks use max effort, temperature 1.0 and top_p 0.95. Vision and reasoning both verified.",
+  "notes": "MLLM-01 per 15-CONTEXT.md D-13/D-15/D-20/D-21/D-23/D-27. Pinned to deepinfra. D-23 named Novita as the host, but the router shows Novita without structured output, and unpinned :fastest routing lands there (research C2, C12, Pitfall 2), so the pin is deepinfra (same price, structured output). D-27 keeps this experimental model over the newer sibling deepseek-ai/DeepSeek-V4.1-Flash. effort max is the card's benchmark setting (research C11); the card does not enumerate the levels, so effort_levels is null and the value is passed through and confirmed by the live smoke. No context_window is set because the router listing gives none for this provider. Cost is cents per call (research C1); no model on the router is free. No replacement from the D-23 shortlist (google/gemma-4-31B-it, zai-org/GLM-5.3-Flash) was needed: all three HF models passed the vision and reasoning checks. The first live smoke per variant (Plan 15-10) must confirm routing to the pinned provider, reasoning tokens and reasoning text under json_schema mode (assumptions A3/A4) and image acceptance (A6; set image_format to jpeg if the provider rejects the request size). If the pinned provider rejects json_schema, a human sets structured_mode to json_object (schema in the system prompt, client-side validation); there is no automatic fallback. api_key_env names the environment variable holding a fine-grained HF token with Inference Providers permission; never put the token itself in this file."
+}
