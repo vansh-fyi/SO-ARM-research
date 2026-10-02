@@ -519,7 +519,7 @@ Plans:
   4. Each backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured in `io_logger.py` alongside its action chunk, per step
   5. The action-chunk size used by all 3 backends is derived from Phase 12's measured real latency data, documented as such rather than guessed
 
-**Plans**: 2/10 plans executed
+**Plans**: 5/10 plans executed
 Plans:
 **Wave 1**
 
@@ -528,9 +528,9 @@ Plans:
 
 **Wave 2** *(blocked on 15-01)*
 
-- [ ] 15-03-PLAN.md — Failure/cap/task_complete semantics plus the two additive run_vla_episode.py edits (termination hook, MLLM-scoped depth rules) (PIPE-02, MLLM-06, MLLM-07)
-- [ ] 15-04-PLAN.md — Per-call audit record: redaction, cost estimate, path-safe sidecar writer, CallRecorder (MLLM-06, PIPE-02)
-- [ ] 15-05-PLAN.md — What the model sees: 4-image collector with one depth call per chunk (heatmap + 24x32 grid per D-28), URDF text, prompt and input preview CLIs (PIPE-02)
+- [x] 15-03-PLAN.md — Failure/cap/task_complete semantics plus the two additive run_vla_episode.py edits (termination hook, MLLM-scoped depth rules) (PIPE-02, MLLM-06, MLLM-07)
+- [x] 15-04-PLAN.md — Per-call audit record: redaction, cost estimate, path-safe sidecar writer, CallRecorder (MLLM-06, PIPE-02)
+- [x] 15-05-PLAN.md — What the model sees: 4-image collector with one depth call per chunk (heatmap + 24x32 grid per D-28), URDF text, prompt and input preview CLIs (PIPE-02)
 
 **Wave 3** *(blocked on 15-01 through 15-05)*
 
@@ -613,6 +613,6 @@ Plans:
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
 | 13. Camera Device Resolution Unification | 4/4 | Human verification pending | - |
 | 14. VLA-Style Pipeline & Backends | 15/15 | Complete   | 2026-10-01 |
-| 15. MLLM-Style Pipeline & Backends | 2/10 | In Progress|  |
+| 15. MLLM-Style Pipeline & Backends | 5/10 | In Progress|  |
 | 16. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
 | 17. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
