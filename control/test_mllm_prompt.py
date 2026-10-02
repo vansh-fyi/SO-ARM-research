@@ -290,3 +290,100 @@ def test_template_sha256_matches_the_pinned_golden_hash():
 
 def test_system_prompt_is_deterministic():
     assert build_system_prompt(_settings(), LIMITS) == build_system_prompt(_settings(), LIMITS)
+
+
+# --- URDF block with the real So-101 text (D-07) -----------------------------------------
+
+
+def test_system_prompt_with_real_urdf_text_is_lint_clean_and_changes_hash():
+    from vla_bridge.mllm_urdf import urdf_kinematics_text
+
+    urdf = urdf_kinematics_text()
+    with_urdf = build_system_prompt(_settings(), LIMITS, urdf_text=urdf)
+    without = build_system_prompt(_settings(), LIMITS)
+    assert URDF_HEADING + "\n" + urdf in with_urdf
+    assert lint_prompt_text(with_urdf) == []
+    assert text_sha256(with_urdf) != text_sha256(without)
+
+
+# --- Prompt-inspection CLI (keyless) --------------------------------------------------------
+
+
+def _cli_expected(calibration, chunk_len=5, urdf=True, **overrides):
+    from vla_bridge.action_contract import load_joint_limits_deg
+    from vla_bridge.backends.base_mllm import load_mllm_settings
+    from vla_bridge.mllm_urdf import urdf_kinematics_text
+
+    settings = load_mllm_settings()
+    settings.update(chunk_len=chunk_len, **overrides)
+    limits = load_joint_limits_deg(calibration)
+    return build_system_prompt(settings, limits, urdf_kinematics_text() if urdf else None)
+
+
+def _cli_run(capsys, *argv):
+    from vla_bridge import mllm_prompt
+
+    assert mllm_prompt.main(list(argv)) == 0
+    return capsys.readouterr().out
+
+
+def test_prompt_cli_dumps_version_hashes_prompt_user_text_and_schema(mock_calibration_file, capsys):
+    from vla_bridge.mllm_schema import schema_sha256
+
+    out = _cli_run(capsys, "--joint-calibration", str(mock_calibration_file), "--chunk-len", "5")
+    expected = _cli_expected(mock_calibration_file)
+    schema = build_action_chunk_schema(5)
+    assert f"prompt_template_version: {PROMPT_TEMPLATE_VERSION}" in out
+    assert f"template_sha256: {template_sha256()}" in out
+    assert f"system_prompt_sha256: {text_sha256(expected)}" in out
+    assert f"schema_sha256: {schema_sha256(schema)}" in out
+    assert "include_urdf: True" in out
+    assert expected in out
+    assert URDF_HEADING in out
+    assert json.dumps(schema, indent=2) in out
+    assert "TASK: Pick up the pen" in out
+    assert "supplied per call" in out
+    assert "Return exactly 5 steps." in out
+    assert lint_prompt_text(out) == []
+
+
+def test_prompt_cli_example_user_text_uses_joint_midpoints(mock_calibration_file, capsys):
+    from vla_bridge.action_contract import load_joint_limits_deg
+
+    out = _cli_run(capsys, "--joint-calibration", str(mock_calibration_file))
+    limits = load_joint_limits_deg(mock_calibration_file)
+    state_line = [line for line in out.splitlines() if line.startswith("CURRENT JOINT STATE: ")][0]
+    state = json.loads(state_line.split(": ", 1)[1])
+    for joint, (lo, hi) in limits.items():
+        assert state[joint] == pytest.approx(round((lo + hi) / 2, 3))
+    assert "Return exactly 20 steps." in out
+
+
+def test_prompt_cli_no_urdf_removes_block_and_changes_printed_hash(mock_calibration_file, capsys):
+    with_urdf = _cli_run(capsys, "--joint-calibration", str(mock_calibration_file), "--chunk-len", "5")
+    without = _cli_run(capsys, "--joint-calibration", str(mock_calibration_file), "--chunk-len", "5",
+                       "--no-urdf")
+    assert URDF_HEADING not in without
+    assert "include_urdf: False" in without
+    expected = _cli_expected(mock_calibration_file, urdf=False)
+    assert f"system_prompt_sha256: {text_sha256(expected)}" in without
+
+    def sha_line(text):
+        return [line for line in text.splitlines() if line.startswith("system_prompt_sha256: ")][0]
+
+    assert sha_line(with_urdf) != sha_line(without)
+
+
+def test_prompt_cli_instruction_and_depth_presentation_overrides(mock_calibration_file, capsys):
+    out = _cli_run(capsys, "--joint-calibration", str(mock_calibration_file),
+                   "--instruction", "Push the cup left", "--depth-presentation", "grid")
+    expected = _cli_expected(mock_calibration_file, chunk_len=20, depth_presentation="grid")
+    assert "TASK: Push the cup left" in out
+    assert f"system_prompt_sha256: {text_sha256(expected)}" in out
+
+
+def test_prompt_cli_missing_joint_calibration_exits(tmp_path):
+    from vla_bridge import mllm_prompt
+
+    with pytest.raises(SystemExit):
+        mllm_prompt.main(["--joint-calibration", str(tmp_path / "missing.json")])
