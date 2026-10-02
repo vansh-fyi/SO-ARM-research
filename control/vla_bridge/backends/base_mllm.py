@@ -53,6 +53,34 @@ previous target. Reasons:
   - `camera-read-failed`: the collector returned None; a single hold, no
     provider call, no chunk id consumed.
   - `request-inflight`: a concurrent call is in progress; a single hold.
+  - `task-complete`: the model answered `task_complete: true` (see below);
+    the whole chunk holds.
+  - `episode-complete`: `episode_complete_reason` is already set and the
+    queue is empty; a single hold with no collector and no provider call
+    (a runaway-spend guard for a loop that ignores the flag).
+
+End of episode (D-18, D-19, D-25, research Pitfall 15)
+-------------------------------------------------------
+`episode_complete_reason` starts as None. `run_vla_episode.run_episode()`
+reads it after every tick and ends the episode with that termination reason
+once it is a non-empty string:
+
+  - `"mllm_backend_failed"` (EPISODE_BACKEND_FAILED): every whole-call failure
+    (provider exception, refusal/truncated/other stop, empty, invalid JSON,
+    missing actions, internal error) adds one to a consecutive-failure
+    counter; reaching `max_consecutive_failed_calls` sets this reason. A call
+    whose answer contained an `actions` list resets the counter to 0. Camera
+    read failures never touch it (no call was made, nothing was paid).
+  - `"task_complete"` (EPISODE_TASK_COMPLETE): the parsed answer's
+    `task_complete` is the boolean `true` (identity check: the string "true",
+    1 or null do not count; the raw value is kept in
+    `trace.task_complete_raw`). D-25 resolution: the claim is the model's
+    judgement about the CURRENT views, so no motion may follow it. All N
+    queue items become `task-complete` holds; the model's actions are never
+    executed and survive only in the raw payload/sidecar. A failed call never
+    sets `task_complete_claimed`. The claim is recorded on its own
+    (`trace.task_complete`, `task_complete_claimed`) and is not an outcome
+    label (D-19): Phase 16 judges success separately.
 
 Per-call record (D-12, D-22)
 ----------------------------
@@ -111,7 +139,7 @@ STOP_OTHER = "other"
 # Record-only stop reason for a call that raised (never returned by an adapter).
 _STOP_ERROR = "error"
 
-# Episode-end reasons (the termination hook itself is Plan 03).
+# Episode-end reasons, read by run_vla_episode.run_episode()'s termination hook.
 EPISODE_TASK_COMPLETE = "task_complete"
 EPISODE_BACKEND_FAILED = "mllm_backend_failed"
 
@@ -138,6 +166,8 @@ REASON_TRUNCATED = "truncated"
 REASON_MALFORMED = "malformed-step"
 REASON_SHORT = "short-chunk"
 REASON_INTERNAL = "internal-error"
+REASON_TASK_COMPLETE = "task-complete"
+REASON_EPISODE_COMPLETE = "episode-complete"
 
 _STOP_TO_REASON = {STOP_REFUSAL: REASON_REFUSAL, STOP_TRUNCATED: REASON_TRUNCATED}
 _STAGED_FIELDS = ("task_restatement", "plan", "scene_claims", "task_complete")
@@ -461,6 +491,18 @@ def _logged_raw_step(item):
     return {"malformed_step_json": text}
 
 
+def _logged_raw_value(value):
+    """A model-supplied scalar or object for the record: plain JSON, size-capped."""
+    value = _plain(value)
+    try:
+        text = json.dumps(value, allow_nan=False)
+    except (ValueError, TypeError):
+        return {"unloggable_value_type": type(value).__name__}
+    if len(text) > MAX_LOGGED_TEXT_CHARS:
+        return {"omitted_json_chars": len(text)}
+    return value
+
+
 @dataclass
 class _QueueItem:
     chunk_id: int
@@ -512,6 +554,12 @@ class MllmActionSourceBase:
         self._chunk_counter = 0
         self._previous_plan: str | None = None
         self._pop_times: list[float] = []
+
+        # End-of-episode state (D-18, D-25, Pitfall 15), read by run_episode().
+        self.max_consecutive_failed_calls = settings["max_consecutive_failed_calls"]
+        self._consecutive_failed_calls = 0
+        self.episode_complete_reason: str | None = None
+        self.task_complete_claimed = False
         self.last_details = self._details()
 
     def __repr__(self) -> str:
@@ -556,6 +604,10 @@ class MllmActionSourceBase:
             self.last_details["chunk_ref"] = self._unchunked_ref()
             return self._hold(joint_state, REASON_INFLIGHT)
         try:
+            if not self._queue and self.episode_complete_reason is not None:
+                # Runaway-spend guard: once the episode is over, never capture or call again.
+                self.last_details["chunk_ref"] = self._unchunked_ref()
+                return self._hold(joint_state, REASON_EPISODE_COMPLETE)
             if not self._queue:
                 try:
                     self._refill(joint_state, instruction)
@@ -563,6 +615,9 @@ class MllmActionSourceBase:
                     self.last_details["error_type"] = type(exc).__name__
                     self.last_details["error"] = self._error_text(exc)
                     if not self._queue:
+                        # _refill counts a call's outcome right before enqueueing, so an
+                        # empty queue means this failure has not been counted yet.
+                        self._count_call_outcome(failed=True)
                         chunk_id = self._chunk_counter
                         self._chunk_counter += 1
                         self._enqueue_holds(chunk_id, 0, REASON_INTERNAL)
@@ -591,6 +646,19 @@ class MllmActionSourceBase:
         for k in range(start, self.chunk_len):
             raw = first_raw if k == start else None
             self._queue.append(_QueueItem(chunk_id, k, raw=raw, reason=reason))
+
+    def _count_call_outcome(self, *, failed: bool) -> None:
+        """Track consecutive whole-call failures; at the cap, end the episode (Pitfall 15)."""
+        if not failed:
+            self._consecutive_failed_calls = 0
+            return
+        self._consecutive_failed_calls += 1
+        if (self._consecutive_failed_calls >= self.max_consecutive_failed_calls
+                and self.episode_complete_reason is None):
+            self.episode_complete_reason = EPISODE_BACKEND_FAILED
+            print(f"MLLM backend {self.label}: {self._consecutive_failed_calls} consecutive failed "
+                  f"calls reached max_consecutive_failed_calls={self.max_consecutive_failed_calls}; "
+                  f"ending the episode ({EPISODE_BACKEND_FAILED})")
 
     def _prev_chunk_tick_period(self) -> float | None:
         pops = self._pop_times
@@ -659,8 +727,20 @@ class MllmActionSourceBase:
                     self.last_details["error"] = failure_detail
                 parse_ms = _ms(time.perf_counter() - t_parse)
 
+        # A call whose answer parsed (an actions list was present) resets the counter;
+        # every whole-call failure counts. Counted immediately before enqueueing (see
+        # get_action's internal-error path, which relies on this ordering).
+        self._count_call_outcome(failed=parsed is None)
+        claimed = parsed is not None and parsed.doc.get("task_complete") is True
         if parsed is None:
             self._enqueue_holds(chunk_id, 0, failure_reason or REASON_PROVIDER)
+        elif claimed:
+            # D-25: "done" is a judgement about the CURRENT views, so no motion follows
+            # it. The whole chunk holds; the model's actions are never executed.
+            self._enqueue_holds(chunk_id, 0, REASON_TASK_COMPLETE)
+            self.task_complete_claimed = True
+            if self.episode_complete_reason is None:
+                self.episode_complete_reason = EPISODE_TASK_COMPLETE
         else:
             for k, step in enumerate(parsed.steps):
                 self._queue.append(_QueueItem(chunk_id, k, action=step, raw=step))
@@ -669,12 +749,16 @@ class MllmActionSourceBase:
                 first_raw = (_logged_raw_step(actions[parsed.first_bad_index])
                              if parsed.first_bad_index < len(actions) else None)
                 self._enqueue_holds(chunk_id, parsed.first_bad_index, parsed.reason, first_raw)
+        if parsed is not None:
             plan = parsed.doc.get("plan")
             if isinstance(plan, str) and plan.strip():
                 self._previous_plan = plan  # D-09: only the previous plan is carried
 
         n_valid = len(parsed.steps) if parsed is not None else 0
-        if failure_reason is None:
+        if claimed:
+            print(f"MLLM chunk {chunk_id}: {model} claimed task_complete after {api_s:.1f} s; "
+                  f"holding position for {self.chunk_len} ticks and ending the episode")
+        elif failure_reason is None:
             print(f"MLLM chunk {chunk_id}: {model} answered in {api_s:.1f} s, "
                   f"{n_valid}/{self.chunk_len} valid steps")
         else:
@@ -727,7 +811,8 @@ class MllmActionSourceBase:
             "task_restatement": doc.get("task_restatement"),
             "plan": doc.get("plan"),
             "scene_claims": doc.get("scene_claims"),  # verbatim (D-11)
-            "task_complete": doc.get("task_complete") is True,
+            "task_complete": doc.get("task_complete") is True,  # strict boolean (D-18)
+            "task_complete_raw": _logged_raw_value(doc.get("task_complete")),
             "native_thinking_text": thinking[:MAX_INLINE_THINKING_CHARS] if isinstance(thinking, str) else None,
             "native_thinking_kind": result.native_thinking_kind if result is not None else "none",
         }
@@ -781,6 +866,7 @@ class MllmActionSourceBase:
             "stop": stop,
             "trace": trace,
             "parse": parse,
+            "consecutive_failed_calls": self._consecutive_failed_calls,
             "depth": meta.get("depth"),
             "capture": {key: meta[key] for key in capture_keys if key in meta},
             "latency_ms": latency_ms,
