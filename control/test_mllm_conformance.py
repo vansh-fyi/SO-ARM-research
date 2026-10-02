@@ -550,3 +550,114 @@ def test_every_backend_inherits_the_shared_presentation_defaults_or_documents_an
                 assert key in raw.get("notes", ""), (name, key, "override without a notes explanation")
             else:
                 assert settings[key] == value, (name, key)
+
+
+# =============================================================================
+# Documentation matches the five-backend reality (research C9, D-06, D-23)
+# =============================================================================
+
+REQUIREMENTS_MD = REPO_ROOT / ".planning" / "REQUIREMENTS.md"
+ROADMAP_MD = REPO_ROOT / ".planning" / "ROADMAP.md"
+COMMANDS_MD = CONTROL_DIR / "COMMANDS.md"
+
+
+def _line_starting(text: str, prefix: str) -> str:
+    lines = [line for line in text.splitlines() if line.startswith(prefix)]
+    assert len(lines) == 1, (prefix, lines)
+    return lines[0]
+
+
+def _section(text: str, heading: str) -> str:
+    start = text.index(heading)
+    following = text.find("\n## ", start + len(heading))
+    return text[start:] if following == -1 else text[start:following]
+
+
+def test_backends_package_docstring_records_the_mllm_depth_exception():
+    doc = ast.get_docstring(_parse(BACKENDS_DIR / "__init__.py"))
+    # The registry conventions are still documented.
+    for phrase in ("register_grpc_backend", "_discover_backends()", "base_", "GRPC_BRIDGE_BACKENDS",
+                   "INSIDE `build()`"):
+        assert phrase in doc, phrase
+    # Depth: out of scope for VLA-style backends, with the MLLM base as the deliberate exception.
+    assert "Depth is out of scope for every VLA-style backend (14-CONTEXT.md D-03)" in doc
+    assert "Depth is out of scope for every backend (14-CONTEXT.md D-03)" not in doc
+    for phrase in ("deliberate exception", "base_mllm_build.py", "mllm_inputs.py", "D-06", "D-28",
+                   "MLLM prompt only"):
+        assert phrase in doc, phrase
+
+
+def test_requirements_md_describes_the_hf_variants_depth_note_and_eval_count():
+    text = REQUIREMENTS_MD.read_text()
+    mllm_01 = _line_starting(text, "- [ ] **MLLM-01**")
+    assert "One or more HuggingFace-hosted open reasoning models" in mllm_01
+    for model in ("Qwen3.8-27B", "DeepSeek-V4-Flash-Vision-Exp", "Kimi-K3"):
+        assert model in mllm_01, model
+    assert "Phase 16 decides which variants run" in mllm_01
+
+    depth = _line_starting(text, "- [x] **DEPTH-CAL-03**")
+    assert "Phase 15 note" in depth and "MLLM" in depth
+    assert "never added to the PolicyServer observation dict" in depth
+
+    eval_01 = _line_starting(text, "- [ ] **EVAL-01**")
+    assert "HF reasoning model variant(s) + Claude + GPT" in eval_01
+    assert "up to 18" in eval_01
+
+    out_of_scope = _line_starting(text, "| Provider-agnostic MLLM router")
+    assert "three HF variants" in out_of_scope
+
+    assert "A free/cheap HuggingFace-hosted reasoning model is integrated" not in text
+    assert "beyond the 3 v2.1 backends" not in text
+
+
+def test_requirements_md_checkbox_and_traceability_states_are_unchanged():
+    text = REQUIREMENTS_MD.read_text()
+    for req in ("MLLM-01", "MLLM-02", "MLLM-03", "EVAL-01"):
+        assert f"| {req} | " in text, req
+    assert _line_starting(text, "| DEPTH-CAL-03 |").endswith("| Complete |")
+    assert _line_starting(text, "| EVAL-01 |").endswith("| Pending |")
+
+
+def test_roadmap_md_says_five_registered_mllm_backends():
+    text = ROADMAP_MD.read_text()
+    phase_15 = text[text.index("### Phase 15: MLLM-Style Pipeline & Backends"):
+                    text.index("### Phase 16: Cross-Backend Pen Transfer Benchmark")]
+    goal = _line_starting(phase_15, "**Goal**")
+    assert "five registered raw-JSON-reasoning MLLM backends" in goal
+    assert ("three HuggingFace-hosted open reasoning-model variants (Qwen3.8-27B, "
+            "DeepSeek-V4-Flash-Vision-Exp, Kimi-K3), Claude, and GPT") in goal
+    criteria = {line.strip()[:2]: line for line in phase_15.splitlines()
+                if re.match(r"^\s+[1-5]\. ", line)}
+    assert "all 5 registered backends" in criteria["1."]
+    assert "Each HF variant, Claude, and GPT" in criteria["2."]
+    assert "all 5 registered backends" in criteria["5."]
+    assert "all 3 backends" not in phase_15
+
+    phase_list = _line_starting(text, "- [ ] **Phase 15: MLLM-Style Pipeline & Backends**")
+    assert "onboard 5 raw-JSON MLLM backends (3 HF open-model variants, Claude, GPT)" in phase_list
+    assert "onboard 3 raw-JSON MLLM backends" not in text
+
+    phase_16 = text[text.index("### Phase 16: Cross-Backend Pen Transfer Benchmark"):]
+    goal_16 = _line_starting(phase_16, "**Goal**")
+    assert "(up to 3 HF variants are registered in Phase 15; Phase 16 selects which run)" in goal_16
+    assert "a free/cheap HuggingFace-hosted reasoning model" not in text
+
+
+def test_commands_md_has_the_mllm_section_with_commands_keys_and_warnings():
+    section = _section(COMMANDS_MD.read_text(), "## MLLM backends (Phase 15)")
+    for command in ("python -m vla_bridge.mllm_prompt", "python -m vla_bridge.mllm_inputs",
+                    "python -m vla_bridge.mllm_smoke --backend mllm-claude --chunk-len 3 "
+                    "--out outputs/smoke --confirm-spend",
+                    "python run_vla_episode.py"):
+        assert command in section, command
+    for flag in ("--out", "--wrist-camera-index", "--stereo-camera-index", "--calibration", "--endpoint",
+                 "--backend mllm-claude", "--max-steps 120", "--depth-endpoint", "--depth-calibration"):
+        assert flag in section, flag
+    for env_name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "HF_TOKEN"):
+        assert env_name in section, env_name
+    assert "never written to files" in section
+    assert "60 ticks" in section and "3 chunks" in section
+    assert "$1 per call" in section and "credits" in section and "Kimi-K3" in section
+    assert "30-day" in section and "images leave" in section.lower()
+    for pattern in KEY_SHAPE_RES:
+        assert pattern.search(section) is None
