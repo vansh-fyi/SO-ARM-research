@@ -13,7 +13,7 @@ Rules for this file:
 
 Blocking findings (gripper direction mismatch or other stop-the-plan findings): PENDING
 
-Image retention NOTICE accepted by the operator before live runs (T-15-38): PENDING
+Image retention NOTICE accepted by the operator before live runs (T-15-38): ACCEPTED 2026-10-02 ("retention accepted"), covering real lab images sent to Anthropic, OpenAI and the HF-routed providers in Task 3.
 
 ## 1. Provider smoke results
 
