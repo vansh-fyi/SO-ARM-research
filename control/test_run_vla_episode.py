@@ -1501,7 +1501,7 @@ def test_main_errors_when_only_depth_endpoint_given_without_calibration(monkeypa
         run_vla_episode.main()
 
 
-def test_main_errors_when_depth_flags_given_without_server_address(monkeypatch, tmp_path):
+def test_main_errors_when_depth_flags_given_without_server_address(monkeypatch, tmp_path, capsys):
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "sys.argv",
@@ -1522,6 +1522,7 @@ def test_main_errors_when_depth_flags_given_without_server_address(monkeypatch, 
 
     with pytest.raises(SystemExit):
         run_vla_episode.main()
+    assert "--server-address" in capsys.readouterr().err
 
 
 # --- Plan 14-02: --backend flag and BACKEND_REGISTRY dispatch ------------------
@@ -1592,6 +1593,7 @@ def _dispatch_main(monkeypatch, tmp_path, cli_args, builders):
             caps=dict(caps),
             action_source=action_source,
             stereo_camera=kwargs.get("stereo_camera"),
+            depth_client=kwargs.get("depth_client"),
         )
 
     monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
@@ -1793,3 +1795,215 @@ def test_bridge_path_end_to_end_through_the_real_smolvla_registry_entry(monkeypa
     assert isinstance(calls["action_source"], robot_client.BridgeActionSource)
     assert list(calls["caps"]) == [0]  # "overhead" (index 1) is skipped
     assert calls["stopped"] is True
+
+
+# --- Plan 15-03: episode_complete_reason termination hook (D-18, Pattern 8) ------------
+
+
+class _CompletingActionSource:
+    """Echoes the live joint state; sets `episode_complete_reason` on call `complete_on`."""
+
+    def __init__(self, complete_on=None, value="task_complete"):
+        self.complete_on = complete_on
+        self.value = value
+        self.calls = 0
+
+    def get_action(self, joint_state, instruction):
+        if self.calls == self.complete_on:
+            self.episode_complete_reason = self.value
+        self.calls += 1
+        return dict(joint_state), "fake-completing"
+
+
+def _run_hook_episode(tmp_path, mock_robot, mock_calibration_file, action_source, max_steps=4):
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    with IOLogger(tmp_path, CAMERA_NAMES) as io_logger:
+        run_episode(
+            mock_robot,
+            _fake_caps(),
+            CAMERA_NAMES,
+            io_logger,
+            action_source,
+            instruction="Pick up the pen",
+            max_steps=max_steps,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+        )
+    lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
+    termination = json.loads((tmp_path / "termination.json").read_text())
+    return [json.loads(line) for line in lines], termination
+
+
+def test_run_episode_ends_when_source_sets_episode_complete_reason(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch
+):
+    returned = []
+    real_move = run_vla_episode.move_to_positions
+
+    def tracking_move(robot, targets, **kwargs):
+        returned.append(dict(targets))
+        return real_move(robot, targets, **kwargs)
+
+    monkeypatch.setattr(run_vla_episode, "move_to_positions", tracking_move)
+    source = _CompletingActionSource(complete_on=1)
+    records, termination = _run_hook_episode(tmp_path, mock_robot, mock_calibration_file, source)
+
+    assert len(records) == 2
+    assert termination == {"reason": "task_complete", "steps_completed": 2}
+    assert source.calls == 2
+    assert len(returned) == 1  # the return-to-start finally block still ran
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["absent", None, "", object(), 42],
+    ids=["no-attribute", "none", "empty-string", "object", "int"],
+)
+def test_run_episode_ignores_absent_or_non_string_episode_complete_reason(
+    value, tmp_path, mock_robot, mock_calibration_file
+):
+    if isinstance(value, str) and value == "absent":
+        source = _CompletingActionSource(complete_on=None)
+    else:
+        source = _CompletingActionSource(complete_on=0, value=value)
+    records, termination = _run_hook_episode(tmp_path, mock_robot, mock_calibration_file, source)
+    assert len(records) == 4
+    assert termination == {"reason": "max_steps_reached", "steps_completed": 4}
+
+
+def _mllm_source(adapter, mock_calibration_file, chunk_len, cap=3):
+    from fake_providers import FakeCollector
+    from vla_bridge.backends.base_mllm import MllmActionSourceBase, load_mllm_settings
+
+    settings = load_mllm_settings()
+    settings["chunk_len"] = chunk_len
+    settings["max_consecutive_failed_calls"] = cap
+    return MllmActionSourceBase(
+        adapter, FakeCollector(), settings,
+        action_contract.load_joint_limits_deg(mock_calibration_file), "mllm-fake",
+    )
+
+
+def test_mllm_task_complete_ends_real_run_episode_after_one_held_step(
+    tmp_path, mock_robot, mock_calibration_file
+):
+    from fake_providers import ScriptedAdapter, make_chunk_doc
+
+    doc = make_chunk_doc(3, base=5.0, task_complete=True)
+    adapter = ScriptedAdapter([json.dumps(doc)])
+    source = _mllm_source(adapter, mock_calibration_file, chunk_len=3)
+    records, termination = _run_hook_episode(
+        tmp_path, mock_robot, mock_calibration_file, source, max_steps=10
+    )
+
+    assert termination == {"reason": "task_complete", "steps_completed": 1}
+    assert len(records) == 1
+    record = records[0]
+    assert record["action_details"]["mllm_call"]["trace"]["task_complete"] is True
+    assert record["model_version"] == "mllm-fake@task-complete-holding-position"
+    assert record["raw_model_output"] == record["joint_state"]  # held, not the model's step
+    assert record["executed_action"] == record["joint_state"]
+    assert record["executed_action"] != doc["actions"][0]
+    assert adapter.calls == 1
+
+
+def test_mllm_backend_failure_cap_ends_real_run_episode(tmp_path, mock_robot, mock_calibration_file):
+    from fake_providers import ScriptedAdapter
+
+    adapter = ScriptedAdapter([RuntimeError("upstream 500") for _ in range(5)])
+    source = _mllm_source(adapter, mock_calibration_file, chunk_len=2, cap=3)
+    records, termination = _run_hook_episode(
+        tmp_path, mock_robot, mock_calibration_file, source, max_steps=20
+    )
+
+    assert termination == {"reason": "mllm_backend_failed", "steps_completed": 5}
+    assert len(records) == 5
+    assert adapter.calls == 3
+    for record in records:
+        assert record["model_version"] == "mllm-fake@provider-error-holding-position"
+        assert record["executed_action"] == record["joint_state"]
+
+
+# --- Plan 15-03: depth flags scoped away from MLLM backends (D-06, research C5) ----------
+
+DEPTH_URL = "https://fake.ngrok.io/depth"
+FAKE_MLLM = "mllm-fake-depth-owner"
+
+
+def _depth_args(tmp_path, *, calibration=True):
+    args = ["--depth-endpoint", DEPTH_URL]
+    if calibration:
+        args += ["--depth-calibration", str(tmp_path / "stereo_calibration.json")]
+    return args
+
+
+@pytest.mark.parametrize(
+    "backend_args",
+    [[], ["--backend", "scripted"], ["--backend", "fake-plain"], ["--backend", "smolvla"]],
+    ids=["default", "explicit-scripted", "plain-non-mllm", "explicit-grpc"],
+)
+def test_depth_endpoint_without_server_address_errors_for_non_mllm_backends(
+    backend_args, monkeypatch, tmp_path, capsys
+):
+    built = []
+    with pytest.raises(SystemExit):
+        _dispatch_main(monkeypatch, tmp_path, [*backend_args, *_depth_args(tmp_path)], {
+            "scripted": _fake_builder(built, "scripted"),
+            "smolvla": _fake_builder(built, "smolvla"),
+            "fake-plain": _fake_builder(built, "fake-plain"),
+        })
+    assert built == []
+    assert "--server-address" in capsys.readouterr().err
+
+
+def _register_fake_mllm(monkeypatch, built):
+    from vla_bridge.backends import base_mllm
+
+    seen = {}
+
+    def build(args, camera_names, joint_limits_deg):
+        built.append(FAKE_MLLM)
+        seen.update(depth_endpoint=args.depth_endpoint, depth_calibration=args.depth_calibration)
+        return BackendHandles(action_source=_ClosableActionSource(), robot=_FakeBackendRobot())
+
+    monkeypatch.setitem(
+        base_mllm.MLLM_BACKENDS, FAKE_MLLM,
+        base_mllm.MllmBackendSpec(FAKE_MLLM, "mllm_defaults", lambda api_key, config: None),
+    )
+    return build, seen
+
+
+def test_mllm_backend_accepts_depth_flags_without_server_address_and_owns_its_depth_client(
+    monkeypatch, tmp_path
+):
+    def must_not_build(*args, **kwargs):
+        pytest.fail("main() must not build a DepthCameraClient for an MLLM backend (FastFS 429)")
+
+    monkeypatch.setattr(run_vla_episode, "DepthCameraClient", must_not_build)
+    monkeypatch.setattr(run_vla_episode, "load_calibration", must_not_build)
+    built = []
+    build, seen = _register_fake_mllm(monkeypatch, built)
+
+    calls = _dispatch_main(monkeypatch, tmp_path, ["--backend", FAKE_MLLM, *_depth_args(tmp_path)], {
+        FAKE_MLLM: build,
+    })
+
+    assert built == [FAKE_MLLM]
+    assert seen == {
+        "depth_endpoint": DEPTH_URL,
+        "depth_calibration": tmp_path / "stereo_calibration.json",
+    }
+    assert calls["run_episode_called"] is True
+    assert calls["depth_client"] is None
+    assert not (tmp_path / "out" / "depth_calibration.json").exists()
+
+
+def test_mllm_backend_still_requires_depth_flags_together(monkeypatch, tmp_path, capsys):
+    built = []
+    build, _seen = _register_fake_mllm(monkeypatch, built)
+    with pytest.raises(SystemExit):
+        _dispatch_main(monkeypatch, tmp_path,
+                       ["--backend", FAKE_MLLM, *_depth_args(tmp_path, calibration=False)],
+                       {FAKE_MLLM: build})
+    assert built == []
+    assert "must be given together" in capsys.readouterr().err

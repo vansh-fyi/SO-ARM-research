@@ -28,6 +28,13 @@ Usage:
     # scripted without).
     python run_vla_episode.py --out outputs/run_001 --backend smolvla \
         --server-address HOST:PORT --checkpoint victorvanhalst/smolvla_so101_cube
+
+    # Phase 15 (PIPE-02): an MLLM backend calls its provider directly over
+    # HTTPS and owns its depth call, so no --server-address is needed.
+    python run_vla_episode.py --out outputs/mllm_001 --backend mllm-claude \
+        --max-steps 120 --instruction "Pick up the pen" \
+        --depth-endpoint https://xxxx.ngrok-free.app/depth \
+        --depth-calibration stereo_calibration.json
 """
 
 import argparse
@@ -43,6 +50,8 @@ import detect_devices
 from keyboard_joint_control import move_to_positions, read_positions
 from vla_bridge import action_contract, robot_client, safety_validator
 from vla_bridge.backends import BACKEND_REGISTRY, GRPC_BRIDGE_BACKENDS, get_backend_names
+# Module import (not a name import) so tests can patch base_mllm.MLLM_BACKENDS.
+from vla_bridge.backends import base_mllm
 # Re-exported: the class moved to vla_bridge/backends/scripted.py (Plan 14-02) so
 # the backend registry can build it without importing this script.
 from vla_bridge.backends.scripted import ScriptedActionSource  # noqa: F401
@@ -154,6 +163,13 @@ class ActionSource(Protocol):
     relayed over the async_inference gRPC bridge) implementing this exact
     interface -- everything else in this script's control loop is unaware of
     where the action came from.
+
+    Optional duck-typed attribute `episode_complete_reason` (not part of the
+    Protocol signature, read with getattr): None, or a non-empty string that
+    `run_episode()` uses as the termination reason, ending the episode after
+    the tick on which it became set (return-to-start still runs). MLLM sources
+    use "task_complete" and "mllm_backend_failed". Any other value, including
+    a non-string, is ignored.
     """
 
     def get_action(
@@ -382,6 +398,12 @@ def run_episode(
             if executed_action:
                 last_sent_action = executed_action
             steps_completed = i + 1
+            # Phase 15 (D-18): an action source may end the episode itself by
+            # setting a non-empty string `episode_complete_reason`.
+            done_reason = getattr(action_source, "episode_complete_reason", None)
+            if isinstance(done_reason, str) and done_reason:
+                reason = done_reason
+                break
             time.sleep(final_sleep)
     except KeyboardInterrupt:
         print("Interrupted -- returning to start position...")
@@ -501,14 +523,16 @@ def main():
         default=None,
         help="Colab-hosted Fast-FoundationStereo HTTP endpoint URL documented in "
         "policy_server_launch.md, e.g. https://xxxx.ngrok-free.app/depth. Requires "
-        "--depth-calibration and --server-address.",
+        "--depth-calibration and --server-address (the --server-address requirement does "
+        "not apply to --backend mllm-* backends, which own their depth call).",
     )
     parser.add_argument(
         "--depth-calibration",
         type=Path,
         default=None,
         help="Path to the calibration file produced by vla_bridge.stereo_calibration's CLI, "
-        "e.g. stereo_calibration.json. Requires --depth-endpoint and --server-address.",
+        "e.g. stereo_calibration.json. Requires --depth-endpoint and --server-address (the "
+        "--server-address requirement does not apply to --backend mllm-* backends).",
     )
     parser.add_argument(
         "--depth-every-n-steps",
@@ -547,7 +571,9 @@ def main():
             parser.error(str(e))
     if (args.depth_endpoint is None) != (args.depth_calibration is None):
         parser.error("--depth-endpoint and --depth-calibration must be given together")
-    if args.depth_endpoint and not args.server_address:
+    # MLLM backends (Phase 15, D-06) own their depth call inside build(), so
+    # they need no gRPC bridge; every other backend still does.
+    if args.depth_endpoint and not args.server_address and args.backend not in base_mllm.MLLM_BACKENDS:
         parser.error(
             "--server-address is required when --depth-endpoint is given (depth capture "
             "needs the bridge's shared StereoSplitCamera)"
@@ -608,7 +634,10 @@ def main():
     if (args.out / 'episode.jsonl').exists():
         parser.error('output directory already contains an episode; choose a new --out path')
     depth_client = None
-    if args.depth_endpoint:
+    # An MLLM backend builds its own depth client in build() and calls it once
+    # per chunk. A second caller here would collide: FastFS returns HTTP 429 on
+    # overlapping requests. So depth_client stays None for those backends.
+    if args.depth_endpoint and args.backend not in base_mllm.MLLM_BACKENDS:
         depth_client = DepthCameraClient(load_calibration(args.depth_calibration), args.depth_endpoint)
         depth_client.check_ready()
         args.out.mkdir(parents=True, exist_ok=True)
