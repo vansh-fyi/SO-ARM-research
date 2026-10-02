@@ -3,14 +3,21 @@
 Covers the shared OpenAI-compatible chat adapter
 (`vla_bridge.backends.base_mllm_chat`) and the three registered HF variants
 (`mllm-hf-qwen`, `mllm-hf-deepseek`, `mllm-hf-kimi`) with their shipped
-configs. Nothing here touches the network: the SDK client is a fake exposing
-`chat.completions.with_raw_response.create(**kwargs)`, whose raw wrapper
-returns the exact wire body as `http_response.text` and a typed completion
-from `parse()` (built with the installed SDK's own non-validating
-`ChatCompletion.construct`, as the SDK does). The one test that builds a real
-`openai.OpenAI` client never sends a request. The request kwargs are bound to
-the INSTALLED `Completions.create` signature (openai==3.23.0) so drift fails
-here, not on a paid call.
+configs. Nothing here touches the network.
+
+Streaming (Plan 15-10 fix, 2026-10-02): the adapter calls
+`chat.completions.create(..., stream=True, stream_options={"include_usage": True})`
+because a non-streaming reasoning call sends no bytes until it is done and the
+HF router's edge proxy cut the idle connection at ~120 s (live HTTP 504 for
+mllm-hf-deepseek, 15-LIVE-RESULTS.md section 1). Most tests use a fake client
+whose `chat.completions.create(**kwargs)` returns a `FakeStream` of typed
+`ChatCompletionChunk`s (built with the installed SDK's own recursive,
+non-validating `construct`, as the SDK does). A few tests drive the REAL
+`openai.OpenAI` client over an in-process `httpx2.MockTransport` that answers
+with server-sent events, so the SDK's own stream decoding, header access and
+mid-stream error handling are exercised with no network. The request kwargs
+are bound to the INSTALLED `Completions.create` signature (openai==3.23.0) so
+drift fails here, not on a paid call.
 """
 
 import ast
@@ -21,8 +28,10 @@ import math
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx2
+import openai
 import pytest
-from openai.types.chat import ChatCompletion
+from openai.types.chat import ChatCompletionChunk
 
 from conftest import MockRobot
 from fake_providers import (
@@ -66,62 +75,104 @@ TEST_MODEL = "Org/Test-Model-7B"
 TEST_PIN = "deepinfra"
 MODULE_PATH = Path(base_mllm_chat.__file__)
 EXPECTED_KWARGS = {"model", "messages", "response_format", "max_tokens", "temperature", "top_p",
-                   "extra_body"}
+                   "extra_body", "stream", "stream_options"}
 
 
-# --- fake OpenAI-compatible chat client ---------------------------------------------------------
+# --- fake streaming OpenAI-compatible chat client ------------------------------------------------
 
 
-def make_wire(content=None, finish_reason="stop", reasoning=None, reasoning_content=None,
-              refusal=None, prompt_tokens=1200, completion_tokens=300, reasoning_tokens=None,
-              cached_tokens=None, model="Org/Test-Model-7B", choices=True, usage=True):
-    """A chat.completion wire body as a dict (the router's JSON shape)."""
-    message = {"role": "assistant", "content": content, "refusal": refusal}
-    if reasoning is not None:
-        message["reasoning"] = reasoning
-    if reasoning_content is not None:
-        message["reasoning_content"] = reasoning_content
-    body = {
-        "id": "chatcmpl-fake-1",
-        "object": "chat.completion",
-        "created": 1790000000,
-        "model": model,
-        "choices": [{"index": 0, "finish_reason": finish_reason, "message": message}] if choices else [],
-    }
+def _pieces(text, count):
+    """Split `text` into up to `count` consecutive non-empty pieces ("" stays one piece)."""
+    if text is None:
+        return []
+    if text == "":
+        return [""]
+    size = max(1, -(-len(text) // count))
+    return [text[i:i + size] for i in range(0, len(text), size)]
+
+
+def make_chunks(content=None, finish_reason="stop", reasoning=None, reasoning_content=None,
+                refusal=None, prompt_tokens=1200, completion_tokens=300, reasoning_tokens=None,
+                cached_tokens=None, model=TEST_MODEL, choices=True, usage=True, pieces=3):
+    """The router's `chat.completion.chunk` SSE payloads (dicts) for one streamed answer.
+
+    Order as providers send it: a role delta, reasoning deltas, content deltas,
+    an optional refusal delta, a finish delta, then the include_usage chunk
+    (empty `choices`, `usage` set).
+    """
+    head = {"id": "chatcmpl-fake-1", "object": "chat.completion.chunk", "created": 1790000000,
+            "model": model}
+
+    def chunk(delta, finish=None):
+        return {**head, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+
+    chunks = []
+    if choices:
+        chunks.append(chunk({"role": "assistant"}))
+        reasoning_fields = {name: _pieces(text, pieces) for name, text in
+                            (("reasoning", reasoning), ("reasoning_content", reasoning_content))
+                            if text is not None}
+        for i in range(max((len(v) for v in reasoning_fields.values()), default=0)):
+            chunks.append(chunk({name: parts[i] for name, parts in reasoning_fields.items()
+                                 if i < len(parts)}))
+        for piece in _pieces(content, pieces):
+            chunks.append(chunk({"content": piece}))
+        if refusal is not None:
+            chunks.append(chunk({"refusal": refusal}))
+        chunks.append(chunk({}, finish_reason))
     if usage:
-        body["usage"] = {
+        chunks.append({**head, "choices": [], "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": prompt_tokens + completion_tokens,
             "completion_tokens_details": (None if reasoning_tokens is None
                                           else {"reasoning_tokens": reasoning_tokens}),
             "prompt_tokens_details": None if cached_tokens is None else {"cached_tokens": cached_tokens},
-        }
-    return body
+        }})
+    return chunks
 
 
-class FakeRaw:
-    """Stands in for openai's LegacyAPIResponse: `.http_response.text`, `.headers`, `.parse()`."""
+class FakeStream:
+    """Stands in for openai's `Stream[ChatCompletionChunk]`: iterable, `.response.headers`, `.close()`.
 
-    def __init__(self, wire_text, headers=None, parsed=None):
+    `exc` is raised after `fail_after` chunks have been yielded (a mid-stream
+    error, as the SDK raises `APIError` on an error event).
+    """
+
+    def __init__(self, chunks, headers=None, exc=None, fail_after=None):
         headers = {"x-request-id": "req_hf_fake_1"} if headers is None else headers
-        self.http_response = SimpleNamespace(text=wire_text, headers=headers)
-        self.headers = headers
-        self._parsed = parsed
-        self.parse_calls = 0
+        self.response = SimpleNamespace(headers=headers)
+        self.chunks = [ChatCompletionChunk.construct(**c) if isinstance(c, dict) else c for c in chunks]
+        self.exc = exc
+        self.fail_after = len(self.chunks) if fail_after is None else fail_after
+        self.yielded = 0
+        self.closed = False
 
-    def parse(self):
-        self.parse_calls += 1
-        if self._parsed is not None:
-            return self._parsed
-        return ChatCompletion.construct(**json.loads(self.http_response.text))
+    def __iter__(self):
+        for chunk in self.chunks:
+            if self.exc is not None and self.yielded >= self.fail_after:
+                raise self.exc
+            self.yielded += 1
+            yield chunk
+        if self.exc is not None:
+            raise self.exc
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
+    def close(self):
+        self.closed = True
 
 
-def raw_from(body, **kwargs):
-    return FakeRaw(json.dumps(body), **kwargs)
+def stream_from(chunks, **kwargs):
+    return FakeStream(chunks, **kwargs)
 
 
-class _RawCompletions:
+class _StreamingCompletions:
     def __init__(self, state):
         self.state = state
 
@@ -135,10 +186,12 @@ class _RawCompletions:
 
 
 def fake_chat_client(responses=(), exc=None):
-    """A fake client whose `chat.completions.with_raw_response.create(...)` replays `responses`."""
+    """A fake client whose `chat.completions.create(**kwargs)` replays `responses` (FakeStreams).
+
+    It deliberately has no `with_raw_response`: the adapter must stream.
+    """
     state = SimpleNamespace(calls=[], responses=list(responses), exc=exc, closed=False)
-    completions = SimpleNamespace(with_raw_response=_RawCompletions(state))
-    client = SimpleNamespace(chat=SimpleNamespace(completions=completions), state=state)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_StreamingCompletions(state)), state=state)
     client.close = lambda: setattr(state, "closed", True)
     return client
 
@@ -182,8 +235,35 @@ def make_adapter(responses=(), exc=None, **overrides):
     return base_mllm_chat.OpenAIChatAdapter(client, hf_config(**overrides)), client
 
 
-def ok_raw(text=None, **kwargs):
-    return raw_from(make_wire(content=make_chunk_text(20) if text is None else text, **kwargs))
+def ok_stream(text=None, **kwargs):
+    return stream_from(make_chunks(content=make_chunk_text(20) if text is None else text, **kwargs))
+
+
+# --- the real openai SDK over an in-process mock transport (no network) --------------------------
+
+
+def sse_body(events) -> bytes:
+    """Server-sent events as the router sends them; dict events are JSON-encoded, then [DONE]."""
+    out = ""
+    for event in events:
+        out += "data: " + (event if isinstance(event, str) else json.dumps(event)) + "\n\n"
+    return (out + "data: [DONE]\n\n").encode("utf-8")
+
+
+def real_sdk_client(handler):
+    """A real `openai.OpenAI` whose HTTP layer is `httpx2.MockTransport(handler)` (no network)."""
+    return openai.OpenAI(base_url="https://router.huggingface.co/v1", api_key=SECRET, max_retries=0,
+                         timeout=900, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+
+
+def sse_handler(events, sent, status=200, headers=None, content=None):
+    def handler(request):
+        sent.append(json.loads(request.content))
+        response_headers = {"content-type": "text/event-stream", "x-request-id": "req_hf_sse_1"}
+        response_headers.update(headers or {})
+        return httpx2.Response(status, headers=response_headers,
+                               content=sse_body(events) if content is None else content)
+    return handler
 
 
 # =============================================================================
@@ -258,7 +338,7 @@ def test_module_constants():
 
 
 def test_json_schema_request_kwargs_are_exactly_the_verified_set():
-    adapter, client = make_adapter([ok_raw()])
+    adapter, client = make_adapter([ok_stream()])
     request = make_request()
 
     adapter.call(request)
@@ -270,6 +350,8 @@ def test_json_schema_request_kwargs_are_exactly_the_verified_set():
     assert kwargs["temperature"] == 1.0
     assert kwargs["top_p"] == 0.95
     assert kwargs["extra_body"] == {"reasoning_effort": "max"}
+    assert kwargs["stream"] is True
+    assert kwargs["stream_options"] == {"include_usage": True}
     assert kwargs["response_format"] == {
         "type": "json_schema",
         "json_schema": {"name": SCHEMA_NAME, "strict": True, "schema": request.schema},
@@ -291,21 +373,40 @@ def test_json_schema_request_kwargs_are_exactly_the_verified_set():
 def test_request_kwargs_bind_to_the_installed_sdk_create_signature():
     from openai.resources.chat.completions import Completions
 
-    adapter, client = make_adapter([ok_raw()])
+    adapter, client = make_adapter([ok_stream()])
     adapter.call(make_request())
     (kwargs,) = client.state.calls
     inspect.signature(Completions.create).bind(object(), **kwargs)  # TypeError on drift
+    signature = inspect.signature(Completions.create)
+    assert "stream" in signature.parameters and "stream_options" in signature.parameters
+    from openai.types.chat import ChatCompletionStreamOptionsParam
+    assert "include_usage" in ChatCompletionStreamOptionsParam.__annotations__
+
+
+def test_call_sends_exactly_request_kwargs_and_never_the_raw_non_streaming_path():
+    adapter, client = make_adapter([ok_stream()])
+    request = make_request()
+    adapter.call(request)
+    (kwargs,) = client.state.calls
+    assert kwargs == adapter.request_kwargs(request)
+    assert not hasattr(client.chat.completions, "with_raw_response")
+
+
+@pytest.mark.parametrize("key", ["stream", "stream_options"])
+def test_extra_body_may_not_override_streaming(key):
+    with pytest.raises(SystemExit, match="extra_body"):
+        base_mllm_chat.validate_chat_config(hf_config(extra_body={key: False}), "mllm-hf-test")
 
 
 def test_config_extra_body_merges_with_reasoning_effort():
-    adapter, client = make_adapter([ok_raw()], extra_body={"chat_template_kwargs": {"enable_thinking": True}})
+    adapter, client = make_adapter([ok_stream()], extra_body={"chat_template_kwargs": {"enable_thinking": True}})
     adapter.call(make_request())
     assert client.state.calls[0]["extra_body"] == {
         "chat_template_kwargs": {"enable_thinking": True}, "reasoning_effort": "max"}
 
 
 def test_request_labels_every_image_including_depth_and_jpeg_media_type():
-    adapter, client = make_adapter([ok_raw()])
+    adapter, client = make_adapter([ok_stream()])
     adapter.call(make_request(roles=IMAGE_ORDER, media_type="image/jpeg"))
     content = client.state.calls[0]["messages"][1]["content"]
     labels = [part["text"] for part in content[:-1] if part["type"] == "text"]
@@ -315,7 +416,7 @@ def test_request_labels_every_image_including_depth_and_jpeg_media_type():
 
 
 def test_json_object_mode_appends_the_schema_to_the_system_message_only():
-    adapter, client = make_adapter([ok_raw()], structured_mode="json_object")
+    adapter, client = make_adapter([ok_stream()], structured_mode="json_object")
     request = make_request()
 
     adapter.call(request)
@@ -335,7 +436,7 @@ def test_json_object_mode_appends_the_schema_to_the_system_message_only():
 
 def test_sampling_unsupported_omits_temperature_and_top_p_with_reasons():
     config_caps = {"sampling_supported": False, "effort_levels": None, "summary_supported": False}
-    adapter, client = make_adapter([ok_raw()], capabilities=config_caps)
+    adapter, client = make_adapter([ok_stream()], capabilities=config_caps)
     adapter.call(make_request())
     kwargs = client.state.calls[0]
     assert "temperature" not in kwargs and "top_p" not in kwargs
@@ -346,7 +447,7 @@ def test_sampling_unsupported_omits_temperature_and_top_p_with_reasons():
 
 
 def test_effort_none_omits_reasoning_effort_and_records_it():
-    adapter, client = make_adapter([ok_raw()], effort=None)
+    adapter, client = make_adapter([ok_stream()], effort=None)
     adapter.call(make_request())
     assert client.state.calls[0]["extra_body"] == {}
     assert "reasoning_effort" in adapter.settings_summary["omitted"]
@@ -391,7 +492,7 @@ def test_settings_summary_logs_requested_applied_and_nothing_omitted_by_default(
     (None, STOP_OTHER, None),
 ])
 def test_finish_reason_mapping(finish_reason, expected, category):
-    adapter, _client = make_adapter([ok_raw(finish_reason=finish_reason)])
+    adapter, _client = make_adapter([ok_stream(finish_reason=finish_reason)])
     stop = adapter.call(make_request()).stop
     assert stop["reason"] == expected
     assert stop["refusal_category"] == category
@@ -402,16 +503,62 @@ def test_finish_reason_mapping(finish_reason, expected, category):
 
 
 def test_non_empty_refusal_field_maps_to_refusal():
-    adapter, _client = make_adapter([ok_raw(text=None, refusal="I can't help with that.")])
-    adapter_text_none = make_adapter([raw_from(make_wire(content=None, refusal="I can't help with that."))])[0]
+    adapter, _client = make_adapter([ok_stream(text=None, refusal="I can't help with that.")])
+    adapter_text_none = make_adapter([stream_from(make_chunks(content=None, refusal="I can't help with that."))])[0]
     for result in (adapter.call(make_request()), adapter_text_none.call(make_request())):
         assert result.stop["reason"] == STOP_REFUSAL
         assert result.stop["refusal_category"] == "message_refusal"
+        assert result.stop["provider_stop_reason"] == "stop"
+
+
+def test_refusal_split_across_deltas_is_joined_and_recorded():
+    chunks = make_chunks(content=None, finish_reason="stop")
+    head = {key: chunks[0][key] for key in ("id", "object", "created", "model")}
+    refusal_deltas = [{**head, "choices": [{"index": 0, "delta": {"refusal": part}, "finish_reason": None}]}
+                      for part in ("I can't ", "control robots.")]
+    chunks = chunks[:1] + refusal_deltas + chunks[1:]
+    adapter, _client = make_adapter([stream_from(chunks)])
+    result = adapter.call(make_request())
+    assert result.stop["reason"] == STOP_REFUSAL
+    assert result.stop["refusal_category"] == "message_refusal"
+    assert result.text is None
+    assert result.raw_payload["choices"][0]["message"]["refusal"] == "I can't control robots."
 
 
 def test_empty_refusal_field_is_not_a_refusal():
-    adapter, _client = make_adapter([ok_raw(refusal="")])
+    adapter, _client = make_adapter([ok_stream(refusal="")])
     assert adapter.call(make_request()).stop["reason"] == STOP_COMPLETE
+
+
+def test_streamed_content_is_assembled_in_order_from_many_deltas():
+    text = make_chunk_text(20)
+    stream = stream_from(make_chunks(content=text, pieces=17))
+    adapter, _client = make_adapter([stream])
+    result = adapter.call(make_request())
+    assert result.text == text
+    assert stream.yielded == len(stream.chunks)
+    assert stream.closed is True
+
+
+def test_truncated_stream_keeps_partial_text_and_usage():
+    stream = stream_from(make_chunks(content='{"actions": [', finish_reason="length",
+                                     completion_tokens=32000, reasoning_tokens=31000))
+    adapter, _client = make_adapter([stream])
+    result = adapter.call(make_request())
+    assert result.text == '{"actions": ['
+    assert result.stop["reason"] == STOP_TRUNCATED
+    assert result.stop["incomplete_reason"] == "length"
+    assert result.usage["output_tokens"] == 32000
+    assert result.usage["reasoning_tokens"] == 31000
+
+
+def test_finish_reason_comes_from_the_last_choice_chunk_that_carries_one():
+    chunks = make_chunks(content="{}", finish_reason="length")
+    head = {key: chunks[0][key] for key in ("id", "object", "created", "model")}
+    # a trailing choice delta with finish_reason null must not erase the earlier value
+    chunks.insert(-1, {**head, "choices": [{"index": 0, "delta": {}, "finish_reason": None}]})
+    adapter, _client = make_adapter([stream_from(chunks)])
+    assert adapter.call(make_request()).stop["provider_stop_reason"] == "length"
 
 
 @pytest.mark.parametrize("wire_kwargs,expected", [
@@ -420,33 +567,47 @@ def test_empty_refusal_field_is_not_a_refusal():
     ({"reasoning": "from reasoning", "reasoning_content": "from reasoning_content"}, "from reasoning"),
 ])
 def test_reasoning_text_is_read_as_raw_kind(wire_kwargs, expected):
-    adapter, _client = make_adapter([raw_from(make_wire(content="{}", **wire_kwargs))])
+    adapter, _client = make_adapter([stream_from(make_chunks(content="{}", **wire_kwargs))])
     result = adapter.call(make_request())
     assert result.native_thinking_text == expected
     assert result.native_thinking_kind == "raw"
+    assert result.text == "{}"
+
+
+def test_reasoning_split_across_many_deltas_is_assembled_verbatim():
+    reasoning = "First the wrist view.\nThen the left view: the pen is left of the cup.\n"
+    adapter, _client = make_adapter([stream_from(make_chunks(content="{}", reasoning_content=reasoning,
+                                                              pieces=11))])
+    assert adapter.call(make_request()).native_thinking_text == reasoning
 
 
 def test_reasoning_text_falls_back_to_model_extra():
-    message = SimpleNamespace(content="{}", refusal=None,
-                              model_extra={"reasoning_content": "only in model_extra"})
-    completion = SimpleNamespace(id="c1", model="m", usage=None,
-                                 choices=[SimpleNamespace(finish_reason="stop", message=message)])
-    adapter, _client = make_adapter([FakeRaw("{}", parsed=completion)])
+    delta = SimpleNamespace(content=None, refusal=None,
+                            model_extra={"reasoning_content": "only in model_extra"})
+    done = SimpleNamespace(content="{}", refusal=None, model_extra={})
+    chunks = [
+        SimpleNamespace(id="c1", model="m", created=1, usage=None,
+                        choices=[SimpleNamespace(index=0, finish_reason=None, delta=delta)]),
+        SimpleNamespace(id="c1", model="m", created=1, usage=None,
+                        choices=[SimpleNamespace(index=0, finish_reason="stop", delta=done)]),
+    ]
+    adapter, _client = make_adapter([FakeStream(chunks)])
     result = adapter.call(make_request())
     assert (result.native_thinking_text, result.native_thinking_kind) == ("only in model_extra", "raw")
+    assert result.text == "{}"
 
 
 @pytest.mark.parametrize("wire_kwargs", [{}, {"reasoning": ""}, {"reasoning_content": "   "}])
 def test_absent_or_blank_reasoning_text_is_none_kind(wire_kwargs):
-    adapter, _client = make_adapter([raw_from(make_wire(content="{}", **wire_kwargs))])
+    adapter, _client = make_adapter([stream_from(make_chunks(content="{}", **wire_kwargs))])
     result = adapter.call(make_request())
     assert (result.native_thinking_text, result.native_thinking_kind) == (None, "none")
 
 
 def test_usage_maps_prompt_completion_reasoning_and_cached_tokens():
-    body = make_wire(content="{}", prompt_tokens=1500, completion_tokens=400, reasoning_tokens=250,
-                     cached_tokens=100)
-    adapter, _client = make_adapter([raw_from(body)])
+    body = make_chunks(content="{}", prompt_tokens=1500, completion_tokens=400, reasoning_tokens=250,
+                       cached_tokens=100)
+    adapter, _client = make_adapter([stream_from(body)])
     usage = adapter.call(make_request()).usage
     assert usage["input_tokens"] == 1500
     assert usage["output_tokens"] == 400
@@ -458,7 +619,7 @@ def test_usage_maps_prompt_completion_reasoning_and_cached_tokens():
 
 
 def test_usage_without_details_has_reasoning_and_cached_none():
-    adapter, _client = make_adapter([raw_from(make_wire(content="{}"))])
+    adapter, _client = make_adapter([stream_from(make_chunks(content="{}"))])
     usage = adapter.call(make_request()).usage
     assert usage["reasoning_tokens"] is None
     assert usage["cached_input_tokens"] is None
@@ -466,18 +627,33 @@ def test_usage_without_details_has_reasoning_and_cached_none():
 
 
 def test_missing_usage_is_all_none():
-    adapter, _client = make_adapter([raw_from(make_wire(content="{}", usage=False))])
+    adapter, _client = make_adapter([stream_from(make_chunks(content="{}", usage=False))])
     usage = adapter.call(make_request()).usage
     assert usage == {"input_tokens": None, "output_tokens": None, "reasoning_tokens": None,
                      "cached_input_tokens": None, "raw": None}
 
 
-def test_raw_payload_is_the_verbatim_wire_body_and_ids_are_mapped():
-    wire_text = json.dumps(make_wire(content='{"actions": []}', model="Org/Test-Model-7B"), indent=1)
-    adapter, _client = make_adapter([FakeRaw(wire_text, headers={"x-request-id": "req_abc"})])
+def test_raw_payload_is_a_json_safe_reconstruction_and_ids_are_mapped():
+    chunks = make_chunks(content='{"actions": []}', reasoning_content="check the wrist view",
+                         reasoning_tokens=5, cached_tokens=64, model="Org/Test-Model-7B")
+    adapter, _client = make_adapter([stream_from(chunks, headers={"x-request-id": "req_abc"})])
     result = adapter.call(make_request())
-    assert result.raw_payload == wire_text
-    assert isinstance(result.raw_payload, str)
+
+    payload = result.raw_payload
+    assert json.loads(json.dumps(payload, allow_nan=False)) == payload  # plain JSON, no SDK objects
+    assert payload["object"] == "chat.completion"
+    assert payload["reconstructed_from_stream"] is True
+    assert payload["id"] == "chatcmpl-fake-1"
+    assert payload["model"] == "Org/Test-Model-7B"
+    assert payload["created"] == 1790000000
+    (choice,) = payload["choices"]
+    assert choice["finish_reason"] == "stop"
+    assert choice["message"] == {"role": "assistant", "content": '{"actions": []}', "refusal": None,
+                                 "reasoning": "check the wrist view"}
+    assert payload["usage"]["completion_tokens_details"]["reasoning_tokens"] == 5
+    assert payload["usage"]["prompt_tokens_details"]["cached_tokens"] == 64
+    assert payload["stream"] == {"chunk_count": len(chunks), "choice_chunk_count": len(chunks) - 1}
+
     assert result.text == '{"actions": []}'
     assert result.request_id == "req_abc"
     assert result.response_id == "chatcmpl-fake-1"
@@ -485,21 +661,107 @@ def test_raw_payload_is_the_verbatim_wire_body_and_ids_are_mapped():
 
 
 def test_missing_request_id_header_is_none():
-    adapter, _client = make_adapter([raw_from(make_wire(content="{}"), headers={})])
+    adapter, _client = make_adapter([stream_from(make_chunks(content="{}"), headers={})])
     assert adapter.call(make_request()).request_id is None
 
 
 def test_empty_choices_yield_no_text_and_other_stop():
-    adapter, _client = make_adapter([raw_from(make_wire(choices=False))])
+    adapter, _client = make_adapter([stream_from(make_chunks(choices=False))])
     result = adapter.call(make_request())
     assert result.text is None
     assert result.stop["reason"] == STOP_OTHER
+    assert result.stop["provider_stop_reason"] is None
+    assert result.raw_payload["choices"] == []
+    assert result.usage["input_tokens"] == 1200
+
+
+def test_an_empty_stream_yields_no_text_and_other_stop():
+    adapter, _client = make_adapter([stream_from([])])
+    result = adapter.call(make_request())
+    assert (result.text, result.stop["reason"], result.request_id) == (None, STOP_OTHER, "req_hf_fake_1")
+    assert result.raw_payload["stream"] == {"chunk_count": 0, "choice_chunk_count": 0}
 
 
 def test_client_exceptions_propagate_to_the_base():
     adapter, _client = make_adapter(exc=RuntimeError("boom"))
     with pytest.raises(RuntimeError, match="boom"):
         adapter.call(make_request())
+
+
+def test_mid_stream_error_propagates_and_the_stream_is_closed():
+    stream = stream_from(make_chunks(content=make_chunk_text(20)), exc=RuntimeError("stream reset"),
+                         fail_after=3)
+    adapter, _client = make_adapter([stream])
+    with pytest.raises(RuntimeError, match="stream reset"):
+        adapter.call(make_request())
+    assert stream.yielded == 3
+    assert stream.closed is True
+
+
+# --- the real SDK stream over a mock transport (no network) ---------------------------------------
+
+
+def _sse_chunks(**kwargs):
+    return make_chunks(**kwargs)
+
+
+def test_real_sdk_stream_is_requested_and_assembled_end_to_end():
+    sent = []
+    content = make_chunk_text(20)
+    client = real_sdk_client(sse_handler(_sse_chunks(content=content, reasoning_content="wrist first",
+                                                     reasoning_tokens=42, model="served-model-name"),
+                                         sent))
+    adapter = base_mllm_chat.OpenAIChatAdapter(client, hf_config())
+    try:
+        result = adapter.call(make_request())
+    finally:
+        adapter.close()
+
+    (body,) = sent
+    assert body["stream"] is True
+    assert body["stream_options"] == {"include_usage": True}
+    assert body["model"] == f"{TEST_MODEL}:{TEST_PIN}"
+    assert body["reasoning_effort"] == "max"  # extra_body is merged into the JSON body
+    assert body["response_format"]["type"] == "json_schema"
+    assert result.text == content
+    assert result.native_thinking_text == "wrist first"
+    assert result.usage["reasoning_tokens"] == 42
+    assert result.stop["reason"] == STOP_COMPLETE
+    assert result.request_id == "req_hf_sse_1"
+    assert result.model_returned == "served-model-name"
+    json.dumps(result.raw_payload, allow_nan=False)
+
+
+def _real_sdk_source(handler, chunk_len=3):
+    adapter = base_mllm_chat.OpenAIChatAdapter(real_sdk_client(handler), hf_config())
+    return _base_source(adapter, chunk_len=chunk_len)
+
+
+@pytest.mark.parametrize("handler_kwargs", [
+    # an error event after some content: the SDK raises APIError mid-iteration
+    {"events": "mid_stream_error"},
+    # the router's edge proxy gateway time-out seen live (HTML body, no stream)
+    {"status": 504, "content": b"<html><body><h1>504 Gateway Time-out</h1></body></html>",
+     "headers": {"content-type": "text/html"}},
+])
+def test_real_sdk_errors_become_provider_error_holds_through_the_base(handler_kwargs):
+    sent = []
+    head = make_chunks(content="{")[0]
+    events = [head, {**head, "choices": [{"index": 0, "delta": {"content": "{"}, "finish_reason": None}]},
+              {"error": {"message": f"upstream provider reset (token {SECRET})", "code": 502}}]
+    kwargs = dict(handler_kwargs)
+    if kwargs.pop("events", None) is None:
+        events = []
+    source = _real_sdk_source(sse_handler(events, sent, **kwargs))
+    joint_state = {joint: 3.0 for joint in JOINT_ORDER}
+
+    results = [source.get_action(joint_state, "pick up the pen") for _ in range(3)]
+
+    assert [version for _action, version in results] == ["mllm-hf-test@provider-error-holding-position"] * 3
+    assert all(action == joint_state for action, _version in results)
+    assert len(sent) == 1  # one call, no hidden retry
+    assert SECRET not in json.dumps(source.last_details)
+    source.close()
 
 
 # =============================================================================
@@ -516,7 +778,7 @@ def _base_source(adapter, chunk_len=3):
 
 def test_fenced_json_from_json_object_mode_still_yields_valid_steps():
     fenced = "```json\n" + make_chunk_text(3) + "\n```"
-    adapter, client = make_adapter([ok_raw(text=fenced)], structured_mode="json_object")
+    adapter, client = make_adapter([ok_stream(text=fenced)], structured_mode="json_object")
     source = _base_source(adapter, chunk_len=3)
     joint_state = {joint: 3.0 for joint in JOINT_ORDER}
 
@@ -733,10 +995,10 @@ def test_end_to_end_one_chunk_through_run_episode(name, monkeypatch, tmp_path, m
     _patch_hardware(monkeypatch)
     monkeypatch.setenv("HF_TOKEN", SECRET)
     content = make_chunk_text(20, plan=f"Reach the pen (never echo {SECRET})")
-    wire_text = json.dumps(make_wire(content=content, reasoning_content=f"scene check {SECRET}",
-                                     prompt_tokens=1200, completion_tokens=300, reasoning_tokens=180,
-                                     model=model))
-    client = fake_chat_client([FakeRaw(wire_text)])
+    # pieces=7 splits the secret across deltas: redaction must act on the assembled text
+    chunks = make_chunks(content=content, reasoning_content=f"scene check {SECRET}", prompt_tokens=1200,
+                         completion_tokens=300, reasoning_tokens=180, model=model, pieces=7)
+    client = fake_chat_client([stream_from(chunks)])
     made = []
 
     def fake_client_factory(api_key, base_url, timeout_s):
@@ -776,8 +1038,16 @@ def test_end_to_end_one_chunk_through_run_episode(name, monkeypatch, tmp_path, m
     assert call["sidecar_dir"] == "mllm_calls/0000"
     assert records[0]["model_version"] == f"{name}@mllm-chunk"
     assert all("mllm_call" not in r["action_details"] for r in records[1:])
-    response_raw = (out / "mllm_calls" / "0000" / "response_raw.json").read_text()
-    assert response_raw == wire_text.replace(SECRET, "<redacted>")
+    response_raw = json.loads((out / "mllm_calls" / "0000" / "response_raw.json").read_text())
+    assert response_raw["reconstructed_from_stream"] is True
+    assert response_raw["model"] == model
+    message = response_raw["choices"][0]["message"]
+    assert message["content"] == content.replace(SECRET, "<redacted>")
+    assert message["reasoning"] == "scene check <redacted>"
+    assert response_raw["usage"]["completion_tokens_details"]["reasoning_tokens"] == 180
+    assert response_raw["stream"]["chunk_count"] == len(chunks)
+    thinking = (out / "mllm_calls" / "0000" / "thinking.txt").read_text()
+    assert thinking == "scene check <redacted>"
 
     for path in out.rglob("*"):
         if path.is_file():
@@ -793,17 +1063,21 @@ def test_end_to_end_one_chunk_through_run_episode(name, monkeypatch, tmp_path, m
     ("length", "truncated"),
     ("refusal", "refusal"),
     ("non_json", "invalid-json"),
+    ("mid_stream_error", "provider-error"),
 ])
 def test_failures_hold_the_whole_chunk_with_one_call(kind, expected_reason):
     chunk_len = 4
     if kind == "exception":
         client = fake_chat_client(exc=RuntimeError(f"401 Unauthorized: bearer {SECRET}"))
+    elif kind == "mid_stream_error":
+        client = fake_chat_client([stream_from(make_chunks(content=make_chunk_text(chunk_len)),
+                                               exc=RuntimeError(f"stream reset {SECRET}"), fail_after=2)])
     elif kind == "length":
-        client = fake_chat_client([raw_from(make_wire(content='{"actions": [', finish_reason="length"))])
+        client = fake_chat_client([stream_from(make_chunks(content='{"actions": [', finish_reason="length"))])
     elif kind == "refusal":
-        client = fake_chat_client([raw_from(make_wire(content=None, refusal="I can't control robots."))])
+        client = fake_chat_client([stream_from(make_chunks(content=None, refusal="I can't control robots."))])
     else:
-        client = fake_chat_client([raw_from(make_wire(content="Sure! Here is the plan in prose."))])
+        client = fake_chat_client([stream_from(make_chunks(content="Sure! Here is the plan in prose."))])
     settings = shipped("mllm-hf-qwen")
     settings["chunk_len"] = chunk_len
     adapter = base_mllm_chat.OpenAIChatAdapter(client, settings)
@@ -874,7 +1148,7 @@ def test_hf_variants_and_claude_receive_identical_prompt_schema_and_images():
     assert len(claude_images) == len(IMAGE_ORDER)
 
     for name in VARIANT_NAMES:
-        client = fake_chat_client([ok_raw()])
+        client = fake_chat_client([ok_stream()])
         base_mllm_chat.OpenAIChatAdapter(client, shipped(name)).call(request)
         (kwargs,) = client.state.calls
         system, user = kwargs["messages"]

@@ -172,7 +172,7 @@ def _fake_client_for(name: str):
     if name == "mllm-gpt":
         client = gpt_fakes._client([gpt_fakes.make_response(text=make_chunk_text(SHIPPED_CHUNK_LEN))])
         return client, lambda: _gpt_payload(client.state.calls)
-    client = hf_fakes.fake_chat_client([hf_fakes.ok_raw(make_chunk_text(SHIPPED_CHUNK_LEN))])
+    client = hf_fakes.fake_chat_client([hf_fakes.ok_stream(make_chunk_text(SHIPPED_CHUNK_LEN))])
     return client, lambda: _hf_payload(client.state.calls)
 
 
