@@ -5,7 +5,7 @@
 
 **Date:** 2026-10-02
 **Phase:** 15-MLLM-Style Pipeline & Backends
-**Areas discussed:** Action format & failures, Prompt & observations, Reasoning-trace schema, Backend model selection
+**Areas discussed:** Action format & failures, Prompt & observations, Reasoning-trace schema, Backend model selection, Step timing, Episode termination, Sampling & reproducibility, Per-call records
 
 ---
 
@@ -48,6 +48,46 @@
 ## Claude's Discretion
 
 Depth presentation, image encoding, module naming, URDF text format, HF fallback when no schema mode.
+
+## Deferred Ideas
+
+None.
+
+---
+
+## Update session (2026-10-02, via "Update it")
+
+## Step timing semantics
+
+| Question | Options | Selected |
+|----------|---------|----------|
+| What to tell the model | State dt + motion budget / dt only / No timing | State dt + motion budget |
+| Chunk length | Fixed N shared default / Model chooses within cap | Fixed N |
+
+**Notes:** "Motion budget" interpreted as qualitative (no numeric caps disclosed) because caps are loosened now and change in Phase 17.
+
+## Episode termination
+
+| Question | Options | Selected |
+|----------|---------|----------|
+| Who ends episode | Model signal + budget / Budget only / Model signal logged only | Model signal + budget |
+| Claim vs human judgment | Log both separately / Out of scope | Log both separately |
+
+## Sampling & reproducibility
+
+| Question | Options | Selected |
+|----------|---------|----------|
+| Sampling policy | Provider defaults pinned+logged / Temp 0 where allowed / Same nominal everywhere | Same nominal settings everywhere |
+| Reasoning level | Max/high / Medium matched / Provider default | Max/high |
+| Rejected setting | Omit + log not-applied / Fail at construction | Omit + log not-applied |
+
+## Per-call records (user-added area)
+
+User asked what to keep per model besides input/output, namely reasoning tokens. Selected all four: token usage breakdown, request params + provenance, latency + cost, raw response payload.
+
+## Claude's Discretion
+
+Numeric safety-cap disclosure toggle; task_complete chunk tail rule; sidecar file layout.
 
 ## Deferred Ideas
 

@@ -1,6 +1,6 @@
 # Phase 15: MLLM-Style Pipeline & Backends - Context
 
-**Gathered:** 2026-10-02
+**Gathered:** 2026-10-02 (updated same day: D-16..D-22)
 **Status:** Ready for planning
 
 <domain>
@@ -44,10 +44,27 @@ Research flag (from ROADMAP): this phase needs deeper research at planning time 
 - **D-14:** Claude and GPT each use the **top vision-capable flagship model** of their provider; model id lives in `backend_configs/<name>.json`; researcher verifies current ids and structured-output support.
 - **D-15:** Structured output via each provider's **native JSON-schema mode** (Claude structured outputs, OpenAI `response_format` json_schema, HF provider JSON mode), with one schema object generated programmatically from `action_contract.py`. No tool-use/function-calling.
 
+### Step timing & chunk semantics
+- **D-16:** The prompt states the step duration `dt` (derived from `--control-hz`, currently 2.0 Hz = 0.5 s/step) and the chunk length in seconds, and tells the model qualitatively that the arm cannot be commanded to jump arbitrarily and large jumps are clamped by a safety layer. Numeric per-step safety caps are NOT disclosed by default (they are loosened in v2.1 and re-tightened in Phase 17); planner may expose them behind a config toggle. Consistent with D-04: no per-joint min/max in the schema.
+- **D-17:** Chunk length is a **fixed N steps** (shared default in config, per-backend override allowed per D-02); the prompt asks for exactly N steps. The model does not choose chunk length, keeping it from becoming a cross-backend confound for Phase 16.
+
+### Episode termination
+- **D-18:** Output schema includes a `task_complete` boolean. The episode ends on the first `true` or at the `--max-steps` budget, whichever comes first; operator e-stop remains. A `task_complete` chunk's remaining actions are still validated and executed per D-03/D-04 unless the planner finds a safer rule (planner's call; document it).
+- **D-19:** The model's `task_complete` claim is logged in the per-chunk trace (D-12) separately from the human outcome label, which is Phase 16's job. Phase 15 only guarantees the claim is captured so false-completion can be analyzed later.
+
+### Sampling & reproducibility
+- **D-20:** Use the **same nominal sampling settings across all three backends**, defined once as a shared default in config (per-backend override allowed). When a provider rejects or fixes a setting (e.g. reasoning models locking temperature), the backend **omits it, still runs, and logs requested-vs-applied settings per call** — it does not fail at construction.
+- **D-21:** Reasoning effort / thinking budget defaults to the **highest sensible level** for each provider (config field, so Phase 16 can ablate). Max output tokens is also pinned in config.
+
+### Per-call record (beyond input/output)
+- **D-22:** Each per-chunk record (D-12) additionally captures: (a) **token usage breakdown**, input / output / reasoning-thinking tokens from the provider usage object, recorded even when the thinking text is hidden or summarized; (b) **request params + provenance**, exact model id, response/request id, effective sampling and reasoning settings (requested vs applied), prompt template version + hash, schema hash, `include_urdf` flag, provider and SDK version; (c) **latency breakdown + cost**, wall-clock split into depth fetch, image encode, and API time, plus estimated cost from token counts and a per-model price in config; (d) **raw response payload**, verbatim and secret-redacted, stored as a sidecar file per call (not inline in `episode.jsonl`) along with the exact image bytes or hashes sent. Secrets discipline from D-00b applies to all of it.
+
 ### Claude's Discretion
 - Depth presentation in the prompt (heatmap image vs. metric text vs. both); image resolution/encoding for the 4 images.
 - Module/class names for the shared MLLM base (`base_mllm.py` follows the `base_` auto-discovery skip convention).
 - Exact `include_urdf` toggle mechanics and URDF text formatting.
+- Whether to expose numeric per-step safety caps behind a config toggle (D-16), and the rule for the tail of a `task_complete` chunk (D-18).
+- Sidecar file layout/naming for raw payloads (D-22d).
 - Fallback when a provider lacks JSON-schema mode (e.g. HF model): researcher decides, but must preserve the D-03 hold path.
 
 </decisions>
