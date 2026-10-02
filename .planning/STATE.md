@@ -6,9 +6,9 @@ current_phase: 15
 current_phase_name: mllm-style-pipeline-backends
 status: executing
 stopped_at: Completed 15-09-PLAN.md
-last_updated: "2026-10-02T16:35:27.637Z"
+last_updated: "2026-10-02T17:33:03.372Z"
 last_activity: 2026-10-02
-last_activity_desc: Completed 15-09
+last_activity_desc: Completed 15-09 (conformance suite, five-backend docs, mllm_smoke CLI)
 progress:
   total_phases: 17
   completed_phases: 12
@@ -105,6 +105,9 @@ Recent decisions affecting current work:
 - [Phase 13]: Numeric wrist_name fallback values skip live name probing.
 - [Phase 15]: 15-09: mllm_smoke's SyntheticCollector delegates to the real MllmInputCollector fed synthetic wrist/stereo/depth sources, so smoke inputs match the robot path by construction
 - [Phase 15]: 15-09: PIPE-02/MLLM-* requirement checkboxes stay Pending until Plan 15-10 live verification (plan forbids changing checkbox/traceability state here)
+- [Phase 15]: 15-10 (user decision 2026-10-02): mllm-hf-qwen re-pinned from cerebras to deepinfra (Qwen/Qwen3.8-27B:deepinfra, $0.20/$2.50 per M, context 262144, source router /v1/models 2026-10-02). Evidence: two live smoke attempts got HTTP 503 'Provider cerebras ... paused by the circuit breaker' and the router listing no longer offers cerebras for this model (15-LIVE-RESULTS.md sections 1/2)
+- [Phase 15]: 15-10 (user decision 2026-10-02): mllm-hf-deepseek model switched from deepseek-ai/DeepSeek-V4-Flash-Vision-Exp to deepseek-ai/DeepSeek-V4.1-Flash pinned :deepinfra ($0.20/$0.60 per M, context 1048576); this SUPERSEDES the locked D-23 model id (and D-27). Backend name and effort max unchanged. Evidence: DeepSeek retired V4-Flash-Vision-Exp upstream (aliases route to V4.1-Flash) and both live attempts got HTTP 504 from the HF router at ~121 s
+- [Phase 15]: 15-10 (user decision 2026-10-02, Rule 1 bug fix): base_mllm_chat.py now streams (chat.completions.create stream=True, stream_options include_usage) because the non-streaming call sent no bytes until done and the HF router edge proxy cut idle connections at ~120 s (HTTP 504). The raw sidecar payload is now a JSON-safe reconstruction of the stream. Re-smoke of mllm-hf-qwen and mllm-hf-deepseek pending
 
 ### Pending Todos
 
