@@ -28,6 +28,32 @@ ikpy==4.1.0
 # from an environment variable and is never hard-coded or logged.
 google-genai==2.25.0
 
+# Plan 15-02: official vendor SDKs for the Phase 15 MLLM backends (D-00b
+# direct HTTPS via official SDKs; D-15 native JSON-schema output). One OpenAI
+# SDK serves the GPT backend (Responses API) and the HF Inference Providers
+# router (OpenAI-compatible chat completions client); the Anthropic SDK serves
+# the Claude backend (Messages streaming API with output_config). Both are
+# imported lazily inside each backend's adapter factory, so backend discovery
+# never imports them. API keys come from environment variables and are never
+# hard-coded or logged.
+# - PyPI project `anthropic` (author Anthropic, support@anthropic.com), source
+#   github.com/anthropics/anthropic-sdk-python (MIT). 1.11.0 released
+#   2026-09-30; wheel sha256
+#   52f97b2c485cca7ac66058374f5073a3febb7e6849b16989c145d602a3efee21.
+# - PyPI project `openai` (author OpenAI, support@openai.com), source
+#   github.com/openai/openai-python (Apache-2.0). 3.23.0 released 2026-10-01;
+#   wheel sha256
+#   7fbec2e50a05ac0fa858629505688e5998fd82245058390ac1b6d98960174bd5.
+# Transitive packages pulled in (not pinned here): docstring_parser 0.18.0
+# (github.com/rr-/docstring_parser, MIT), httpx2 2.13.1 and httpcore2 2.13.1
+# (github.com/pydantic/httpx2, BSD-3-Clause), jiter 0.17.0
+# (github.com/pydantic/jiter, MIT), truststore 0.10.4
+# (github.com/sethmlarson/truststore, MIT). Publisher and source repository of
+# all seven packages approved by a human at the Plan 15-02 supply-chain
+# checkpoint on 2026-10-02.
+anthropic==1.11.0
+openai==3.23.0
+
 # Installed for the planned YOLO object-follow feature (adapting XLeRobot's
 # 3_so100_yolo_ee_follow.py) - not yet wired into any script here.
 ultralytics==8.4.138
