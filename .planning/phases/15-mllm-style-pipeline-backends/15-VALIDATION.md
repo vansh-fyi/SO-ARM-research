@@ -2,7 +2,7 @@
 phase: 15
 slug: mllm-style-pipeline-backends
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-10-02
 ---
@@ -52,6 +52,29 @@ created: 2026-10-02
 | Prompt hygiene | Forbidden words absent (reasoning/thinking/trace/scratchpad); no primitive vocabulary; numeric safety caps absent unless toggled; `include_urdf` toggle changes hash; URDF text matches `So-101/So-101.urdf` limits | unit | `pytest test_mllm_prompt.py -x` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+---
+
+## Plan and Task Binding (added by the planner, 2026-10-02)
+
+| Requirement / decision | Plan and task that owns the automated check | Extra coverage |
+|------------------------|---------------------------------------------|----------------|
+| PIPE-02 | 15-01 T3 (base conforms to ActionSource, registry conformance), 15-06 T2 (first registered backend) | 15-09 T1 (all five backends built through the real builder: identical prompt, schema hash, payload order) |
+| MLLM-04 | 15-01 T2 (schema from JOINT_ORDER/ACTION_UNITS, no min/max, lint, golden hash), 15-01 T3 (unmodified safety_validator clamp visible, D-04) | 15-09 T1 (schema lint on every backend) |
+| MLLM-05 | 15-01 T2 (`-k chunk`: config value, derivation notes, prompt states N and seconds) | 15-10 T2 (measured MLLM API latency and duty cycle recorded; chunk_len unchanged without a user decision) |
+| MLLM-06 | 15-01 T1 and T3 (`-k trace`, chunk_ref pointer, real IOLogger round trip) | 15-04 T2 (cost, sidecar, secret scan) |
+| MLLM-07 | 15-01 T3 (malformed step variants), 15-03 T1 (whole-call failures, cap, task_complete, interrupt) | 15-10 T3 (hold path and Ctrl-C on the real arm) |
+| MLLM-01 | 15-08 T1 and T2 (shared chat adapter, three pinned HF variants) | 15-10 T1 (live smoke per variant) |
+| MLLM-02 | 15-06 T2 (Claude request/mapping/end to end) | 15-10 T1 |
+| MLLM-03 | 15-07 T1 and T2 (GPT request/mapping/end to end) | 15-10 T1 |
+| D-18 / D-25 | 15-03 T1 (base semantics) and T2 (`pytest test_run_vla_episode.py -k task_complete`) | 15-10 T3 |
+| D-20..D-22 | 15-04 T1 and T2 (`-k "record or redact or sidecar"`), adapters' settings_summary tests in 15-06, 15-07, 15-08 | 15-10 T1 |
+| D-06 / D-28 | 15-05 T1 (`pytest test_mllm_inputs.py`: grid pooling and NaN handling, three presentation modes, one depth call per chunk, 429 retry), 15-03 T2 (`pytest test_run_vla_episode.py -k depth`) | 15-10 T3 (depth live) |
+| D-00b | 15-06 T1 (`pytest test_mllm_build.py -k key`: SystemExit before hardware, NAME-only api_key_env) | 15-09 T1 (config key-shape scan) |
+| Prompt hygiene | 15-01 T2, 15-05 T2 (URDF text), 15-09 T1 (all backends) | n/a |
+| Manual-only rows below | 15-10 (T1 provider smoke via 15-09 T3's `mllm_smoke` tool, T3 depth, URDF sign, hardware episodes, Ctrl-C, hold path) | n/a |
+
+Wave 0 note: the stubs listed below are created test-first inside the TDD tasks of Plans 15-01 (fake_providers.py, test_mllm_schema.py, test_mllm_prompt.py, test_base_mllm.py, registry edit), 15-02 (SDK install behind the human checkpoint, test_mllm_requirements.py), 15-06 (test_mllm_build.py, test_backend_mllm_claude.py), 15-07 (test_backend_mllm_gpt.py) and 15-08 (test_backend_mllm_hf.py); test_mllm_record.py is 15-04 and test_run_vla_episode.py extensions are 15-03.
 
 ---
 

@@ -519,7 +519,35 @@ Plans:
   4. Each backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured in `io_logger.py` alongside its action chunk, per step
   5. The action-chunk size used by all 3 backends is derived from Phase 12's measured real latency data, documented as such rather than guessed
 
-**Plans**: TBD
+**Plans**: 10 plans
+Plans:
+**Wave 1**
+
+- [ ] 15-01-PLAN.md — Thin end-to-end slice: schema from action_contract, shared prompt, chunk-drain MllmActionSourceBase with a fake provider through the real loop (PIPE-02, MLLM-04, MLLM-05, MLLM-06, MLLM-07)
+- [ ] 15-02-PLAN.md — Human-gated install and exact pins for anthropic and openai into control/.venv (MLLM-01, MLLM-02, MLLM-03)
+
+**Wave 2** *(blocked on 15-01)*
+
+- [ ] 15-03-PLAN.md — Failure/cap/task_complete semantics plus the two additive run_vla_episode.py edits (termination hook, MLLM-scoped depth rules) (PIPE-02, MLLM-06, MLLM-07)
+- [ ] 15-04-PLAN.md — Per-call audit record: redaction, cost estimate, path-safe sidecar writer, CallRecorder (MLLM-06, PIPE-02)
+- [ ] 15-05-PLAN.md — What the model sees: 4-image collector with one depth call per chunk (heatmap + 24x32 grid per D-28), URDF text, prompt and input preview CLIs (PIPE-02)
+
+**Wave 3** *(blocked on 15-01 through 15-05)*
+
+- [ ] 15-06-PLAN.md — Shared hardware builder + config validator and the Claude backend (mllm-claude) (PIPE-02, MLLM-02, MLLM-04)
+
+**Wave 4** *(blocked on 15-06; GPT and HF run in parallel)*
+
+- [ ] 15-07-PLAN.md — GPT backend (mllm-gpt) on the OpenAI Responses API (MLLM-03, PIPE-02)
+- [ ] 15-08-PLAN.md — HF Inference Providers lane: shared chat adapter + Qwen3.8-27B, DeepSeek-V4-Flash-Vision-Exp, Kimi-K3 variants with provider pins (MLLM-01, PIPE-02)
+
+**Wave 5** *(blocked on 15-06, 15-07, 15-08)*
+
+- [ ] 15-09-PLAN.md — Cross-backend conformance and hygiene suite, docs alignment (C9), live smoke CLI (PIPE-02, MLLM-01..MLLM-07)
+
+**Wave 6** *(blocked on 15-09; human-action, needs keys and hardware)*
+
+- [ ] 15-10-PLAN.md — Live verification: provider smoke calls, depth live, URDF sign check, hardware episodes, Ctrl-C and hold path, latency record (PIPE-02, MLLM-01, MLLM-02, MLLM-03, MLLM-05, MLLM-06, MLLM-07)
 
 ### Phase 16: Cross-Backend Pen Transfer Benchmark
 
