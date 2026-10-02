@@ -69,6 +69,8 @@ Research flag (from ROADMAP): this phase needs deeper research at planning time 
 - **D-27 (keeps D-23):** DeepSeek stays `deepseek-ai/DeepSeek-V4-Flash-Vision-Exp` (user chose to keep it over V4.1-Flash).
 - Researcher findings C1-C12 in `15-RESEARCH.md` (provider pinning per HF variant, Claude/GPT fixed sampling, depth backend-owned plus a `run_vla_episode.py` parser rule and its test, "free" HF models not existing, reasoning-extraction wording lint) are accepted as planner adaptations; they do not change user-locked choices.
 
+- **D-28 (resolves D-06's discretion on depth presentation):** Depth reaches the MLLM as **both** (a) a colourised heatmap image with the colour scale stated in the prompt, and (b) a coarse numeric grid as text (~24x32, median-pooled, metres, `n/a` for invalid cells, ~2-3K tokens) plus min/median/max summary stats. The full 576x800 array is NOT sent (~1.4M tokens/call, not attachable via the APIs). Config field `depth_presentation: heatmap|grid|both` (default `both`) lets Phase 16 ablate. Grid and heatmap are derived from the same depth result; both are saved in the per-call sidecar.
+
 ### Claude's Discretion
 - Depth presentation in the prompt (heatmap image vs. metric text vs. both); image resolution/encoding for the 4 images.
 - Module/class names for the shared MLLM base (`base_mllm.py` follows the `base_` auto-discovery skip convention).

@@ -105,3 +105,7 @@ Candidates found via HF Hub API and web search: Qwen3.8-27B, DeepSeek-V4-Flash-V
 | task_complete meaning | User: "when the model judges the goal is done or when the max steps are reached" (recorded as D-25) |
 | Left image: aligned vs raw | User did not know about rectification and expected raw left/right with depth computed from them; decided by Claude as raw default plus `left_image_source` toggle (D-26) |
 | DeepSeek: Vision-Exp vs V4.1-Flash | Keep Vision-Exp |
+
+## Depth presentation (follow-up)
+
+User asked whether to send the raw numpy array instead of a heatmap. Explained full array is ~1.4M tokens and not attachable; selected **both heatmap + coarse numeric grid** (D-28).
