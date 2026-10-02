@@ -42,8 +42,8 @@ FIVE_BACKENDS = ("mllm-claude", "mllm-gpt", "mllm-hf-qwen", "mllm-hf-deepseek", 
 REQUEST_MODEL_STRINGS = {
     "mllm-claude": "claude-fable-5-1",
     "mllm-gpt": "gpt-6-astra",
-    "mllm-hf-qwen": "Qwen/Qwen3.8-27B:cerebras",
-    "mllm-hf-deepseek": "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp:deepinfra",
+    "mllm-hf-qwen": "Qwen/Qwen3.8-27B:deepinfra",
+    "mllm-hf-deepseek": "deepseek-ai/DeepSeek-V4.1-Flash:deepinfra",
     "mllm-hf-kimi": "moonshotai/Kimi-K3:baseten",
 }
 

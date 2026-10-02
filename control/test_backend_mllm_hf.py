@@ -278,7 +278,7 @@ def sse_handler(events, sent, status=200, headers=None, content=None):
     ({"hf_provider": "fastest"}, "hf_provider"),
     ({"hf_provider": "cheapest"}, "hf_provider"),
     ({"hf_provider": "preferred"}, "hf_provider"),
-    ({"hf_provider": "Cerebras"}, "hf_provider"),
+    ({"hf_provider": "DeepInfra"}, "hf_provider"),
     ({"hf_provider": "org/deepinfra"}, "hf_provider"),
     ({"hf_provider": "deepinfra:fastest"}, "hf_provider"),
     ({"base_url": "http://router.huggingface.co/v1"}, "base_url"),
@@ -853,17 +853,19 @@ CAMERA_NAMES = {5: "wrist", 3: "overhead"}
 
 # name -> (module, config name, model, pin, effort, effort_levels, (in, out) prices, context_window)
 VARIANTS = {
-    "mllm-hf-qwen": (mllm_hf_qwen, "mllm_hf_qwen", "Qwen/Qwen3.8-27B", "cerebras", "xhigh",
-                     ["low", "medium", "xhigh"], (0.99, 1.49), 65536),
-    "mllm-hf-deepseek": (mllm_hf_deepseek, "mllm_hf_deepseek", "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
-                         "deepinfra", "max", None, (0.44, 1.32), None),
+    # Qwen re-pinned cerebras -> deepinfra and DeepSeek switched to V4.1-Flash by user decision
+    # 2026-10-02 (15-LIVE-RESULTS.md section 2); prices/contexts from router /v1/models that day.
+    "mllm-hf-qwen": (mllm_hf_qwen, "mllm_hf_qwen", "Qwen/Qwen3.8-27B", "deepinfra", "xhigh",
+                     ["low", "medium", "xhigh"], (0.2, 2.5), 262144),
+    "mllm-hf-deepseek": (mllm_hf_deepseek, "mllm_hf_deepseek", "deepseek-ai/DeepSeek-V4.1-Flash",
+                         "deepinfra", "max", None, (0.2, 0.6), 1048576),
     "mllm-hf-kimi": (mllm_hf_kimi, "mllm_hf_kimi", "moonshotai/Kimi-K3", "baseten", "max",
                      ["low", "high", "max"], (3.0, 15.0), None),
 }
 VARIANT_NAMES = list(VARIANTS)
 PINNED_MODEL_STRINGS = {
-    "mllm-hf-qwen": "Qwen/Qwen3.8-27B:cerebras",
-    "mllm-hf-deepseek": "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp:deepinfra",
+    "mllm-hf-qwen": "Qwen/Qwen3.8-27B:deepinfra",
+    "mllm-hf-deepseek": "deepseek-ai/DeepSeek-V4.1-Flash:deepinfra",
     "mllm-hf-kimi": "moonshotai/Kimi-K3:baseten",
 }
 
@@ -958,16 +960,32 @@ def test_shipped_config_holds_a_key_name_never_a_token(name):
     assert "hf_" not in raw.replace("hf_provider", "")
 
 
-def test_deepseek_notes_record_the_novita_and_v4_1_decisions():
+def test_deepseek_notes_record_the_novita_pin_and_the_v4_1_user_decision():
     notes = shipped("mllm-hf-deepseek")["notes"]
     assert "D-23" in notes and "Novita" in notes and "structured output" in notes
-    assert "D-27" in notes and "V4.1-Flash" in notes
+    # the locked D-23/D-27 model id is superseded by explicit user decision on 2026-10-02
+    assert "V4-Flash-Vision-Exp" in notes and "retired" in notes
+    assert "user decision" in notes and "2026-10-02" in notes and "supersedes" in notes
+    assert "504" in notes
+    assert "deepseek-ai/DeepSeek-V4.1-Flash" in shipped("mllm-hf-deepseek")["model_verified"]
 
 
-def test_kimi_notes_flag_cost_and_qwen_notes_name_the_deepinfra_alternative():
+def test_kimi_notes_flag_cost_and_qwen_notes_record_the_deepinfra_repin():
     assert "not cheap" in shipped("mllm-hf-kimi")["notes"]
     qwen_notes = shipped("mllm-hf-qwen")["notes"]
-    assert "deepinfra" in qwen_notes and "65,536" in qwen_notes
+    assert "deepinfra" in qwen_notes and "262,144" in qwen_notes
+    assert "user decision" in qwen_notes and "2026-10-02" in qwen_notes
+    assert "circuit breaker" in qwen_notes  # why cerebras was dropped
+
+
+@pytest.mark.parametrize("name", ["mllm-hf-qwen", "mllm-hf-deepseek"])
+def test_repinned_configs_cite_the_router_listing_for_the_new_pin(name):
+    settings = shipped(name)
+    source = settings["prices"]["source"]
+    assert "router.huggingface.co/v1/models" in source and "deepinfra" in source
+    assert "cerebras" not in source.lower()
+    assert "DeepInfra" in settings["data_retention_note"]
+    assert "Cerebras" not in settings["data_retention_note"]
 
 
 # --- end to end: registered build -> real run_episode loop ----------------------------------------

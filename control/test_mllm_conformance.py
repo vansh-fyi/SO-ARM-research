@@ -591,8 +591,9 @@ def test_requirements_md_describes_the_hf_variants_depth_note_and_eval_count():
     text = REQUIREMENTS_MD.read_text()
     mllm_01 = _line_starting(text, "- [ ] **MLLM-01**")
     assert "One or more HuggingFace-hosted open reasoning models" in mllm_01
-    for model in ("Qwen3.8-27B", "DeepSeek-V4-Flash-Vision-Exp", "Kimi-K3"):
+    for model in ("Qwen3.8-27B", "DeepSeek-V4.1-Flash", "Kimi-K3"):
         assert model in mllm_01, model
+    assert "DeepSeek-V4-Flash-Vision-Exp" not in mllm_01  # retired; switched by user decision 2026-10-02
     assert "Phase 16 decides which variants run" in mllm_01
 
     depth = _line_starting(text, "- [x] **DEPTH-CAL-03**")
@@ -625,7 +626,7 @@ def test_roadmap_md_says_five_registered_mllm_backends():
     goal = _line_starting(phase_15, "**Goal**")
     assert "five registered raw-JSON-reasoning MLLM backends" in goal
     assert ("three HuggingFace-hosted open reasoning-model variants (Qwen3.8-27B, "
-            "DeepSeek-V4-Flash-Vision-Exp, Kimi-K3), Claude, and GPT") in goal
+            "DeepSeek-V4.1-Flash, Kimi-K3), Claude, and GPT") in goal
     criteria = {line.strip()[:2]: line for line in phase_15.splitlines()
                 if re.match(r"^\s+[1-5]\. ", line)}
     assert "all 5 registered backends" in criteria["1."]
