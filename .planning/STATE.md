@@ -5,16 +5,16 @@ milestone_name: MLLM Raw-Autonomy Benchmark
 current_phase: 14
 current_phase_name: vla-style-pipeline-backends
 status: executing
-stopped_at: Phase 14 context gathered; backend scope expanded 4->12
-last_updated: "2026-10-01T04:54:53.879Z"
+stopped_at: Phase 15 context gathered
+last_updated: "2026-10-02T08:41:35.517Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 14 execution started
 progress:
   total_phases: 17
-  completed_phases: 11
+  completed_phases: 12
   total_plans: 63
-  completed_plans: 48
-  percent: 65
+  completed_plans: 63
+  percent: 71
 ---
 
 # Project State
@@ -141,9 +141,9 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 
 ## Session Continuity
 
-Last session: 2026-09-30T17:54:20.449Z
-Stopped at: Phase 14 context gathered; backend scope expanded 4->12
-Resume file: .planning/phases/14-vla-style-pipeline-backends/14-CONTEXT.md
+Last session: 2026-10-02T08:41:35.510Z
+Stopped at: Phase 15 context gathered
+Resume file: .planning/phases/15-mllm-style-pipeline-backends/15-CONTEXT.md
 
 Phase 12 closed 2026-09-30 with 15/15 UAT tests passing (12-UAT.md has full
 per-test evidence). Summary of the day's work, across a long multi-session
