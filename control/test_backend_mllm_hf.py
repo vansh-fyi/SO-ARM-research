@@ -17,15 +17,37 @@ import ast
 import base64
 import inspect
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from openai.types.chat import ChatCompletion
 
-from fake_providers import FakeCollector, make_chunk_text, png_bytes
+from conftest import MockRobot
+from fake_providers import (
+    FakeCaptureCamera,
+    FakeCollector,
+    FakeStereoCamera,
+    FakeWristCap,
+    make_chunk_text,
+    png_bytes,
+)
+from run_vla_episode import run_episode
+from vla_bridge import action_contract, backends
 from vla_bridge.action_contract import JOINT_ORDER
-from vla_bridge.backends import base_mllm_chat
+from vla_bridge.backends import (
+    BACKEND_REGISTRY,
+    GRPC_BRIDGE_BACKENDS,
+    base_mllm,
+    base_mllm_build,
+    base_mllm_chat,
+    mllm_claude,
+    mllm_hf_deepseek,
+    mllm_hf_kimi,
+    mllm_hf_qwen,
+)
+from vla_bridge.io_logger import IOLogger
 from vla_bridge.backends.base_mllm import (
     IMAGE_ORDER,
     STOP_COMPLETE,
@@ -559,3 +581,306 @@ def test_module_imports_openai_only_inside_the_client_factory():
             if isinstance(node, ast.Import) and any(a.name == "openai" for a in node.names):
                 owners.append(func.name)
     assert owners == ["_make_chat_client"]
+
+
+# =============================================================================
+# The three registered HF variants (Task 2)
+# =============================================================================
+
+CAMERA_NAMES = {5: "wrist", 3: "overhead"}
+
+# name -> (module, config name, model, pin, effort, effort_levels, (in, out) prices, context_window)
+VARIANTS = {
+    "mllm-hf-qwen": (mllm_hf_qwen, "mllm_hf_qwen", "Qwen/Qwen3.8-27B", "cerebras", "xhigh",
+                     ["low", "medium", "xhigh"], (0.99, 1.49), 65536),
+    "mllm-hf-deepseek": (mllm_hf_deepseek, "mllm_hf_deepseek", "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
+                         "deepinfra", "max", None, (0.44, 1.32), None),
+    "mllm-hf-kimi": (mllm_hf_kimi, "mllm_hf_kimi", "moonshotai/Kimi-K3", "baseten", "max",
+                     ["low", "high", "max"], (3.0, 15.0), None),
+}
+VARIANT_NAMES = list(VARIANTS)
+PINNED_MODEL_STRINGS = {
+    "mllm-hf-qwen": "Qwen/Qwen3.8-27B:cerebras",
+    "mllm-hf-deepseek": "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp:deepinfra",
+    "mllm-hf-kimi": "moonshotai/Kimi-K3:baseten",
+}
+
+
+def shipped(name):
+    return base_mllm_build.load_mllm_backend_config(VARIANTS[name][1], name)
+
+
+@pytest.mark.parametrize("name", VARIANT_NAMES)
+def test_variant_is_registered_as_an_mllm_backend_on_the_shared_chat_factory(name):
+    module, config_name, *_rest = VARIANTS[name]
+    assert BACKEND_REGISTRY[name] is module.build
+    spec = base_mllm.MLLM_BACKENDS[name]
+    assert spec.config_name == config_name
+    assert spec.adapter_factory is base_mllm_chat.make_chat_adapter
+    assert name not in GRPC_BRIDGE_BACKENDS
+    assert (module.BACKEND_NAME, module.CONFIG_NAME) == (name, config_name)
+
+
+@pytest.mark.parametrize("name", VARIANT_NAMES)
+def test_variant_module_is_thin_with_no_sdk_import(name):
+    source = Path(VARIANTS[name][0].__file__).read_text()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            assert all(alias.name.split(".")[0] != "openai" for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            assert (node.module or "").split(".")[0] != "openai"
+    assert not [n for n in tree.body if isinstance(n, ast.ClassDef)]
+    assert [n.name for n in tree.body if isinstance(n, ast.FunctionDef)] == ["build"]
+    assert "base_mllm_chat.make_chat_adapter" in source
+
+
+@pytest.mark.parametrize("name", VARIANT_NAMES)
+def test_variant_build_delegates_to_the_shared_builder(name, monkeypatch):
+    calls = []
+    sentinel = object()
+    monkeypatch.setattr(base_mllm_build, "build_mllm_backend", lambda *a: calls.append(a) or sentinel)
+    args = SimpleNamespace()
+    assert BACKEND_REGISTRY[name](args, CAMERA_NAMES, {"x": (0, 1)}) is sentinel
+    assert calls == [(name, args, CAMERA_NAMES, {"x": (0, 1)})]
+
+
+@pytest.mark.parametrize("name", VARIANT_NAMES)
+def test_shipped_config_passes_both_validators_with_pinned_values(name):
+    _module, _config_name, model, pin, effort, levels, (price_in, price_out), context_window = VARIANTS[name]
+    settings = shipped(name)
+    base_mllm_chat.validate_chat_config(settings, name)  # no SystemExit
+
+    assert settings["provider"] == "huggingface"
+    assert settings["model"] == model
+    assert settings["hf_provider"] == pin
+    assert settings["base_url"] == "https://router.huggingface.co/v1"
+    assert settings["api_key_env"] == "HF_TOKEN"
+    assert settings["effort"] == effort
+    assert settings["max_tokens"] == 32000
+    assert settings.get("context_window") == context_window
+    if context_window is not None:
+        assert settings["max_tokens"] + base_mllm_chat.PROMPT_TOKEN_RESERVE <= context_window
+    assert settings["structured_mode"] == "json_schema"
+    assert settings["extra_body"] == {}
+    caps = settings["capabilities"]
+    assert caps["sampling_supported"] is True
+    assert caps["effort_levels"] == levels
+    assert caps["summary_supported"] is False
+    prices = settings["prices"]
+    assert (prices["input_per_mtok"], prices["output_per_mtok"]) == (price_in, price_out)
+    assert prices["cached_input_per_mtok"] is None
+    assert prices["verified_on"] == "2026-10-02"
+    assert prices["source"]
+    assert settings["sampling"] == {"temperature": 1.0, "top_p": 0.95}
+    assert settings["requirement"] == "MLLM-01"
+    assert "2026-10-02" in settings["model_verified"]
+    assert "third-party" in settings["data_retention_note"]
+    notes = settings["notes"]
+    assert pin in notes
+    assert "gemma-4-31B-it" in notes and "GLM-5.3-Flash" in notes
+    assert "15-10" in notes
+
+
+@pytest.mark.parametrize("name", VARIANT_NAMES)
+def test_request_model_string_is_exactly_the_pinned_value(name):
+    adapter = base_mllm_chat.OpenAIChatAdapter(fake_chat_client(), shipped(name))
+    assert adapter.model == PINNED_MODEL_STRINGS[name]
+    assert not adapter.model.endswith(":fastest")
+
+
+@pytest.mark.parametrize("name", VARIANT_NAMES)
+def test_shipped_config_holds_a_key_name_never_a_token(name):
+    raw = (backends.BACKEND_CONFIG_DIR / f"{VARIANTS[name][1]}.json").read_text()
+    assert json.loads(raw)["api_key_env"] == "HF_TOKEN"
+    assert "hf_" not in raw.replace("hf_provider", "")
+
+
+def test_deepseek_notes_record_the_novita_and_v4_1_decisions():
+    notes = shipped("mllm-hf-deepseek")["notes"]
+    assert "D-23" in notes and "Novita" in notes and "structured output" in notes
+    assert "D-27" in notes and "V4.1-Flash" in notes
+
+
+def test_kimi_notes_flag_cost_and_qwen_notes_name_the_deepinfra_alternative():
+    assert "not cheap" in shipped("mllm-hf-kimi")["notes"]
+    qwen_notes = shipped("mllm-hf-qwen")["notes"]
+    assert "deepinfra" in qwen_notes and "65,536" in qwen_notes
+
+
+# --- end to end: registered build -> real run_episode loop ----------------------------------------
+
+
+class RecordingMockRobot(MockRobot):
+    instances = []
+
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        RecordingMockRobot.instances.append(self)
+
+
+def _patch_hardware(monkeypatch):
+    RecordingMockRobot.instances = []
+    monkeypatch.setattr(base_mllm_build, "SO101Follower", RecordingMockRobot)
+    monkeypatch.setattr(base_mllm_build, "StereoSplitCamera", lambda index=1: FakeStereoCamera())
+    monkeypatch.setattr(base_mllm_build.cv2, "VideoCapture", lambda index: FakeWristCap())
+
+
+@pytest.mark.parametrize("name", VARIANT_NAMES)
+def test_end_to_end_one_chunk_through_run_episode(name, monkeypatch, tmp_path, mock_calibration_file, capsys):
+    _module, _config_name, model, _pin, _effort, _levels, (price_in, price_out), _cw = VARIANTS[name]
+    _patch_hardware(monkeypatch)
+    monkeypatch.setenv("HF_TOKEN", SECRET)
+    content = make_chunk_text(20, plan=f"Reach the pen (never echo {SECRET})")
+    wire_text = json.dumps(make_wire(content=content, reasoning_content=f"scene check {SECRET}",
+                                     prompt_tokens=1200, completion_tokens=300, reasoning_tokens=180,
+                                     model=model))
+    client = fake_chat_client([FakeRaw(wire_text)])
+    made = []
+
+    def fake_client_factory(api_key, base_url, timeout_s):
+        made.append((api_key, base_url, timeout_s))
+        return client
+
+    monkeypatch.setattr(base_mllm_chat, "_make_chat_client", fake_client_factory)
+    out = tmp_path / "out"
+    args = SimpleNamespace(port="/dev/null", robot_id="soarm_follower_02", instruction="pick up the pen",
+                           stereo_camera_index=1, out=out, depth_endpoint=None, depth_calibration=None)
+    limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+
+    handles = BACKEND_REGISTRY[name](args, dict(CAMERA_NAMES), limits)
+    (robot,) = RecordingMockRobot.instances
+    assert handles.robot is robot
+    assert made == [(SECRET, "https://router.huggingface.co/v1", 900)]
+
+    with IOLogger(out, {0: "wrist"}) as io_logger:
+        run_episode(robot, {0: FakeCaptureCamera()}, {0: "wrist"}, io_logger, handles.action_source,
+                    "pick up the pen", 20, 100.0, limits)
+    handles.action_source.close()
+
+    assert len(client.state.calls) == 1
+    assert client.state.calls[0]["model"] == PINNED_MODEL_STRINGS[name]
+    records = [json.loads(line) for line in (out / "episode.jsonl").read_text().strip().splitlines()]
+    assert len(records) == 20
+    call = records[0]["action_details"]["mllm_call"]
+    assert call["provider"] == "huggingface"
+    assert call["model_requested"] == PINNED_MODEL_STRINGS[name]
+    assert call["model_returned"] == model
+    assert call["request_id"] == "req_hf_fake_1"
+    assert call["sdk"] == {"name": "openai", "version": "3.23.0"}
+    assert call["usage"]["reasoning_tokens"] == 180
+    assert call["trace"]["native_thinking_kind"] == "raw"
+    assert call["settings"]["applied"]["structured_mode"] == "json_schema"
+    assert math.isclose(call["cost_usd_est"], (1200 * price_in + 300 * price_out) / 1e6)
+    assert call["sidecar_dir"] == "mllm_calls/0000"
+    assert records[0]["model_version"] == f"{name}@mllm-chunk"
+    assert all("mllm_call" not in r["action_details"] for r in records[1:])
+    response_raw = (out / "mllm_calls" / "0000" / "response_raw.json").read_text()
+    assert response_raw == wire_text.replace(SECRET, "<redacted>")
+
+    for path in out.rglob("*"):
+        if path.is_file():
+            assert SECRET.encode() not in path.read_bytes(), path
+    assert SECRET not in capsys.readouterr().out
+
+
+# --- failure paths through one variant ----------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind,expected_reason", [
+    ("exception", "provider-error"),
+    ("length", "truncated"),
+    ("refusal", "refusal"),
+    ("non_json", "invalid-json"),
+])
+def test_failures_hold_the_whole_chunk_with_one_call(kind, expected_reason):
+    chunk_len = 4
+    if kind == "exception":
+        client = fake_chat_client(exc=RuntimeError(f"401 Unauthorized: bearer {SECRET}"))
+    elif kind == "length":
+        client = fake_chat_client([raw_from(make_wire(content='{"actions": [', finish_reason="length"))])
+    elif kind == "refusal":
+        client = fake_chat_client([raw_from(make_wire(content=None, refusal="I can't control robots."))])
+    else:
+        client = fake_chat_client([raw_from(make_wire(content="Sure! Here is the plan in prose."))])
+    settings = shipped("mllm-hf-qwen")
+    settings["chunk_len"] = chunk_len
+    adapter = base_mllm_chat.OpenAIChatAdapter(client, settings)
+    limits = {joint: (-180.0, 180.0) for joint in JOINT_ORDER}
+    source = MllmActionSourceBase(adapter, FakeCollector(), settings, limits, "mllm-hf-qwen",
+                                  secrets=[SECRET])
+    joint_state = {joint: 3.0 for joint in JOINT_ORDER}
+
+    results = [source.get_action(joint_state, "pick up the pen") for _ in range(chunk_len)]
+
+    assert [version for _action, version in results] == [
+        f"mllm-hf-qwen@{expected_reason}-holding-position"] * chunk_len
+    assert all(action == joint_state for action, _version in results)
+    assert len(client.state.calls) == 1
+    assert SECRET not in json.dumps(source.last_details)
+
+
+# --- cross-provider prompt/schema identity (PIPE-02) ----------------------------------------------
+
+
+def _fake_anthropic_client():
+    calls = []
+
+    class _Stream:
+        request_id = "req_claude_fake"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get_final_message(self):
+            return SimpleNamespace(id="msg_1", model="claude-fable-5-1", stop_reason="end_turn",
+                                   stop_details=None, usage=None,
+                                   content=[SimpleNamespace(type="text", text=make_chunk_text(20))])
+
+    def stream(**kwargs):
+        calls.append(kwargs)
+        return _Stream()
+
+    return SimpleNamespace(messages=SimpleNamespace(stream=stream)), calls
+
+
+def _hf_labelled_images(content):
+    pairs = []
+    for label, image in zip(content[:-1:2], content[1:-1:2]):
+        header, data = image["image_url"]["url"].split(",", 1)
+        pairs.append((label["text"], header[len("data:"):-len(";base64")], data))
+    return pairs, content[-1]["text"]
+
+
+def _claude_labelled_images(content):
+    pairs = []
+    for label, image in zip(content[:-1:2], content[1:-1:2]):
+        pairs.append((label["text"], image["source"]["media_type"], image["source"]["data"]))
+    return pairs, content[-1]["text"]
+
+
+def test_hf_variants_and_claude_receive_identical_prompt_schema_and_images():
+    request = make_request(roles=IMAGE_ORDER)
+
+    claude_client, claude_calls = _fake_anthropic_client()
+    mllm_claude.AnthropicAdapter(claude_client, load_mllm_settings("mllm_claude")).call(request)
+    (claude_kwargs,) = claude_calls
+    claude_images, claude_user_text = _claude_labelled_images(claude_kwargs["messages"][0]["content"])
+    claude_schema = claude_kwargs["output_config"]["format"]["schema"]
+    assert len(claude_images) == len(IMAGE_ORDER)
+
+    for name in VARIANT_NAMES:
+        client = fake_chat_client([ok_raw()])
+        base_mllm_chat.OpenAIChatAdapter(client, shipped(name)).call(request)
+        (kwargs,) = client.state.calls
+        system, user = kwargs["messages"]
+        assert system["content"].encode("utf-8") == claude_kwargs["system"].encode("utf-8")
+        assert kwargs["response_format"]["json_schema"]["schema"] == claude_schema == request.schema
+        hf_images, hf_user_text = _hf_labelled_images(user["content"])
+        assert hf_images == claude_images, name
+        assert [label for label, _media, _data in hf_images] == [f"Image: {role}" for role in IMAGE_ORDER]
+        assert hf_user_text == claude_user_text == request.user_text
