@@ -85,10 +85,12 @@ def _record_grpc_build(monkeypatch):
     calls = {}
     sentinel = object()
 
-    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg, convert_fn=None):
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg, convert_fn=None, camera_map=None):
         calls.update(policy_type=policy_type, checkpoint=checkpoint, args=args,
                      camera_names=camera_names, joint_limits_deg=joint_limits_deg,
                      convert_fn=convert_fn)
+        if camera_map is not None:
+            calls["camera_map"] = camera_map
         return sentinel
 
     monkeypatch.setattr(base_grpc, "build_grpc_action_source", fake_build)
@@ -561,24 +563,25 @@ def test_shipped_config_declares_the_action_space_explicitly():
     assert config["action_space"] in relative_ee_conversion.SUPPORTED_ACTION_SPACES
 
 
-def test_shipped_config_has_no_default_checkpoint_and_records_candidates():
-    """No public SO-101 N1.7 checkpoint declares camera1, the only camera today's
-    bridge delivers, so --checkpoint is required (same as diffusion)."""
+def test_shipped_config_ships_the_candidate_with_its_own_camera_names():
+    """The candidate declares observation.images.front + .wrist, not camera1; the
+    camera_map sends exactly those names."""
     config = backends.load_backend_config(CONFIG_NAME)
 
-    assert "checkpoint" not in config
-    assert config["candidate_checkpoint"] == "tsangb34/groot-n17-so101-cube-drawer-40k"
-    assert config["candidate_verified_revision"] == "12e001ccd3f6146c50819b20384714c4903b1faa"
-    assert "camera1" in config["notes"]
+    assert config["checkpoint"] == "tsangb34/groot-n17-so101-cube-drawer-40k"
+    assert config["verified_revision"] == "12e001ccd3f6146c50819b20384714c4903b1faa"
+    assert config["camera_map"] == {"wrist": "wrist", "front": "overhead_left"}
     assert "nvidia/GR00T-N1.7-3B" in config["notes"]
 
 
-def test_shipped_config_makes_build_exit_with_the_reason(monkeypatch):
-    calls, _ = _record_grpc_build(monkeypatch)
+def test_shipped_config_build_passes_its_checkpoint_and_camera_map(monkeypatch):
+    calls, sentinel = _record_grpc_build(monkeypatch)
 
-    with pytest.raises(SystemExit, match=r"(?s)--backend groot-n17 .*checkpoint.*camera1"):
-        backends.BACKEND_REGISTRY[BACKEND](_args(checkpoint=None), {0: "wrist"}, {})
-    assert calls == {}
+    result = backends.BACKEND_REGISTRY[BACKEND](_args(checkpoint=None), {0: "wrist"}, {})
+
+    assert result is sentinel
+    assert calls["checkpoint"] == "tsangb34/groot-n17-so101-cube-drawer-40k"
+    assert calls["camera_map"] == {"wrist": "wrist", "front": "overhead_left"}
 
 
 # --- Mocked round trip (Task 2): real base_grpc + real BridgeActionSource + gate ---------
@@ -684,7 +687,7 @@ def test_cli_backend_flag_dispatches_to_real_groot_build(monkeypatch, tmp_path):
     calls = {}
     handles = backends.BackendHandles(action_source=_ClosableActionSource(), robot=_FakeBackendRobot())
 
-    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg, convert_fn=None):
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg, convert_fn=None, camera_map=None):
         calls.update(policy_type=policy_type, checkpoint=checkpoint, has_convert_fn=callable(convert_fn))
         return handles
 

@@ -361,6 +361,7 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
         stereo_camera_index=1,
         wrist_camera_index=None,
         policy_type="smolvla",
+        camera_map=None,
     ):
         calls["connect_bridge_args"] = (server_address, checkpoint, task, policy_device)
         calls["stereo_camera_index"] = stereo_camera_index
@@ -453,6 +454,7 @@ def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch,
         stereo_camera_index=1,
         wrist_camera_index=None,
         policy_type="smolvla",
+        camera_map=None,
     ):
         calls["stereo_camera_index"] = stereo_camera_index
         return fake_client
@@ -489,6 +491,80 @@ def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch,
     assert calls["stereo_camera_index"] == "0"
 
 
+def _run_main_capturing_camera_map(monkeypatch, tmp_path, extra_argv):
+    calls = {}
+
+    class FakeBridgeClient:
+        def __init__(self):
+            self.robot = object()
+            self._stereo_camera = object()
+
+        def stop(self):
+            pass
+
+    def fake_connect_bridge(server_address, checkpoint, robot_config, task, **kwargs):
+        calls["camera_map"] = kwargs.get("camera_map")
+        calls["policy_type"] = kwargs.get("policy_type")
+        return FakeBridgeClient()
+
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
+    monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
+    monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
+    monkeypatch.setattr(
+        "sys.argv",
+        ["run_vla_episode.py", "/dev/fake_port", "fake_robot_id", "--out", str(tmp_path),
+         "--camera", "0", "--server-address", "0.tcp.ngrok.io:12345", *extra_argv],
+    )
+    run_vla_episode.main()
+    return calls
+
+
+def test_backend_config_camera_map_reaches_connect_bridge(monkeypatch, tmp_path):
+    calls = _run_main_capturing_camera_map(
+        monkeypatch, tmp_path,
+        ["--backend", "groot-n17", "--checkpoint", "tsangb34/groot-n17-so101-cube-drawer-40k"],
+    )
+
+    assert calls["policy_type"] == "groot"
+    assert calls["camera_map"] == {"wrist": "wrist", "front": "overhead_left"}
+
+
+def test_camera_map_flag_overrides_the_backend_config(monkeypatch, tmp_path):
+    calls = _run_main_capturing_camera_map(
+        monkeypatch, tmp_path,
+        ["--backend", "act", "--checkpoint", "Alkatt/ACT_so101_CubePickPlace_v2",
+         "--camera-map", "camera1=wrist,camera2=overhead_right"],
+    )
+
+    assert calls["camera_map"] == {"camera1": "wrist", "camera2": "overhead_right"}
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--backend", "act", "--checkpoint", "x/y", "--camera-map", "camera1=elbow"],
+        ["--backend", "act", "--checkpoint", "x/y", "--camera-map", "camera1"],
+    ],
+)
+def test_camera_map_flag_rejects_bad_maps_at_parse_time(monkeypatch, tmp_path, argv):
+    with pytest.raises(SystemExit):
+        _run_main_capturing_camera_map(monkeypatch, tmp_path, argv)
+
+
+def test_camera_map_flag_is_refused_for_non_bridge_backends(monkeypatch, tmp_path):
+    _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["run_vla_episode.py", "/dev/fake_port", "fake_robot_id", "--out", str(tmp_path),
+         "--backend", "scripted", "--camera-map", "camera1=wrist"],
+    )
+    with pytest.raises(SystemExit):
+        run_vla_episode.main()
+
+
 def test_wrist_camera_index_threads_through_from_camera_names(monkeypatch, tmp_path):
     """The camera1 (wrist) wiring gap fix: connect_bridge() must receive
     whichever physical index _build_camera_names() positionally assigned to
@@ -518,6 +594,7 @@ def test_wrist_camera_index_threads_through_from_camera_names(monkeypatch, tmp_p
         stereo_camera_index=1,
         wrist_camera_index=None,
         policy_type="smolvla",
+        camera_map=None,
     ):
         calls["wrist_camera_index"] = wrist_camera_index
         return fake_client
@@ -564,6 +641,7 @@ def test_bridge_unreachable_writes_termination_reason_without_driving_robot(monk
         stereo_camera_index=1,
         wrist_camera_index=None,
         policy_type="smolvla",
+        camera_map=None,
     ):
         return None
 
@@ -661,6 +739,7 @@ def test_device_map_supplies_port_robot_id_camera_defaults_when_cli_args_omitted
         stereo_camera_index=1,
         wrist_camera_index=None,
         policy_type="smolvla",
+        camera_map=None,
     ):
         calls["port"] = robot_config.port
         calls["robot_id"] = robot_config.id
@@ -736,6 +815,7 @@ def test_device_map_prefers_stereo_overhead_name_over_numeric_index_when_present
         stereo_camera_index=1,
         wrist_camera_index=None,
         policy_type="smolvla",
+        camera_map=None,
     ):
         calls["stereo_camera_index"] = stereo_camera_index
         calls["wrist_camera_index"] = wrist_camera_index
@@ -804,6 +884,7 @@ def test_explicit_cli_args_override_device_map_json(monkeypatch, tmp_path):
         stereo_camera_index=1,
         wrist_camera_index=None,
         policy_type="smolvla",
+        camera_map=None,
     ):
         calls["port"] = robot_config.port
         calls["robot_id"] = robot_config.id
@@ -926,6 +1007,7 @@ def test_server_address_never_opens_overhead_camera_index_while_wrist_still_does
         stereo_camera_index=1,
         wrist_camera_index=None,
         policy_type="smolvla",
+        camera_map=None,
     ):
         return fake_client
 
@@ -1320,6 +1402,7 @@ def test_main_constructs_and_threads_depth_client_when_both_depth_flags_given(mo
         stereo_camera_index=1,
         wrist_camera_index=None,
         policy_type="smolvla",
+        camera_map=None,
     ):
         return fake_client
 

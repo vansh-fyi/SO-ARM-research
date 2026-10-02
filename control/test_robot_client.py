@@ -8,9 +8,11 @@ constructing one tries to open a real serial port via
 import queue
 import threading
 import time
+from types import SimpleNamespace
 
 import grpc
 import numpy as np
+import pytest
 
 from vla_bridge import action_contract, robot_client, safety_validator
 from vla_bridge.action_contract import JOINT_ORDER
@@ -449,6 +451,169 @@ def test_connect_bridge_defaults_policy_type_to_smolvla_when_omitted(monkeypatch
     )
 
     assert result.config.policy_type == "smolvla"
+
+
+# --- connect_bridge camera_map (gRPC bridge delivered camera1 only) ------------
+#
+# lerobot 0.6.1 fixes `lerobot_features` from `robot.observation_features` inside
+# `RobotClient.__init__`, so the stereo halves patched into the raw observation
+# afterwards used to be dropped server-side by `build_dataset_frame()`. These
+# tests drive lerobot's own server-side observation code to show every mapped
+# camera now arrives under the checkpoint's own name.
+
+_STATE_FEATURES = {f"{joint}.pos": float for joint in JOINT_ORDER}
+
+
+class FakeRobotWithWristCamera:
+    """`.robot` double whose `observation_features` / `get_observation()` mirror
+    an SOFollower with one OpenCV camera registered under `wrist_name`."""
+
+    def __init__(self, wrist_name):
+        self.wrist_name = wrist_name
+
+    @property
+    def observation_features(self):
+        features = dict(_STATE_FEATURES)
+        if self.wrist_name is not None:
+            features[self.wrist_name] = (1080, 1920, 3)
+        return features
+
+    def get_observation(self):
+        obs = {name: 1.0 for name in _STATE_FEATURES}
+        if self.wrist_name is not None:
+            obs[self.wrist_name] = np.full((1080, 1920, 3), 33, dtype=np.uint8)
+        return obs
+
+
+def _fake_robot_client_with_policy_config(robot_config_holder):
+    """`RobotClient` double that builds `policy_config.lerobot_features` exactly as
+    lerobot 0.6.1 does: from the robot's observation features at construction."""
+    from lerobot.async_inference.helpers import map_robot_keys_to_lerobot_features
+
+    class FakeRobotClient(FakeRobotClientHandshakeSucceeds):
+        def __init__(self, config):
+            super().__init__(config)
+            cameras = robot_config_holder.cameras
+            self.robot = FakeRobotWithWristCamera(next(iter(cameras), None))
+            self.policy_config = SimpleNamespace(
+                lerobot_features=map_robot_keys_to_lerobot_features(self.robot)
+            )
+
+    return FakeRobotClient
+
+
+def _connect_with_camera_map(monkeypatch, camera_map):
+    robot_config = FakeRobotConfigWithCameras()
+    monkeypatch.setattr(robot_client, "RobotClient", _fake_robot_client_with_policy_config(robot_config))
+    monkeypatch.setattr(robot_client, "StereoSplitCamera", FakeStereoSplitCamera)
+    client = robot_client.connect_bridge(
+        server_address="0.tcp.ngrok.io:12345",
+        checkpoint="someone/checkpoint",
+        robot_config=robot_config,
+        task="Pick the red cube",
+        wrist_camera_index=2,
+        camera_map=camera_map,
+    )
+    return client, robot_config
+
+
+def _server_side_image_keys(client, policy_image_names):
+    """Run lerobot 0.6.1's own server-side observation preparation on one
+    observation from `client`, as the PolicyServer would."""
+    from lerobot.async_inference.helpers import prepare_raw_observation
+    from lerobot.configs.types import FeatureType, PolicyFeature
+
+    policy_image_features = {
+        f"observation.images.{name}": PolicyFeature(type=FeatureType.VISUAL, shape=(3, 64, 64))
+        for name in policy_image_names
+    }
+    raw = client.robot.get_observation()
+    prepared = prepare_raw_observation(raw, client.policy_config.lerobot_features, policy_image_features)
+    return {key for key in prepared if key.startswith("observation.images.")}
+
+
+def test_default_camera_map_delivers_all_three_smolvla_cameras_to_the_server(monkeypatch):
+    client, robot_config = _connect_with_camera_map(monkeypatch, None)
+
+    assert set(robot_config.cameras) == {"camera1"}
+    assert _server_side_image_keys(client, ["camera1", "camera2", "camera3"]) == {
+        "observation.images.camera1",
+        "observation.images.camera2",
+        "observation.images.camera3",
+    }
+
+
+def test_custom_camera_names_reach_the_server_and_unmapped_sources_are_not_sent(monkeypatch):
+    # GR00T N1.7 SO-101 checkpoints declare e.g. `front` + `wrist`, not camera1.
+    client, robot_config = _connect_with_camera_map(monkeypatch, {"wrist": "wrist", "front": "overhead_left"})
+
+    assert set(robot_config.cameras) == {"wrist"}
+    assert robot_config.cameras["wrist"].index_or_path == 2
+    obs = client.robot.get_observation()
+    assert "camera1" not in obs and "camera2" not in obs and "camera3" not in obs
+    assert obs["front"][0, 0, 0] == 11  # left stereo half
+    assert max(obs["wrist"].shape[:2]) <= robot_client.OBSERVATION_MAX_SIDE
+    assert _server_side_image_keys(client, ["front", "wrist"]) == {
+        "observation.images.front",
+        "observation.images.wrist",
+    }
+
+
+def test_wrist_only_camera_map_sends_no_stereo_feed(monkeypatch):
+    # ACT/Diffusion do not mask missing cameras: a camera1-only checkpoint must
+    # receive exactly camera1, nothing more.
+    client, _ = _connect_with_camera_map(monkeypatch, {"camera1": "wrist"})
+
+    image_keys = [k for k in client.policy_config.lerobot_features if k.startswith("observation.images.")]
+    assert image_keys == ["observation.images.camera1"]
+    assert _server_side_image_keys(client, ["camera1"]) == {"observation.images.camera1"}
+
+
+def test_right_stereo_half_maps_to_its_own_name(monkeypatch):
+    client, _ = _connect_with_camera_map(
+        monkeypatch, {"camera1": "wrist", "top": "overhead_right"}
+    )
+
+    assert client.robot.get_observation()["top"][0, 0, 0] == 22
+
+
+@pytest.mark.parametrize(
+    "camera_map",
+    [
+        {},
+        {"camera1": "elbow"},
+        {"camera1": "wrist", "camera2": "wrist"},
+        {"observation.images.camera1": "wrist"},
+        ["camera1"],
+    ],
+)
+def test_validate_camera_map_rejects_bad_maps(camera_map):
+    with pytest.raises(ValueError):
+        robot_client.validate_camera_map(camera_map)
+
+
+def test_parse_camera_map_reads_the_cli_form():
+    assert robot_client.parse_camera_map("wrist=wrist, front=overhead_left") == {
+        "wrist": "wrist",
+        "front": "overhead_left",
+    }
+    with pytest.raises(ValueError):
+        robot_client.parse_camera_map("wrist")
+
+
+def test_connect_bridge_rejects_a_bad_camera_map_before_touching_the_robot(monkeypatch):
+    def must_not_construct(config):
+        raise AssertionError("RobotClient must not be constructed for an invalid camera_map")
+
+    monkeypatch.setattr(robot_client, "RobotClient", must_not_construct)
+    with pytest.raises(ValueError):
+        robot_client.connect_bridge(
+            server_address="0.tcp.ngrok.io:12345",
+            checkpoint="someone/checkpoint",
+            robot_config=FakeRobotConfigWithCameras(),
+            task="t",
+            camera_map={"camera1": "elbow"},
+        )
 
 
 # --- BridgeActionSource --------------------------------------------------------

@@ -623,9 +623,11 @@ def _record_grpc_build(monkeypatch):
     calls = {}
     sentinel = object()
 
-    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg):
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg, camera_map=None):
         calls.update(policy_type=policy_type, checkpoint=checkpoint, args=args,
                      camera_names=camera_names, joint_limits_deg=joint_limits_deg)
+        if camera_map is not None:
+            calls["camera_map"] = camera_map
         return sentinel
 
     monkeypatch.setattr(base_grpc, "build_grpc_action_source", fake_build)
@@ -669,9 +671,10 @@ def test_smolvla_backend_without_any_checkpoint_exits_before_connecting(monkeypa
 
 def test_shipped_smolvla_config_names_the_production_checkpoint():
     # Verified live on the HF Hub (2026-10-01): public, lerobot "type": "smolvla",
-    # camera1/camera2/camera3 inputs matching connect_bridge()'s wiring.
+    # camera1/camera2/camera3 inputs, all three now actually delivered.
     assert backends.load_backend_config("smolvla") == {
-        "checkpoint": "victorvanhalst/smolvla_so101_cube"
+        "checkpoint": "victorvanhalst/smolvla_so101_cube",
+        "camera_map": {"camera1": "wrist", "camera2": "overhead_left", "camera3": "overhead_right"},
     }
 
 

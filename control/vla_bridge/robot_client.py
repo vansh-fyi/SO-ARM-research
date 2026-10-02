@@ -35,6 +35,7 @@ partner that will never arrive.
 """
 
 import queue
+import re
 import threading
 import time
 from typing import Any
@@ -48,7 +49,7 @@ from lerobot.async_inference.robot_client import RobotClient
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 
 from vla_bridge import safety_validator
-from vla_bridge.stereo_camera import StereoSplitCamera
+from vla_bridge.stereo_camera import SPLIT_COL, STEREO_HEIGHT, StereoSplitCamera
 
 # Gap 3 (blocker-severity, `12-UAT.md`): the vendored `lerobot` library's own
 # `must_go`/`action_queue`-empty recovery path is not guaranteed to converge
@@ -100,6 +101,59 @@ def _downsize_for_transport(image, max_side: int = OBSERVATION_MAX_SIDE):
     return cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
 
 
+# The physical camera feeds this rig can deliver to a gRPC-bridge policy:
+# the wrist USB camera, and the AR0144's two split-stereo overhead halves.
+CAMERA_SOURCES = ("wrist", "overhead_left", "overhead_right")
+
+# Checkpoint camera name -> physical source. This is the SmolVLA wiring from
+# `policy_server_launch.md` (camera1 = wrist, camera2/camera3 = stereo halves),
+# and the default when a backend declares no `camera_map`.
+DEFAULT_CAMERA_MAP = {"camera1": "wrist", "camera2": "overhead_left", "camera3": "overhead_right"}
+
+_CAMERA_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
+
+
+def validate_camera_map(camera_map) -> dict[str, str]:
+    """Return `camera_map` as a plain dict, or raise ValueError.
+
+    Keys are the checkpoint's camera names: the `<name>` in its
+    `observation.images.<name>` input features. Values are physical sources
+    from `CAMERA_SOURCES`, each used at most once.
+    """
+    if not isinstance(camera_map, dict) or not camera_map:
+        raise ValueError(f"camera_map must be a non-empty dict, got {camera_map!r}")
+    seen = set()
+    for name, source in camera_map.items():
+        if not isinstance(name, str) or not _CAMERA_NAME_RE.match(name):
+            raise ValueError(f"camera_map key {name!r} is not a valid camera name (letters, digits, _)")
+        if source not in CAMERA_SOURCES:
+            raise ValueError(f"camera_map[{name!r}] = {source!r}; expected one of {CAMERA_SOURCES}")
+        if source in seen:
+            raise ValueError(f"camera_map maps physical source {source!r} to more than one name")
+        seen.add(source)
+    return dict(camera_map)
+
+
+def parse_camera_map(text: str) -> dict[str, str]:
+    """Parse the `--camera-map` CLI form `name=source,name=source`."""
+    pairs = [p.strip() for p in text.split(",") if p.strip()]
+    camera_map = {}
+    for pair in pairs:
+        name, sep, source = pair.partition("=")
+        if not sep:
+            raise ValueError(f"--camera-map entry {pair!r} is not name=source")
+        camera_map[name.strip()] = source.strip()
+    return validate_camera_map(camera_map)
+
+
+def _downsized_shape(height: int, width: int, max_side: int = OBSERVATION_MAX_SIDE) -> tuple[int, int, int]:
+    """The (H, W, 3) shape `_downsize_for_transport()` produces for an HxW frame."""
+    scale = min(1.0, max_side / max(height, width))
+    if scale >= 1.0:
+        return (height, width, 3)
+    return (max(1, round(height * scale)), max(1, round(width * scale)), 3)
+
+
 def connect_bridge(
     server_address: str,
     checkpoint: str,
@@ -111,8 +165,23 @@ def connect_bridge(
     policy_device: str = "cuda",
     stereo_camera_index: int | str = 1,
     wrist_camera_index: int | None = None,
+    camera_map: dict[str, str] | None = None,
 ):
     """Connect to a Colab-hosted `PolicyServer` bridge.
+
+    `camera_map` (checkpoint camera name -> physical source in
+    `CAMERA_SOURCES`) decides which camera feeds reach the policy and under
+    which `observation.images.<name>` keys. It defaults to
+    `DEFAULT_CAMERA_MAP` (SmolVLA's camera1/2/3 wiring). The wrist source is
+    registered under its mapped name in `robot_config.cameras`; the stereo
+    sources are registered in the handshake's `lerobot_features` (see
+    `_wire_stereo_split_cameras()`). Before this, only `camera1` ever
+    reached the server: lerobot fixes `lerobot_features` from
+    `robot.observation_features` inside `RobotClient.__init__`, so the stereo
+    halves patched into the raw observation afterwards were dropped by
+    `build_dataset_frame()` server-side. A source that isn't mapped is never
+    sent, so a policy that does not mask missing cameras (ACT, Diffusion,
+    GR00T N1.7) only ever receives the names it declares.
 
     Constructing `RobotClient(config)` connects the PHYSICAL robot as a side
     effect inside its own `__init__` -- the returned client's `.robot`
@@ -176,8 +245,10 @@ def connect_bridge(
     (never an exception) if the bridge handshake fails -- calling `.stop()`
     on the half-connected client first, for cleanup.
     """
-    if wrist_camera_index is not None:
-        robot_config.cameras["camera1"] = OpenCVCameraConfig(index_or_path=wrist_camera_index)
+    camera_map = validate_camera_map(DEFAULT_CAMERA_MAP if camera_map is None else camera_map)
+    wrist_name = next((name for name, source in camera_map.items() if source == "wrist"), None)
+    if wrist_camera_index is not None and wrist_name is not None:
+        robot_config.cameras[wrist_name] = OpenCVCameraConfig(index_or_path=wrist_camera_index)
 
     config = RobotClientConfig(
         policy_type=policy_type,
@@ -190,7 +261,7 @@ def connect_bridge(
         chunk_size_threshold=chunk_size_threshold,
     )
     client = RobotClient(config)
-    _wire_stereo_split_cameras(client, stereo_camera_index=stereo_camera_index)
+    _wire_stereo_split_cameras(client, stereo_camera_index=stereo_camera_index, camera_map=camera_map)
 
     if not client.start():
         client.stop()
@@ -204,11 +275,16 @@ def connect_bridge(
     return client
 
 
-def _wire_stereo_split_cameras(client, stereo_camera_index: int | str = 1, stereo_camera=None) -> None:
+def _wire_stereo_split_cameras(
+    client,
+    stereo_camera_index: int | str = 1,
+    stereo_camera=None,
+    camera_map: dict[str, str] | None = None,
+) -> None:
     """Make every observation this client's `control_loop_observation()`
-    sends include real `camera2`/`camera3` split-stereo feeds, sourced from
-    a single shared `StereoSplitCamera` -- not two independent
-    `cv2.VideoCapture(1)` opens of the same physical AR0144 device.
+    sends carry the camera feeds `camera_map` names, sourced from a single
+    shared `StereoSplitCamera` -- not two independent `cv2.VideoCapture(1)`
+    opens of the same physical AR0144 device.
 
     `lerobot.cameras.camera.CameraConfig` IS a `draccus.ChoiceRegistry` (a
     custom camera `type` plugin route genuinely exists -- confirmed by
@@ -224,25 +300,55 @@ def _wire_stereo_split_cameras(client, stereo_camera_index: int | str = 1, stere
     directly-testable mechanism that's actually scriptable here, per
     `policy_server_launch.md`'s "observation-dict patch" option.
 
+    Patching the raw observation is not enough on its own: the server keeps
+    only the keys in the handshake's `lerobot_features`, which `RobotClient`
+    builds from `robot.observation_features` before this runs. So each
+    stereo-mapped name is also added to `client.policy_config.lerobot_features`
+    as an image feature (installed lerobot 0.6.1:
+    `helpers.make_lerobot_observation()` -> `build_dataset_frame()` reads
+    `robot_obs[name]` for every `observation.images.<name>` feature). The
+    feature shape is metadata only (the server resizes to the policy's own
+    input shape); it is set to the downsized stereo-half shape.
+
     `stereo_camera` is an injectable override (a already-constructed
     `StereoSplitCamera`-shaped double) so tests can verify this wiring
     without opening a real cv2 device.
     """
+    camera_map = validate_camera_map(DEFAULT_CAMERA_MAP if camera_map is None else camera_map)
+    wrist_name = next((name for name, source in camera_map.items() if source == "wrist"), None)
+    stereo_names = {name: source for name, source in camera_map.items() if source != "wrist"}
+
     stereo = stereo_camera if stereo_camera is not None else StereoSplitCamera(index=stereo_camera_index)
     original_get_observation = client.robot.get_observation
 
     def get_observation_with_stereo_split():
         obs = original_get_observation()
-        if "camera1" in obs:
-            obs["camera1"] = _downsize_for_transport(obs["camera1"])
-        obs["camera2"] = _downsize_for_transport(stereo.read_left())
-        obs["camera3"] = _downsize_for_transport(stereo.read_right())
+        if wrist_name is not None and wrist_name in obs:
+            obs[wrist_name] = _downsize_for_transport(obs[wrist_name])
+        if stereo_names:
+            # Read both halves every time: StereoSplitCamera grabs one
+            # 1600x600 frame and serves its halves from that single read.
+            halves = {"overhead_left": stereo.read_left(), "overhead_right": stereo.read_right()}
+            for name, source in stereo_names.items():
+                obs[name] = _downsize_for_transport(halves[source])
         return obs
 
     client.robot.get_observation = get_observation_with_stereo_split
     # Keep a reference so the StereoSplitCamera (and its open cv2 device) isn't
     # garbage-collected once this function returns.
     client._stereo_camera = stereo
+    client._camera_map = camera_map
+
+    features = getattr(getattr(client, "policy_config", None), "lerobot_features", None)
+    if isinstance(features, dict):
+        shape = _downsized_shape(STEREO_HEIGHT, SPLIT_COL)
+        for name in stereo_names:
+            features[f"observation.images.{name}"] = {
+                "dtype": "image",
+                "shape": shape,
+                "names": ["height", "width", "channels"],
+                "info": {"is_depth_map": False},
+            }
 
 
 def pop_validated_action(

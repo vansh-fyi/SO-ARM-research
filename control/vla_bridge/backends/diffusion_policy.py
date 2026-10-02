@@ -25,14 +25,11 @@ source, 2026-10-01):
   which applies PR #3886's fix before starting the same `PolicyServer`. See
   `policy_server.ipynb`'s Diffusion Policy section.
 - **Diffusion Policy does not mask missing cameras.** `predict_action_chunk()`
-  stacks `[batch[key] for key in self.config.image_features]`, like ACT. The
-  bridge only delivers `observation.images.camera1` (see `pi0.py`, `act.py`
-  and `deferred-items.md`), so a usable checkpoint must declare `camera1` as
-  its ONLY image key. No HF Hub Diffusion Policy checkpoint does (415
-  `"type": "diffusion"` configs scanned, see `checkpoint_candidates.md`). So
-  no default checkpoint is shipped, and `--checkpoint` is required. The config
-  records the candidate that becomes loadable once the bridge registers the
-  camera keys a checkpoint declares.
+  stacks `[batch[key] for key in self.config.image_features]`, like ACT. So the
+  bridge must send exactly the declared cameras: the shipped SO-101 checkpoint
+  declares `camera1` + `camera2`, and `backend_configs/diffusion_policy.json`'s
+  `camera_map` sends our wrist frame and the left AR0144 overhead half under
+  those names. Another checkpoint needs a matching `--camera-map`.
 - Diffusion Policy ignores the language instruction. `task` still travels in
   the observation, but nothing in its preprocessor or model reads it.
 
@@ -50,16 +47,16 @@ CONFIG_NAME = "diffusion_policy"
 @register_grpc_backend(POLICY_TYPE)
 def build(args, camera_names: dict[int, str], joint_limits_deg: dict) -> "BackendHandles | None":
     """Returns `None` if the bridge is unreachable (see `build_grpc_action_source`)."""
-    checkpoint = args.checkpoint or (load_backend_config(CONFIG_NAME) or {}).get("checkpoint")
+    config = load_backend_config(CONFIG_NAME) or {}
+    checkpoint = args.checkpoint or config.get("checkpoint")
     if not checkpoint:
         raise SystemExit(
             f"--backend {POLICY_TYPE} needs --checkpoint or backend_configs/{CONFIG_NAME}.json's "
-            "'checkpoint' field. None is shipped: Diffusion Policy does not mask missing cameras, "
-            "and no HF Hub Diffusion checkpoint declares camera1 as its only camera, which "
-            f"today's camera1-only gRPC bridge requires. See backend_configs/{CONFIG_NAME}.json's notes."
+            "'checkpoint' field"
         )
     return base_grpc.build_grpc_action_source(
-        POLICY_TYPE, checkpoint, args, camera_names, joint_limits_deg
+        POLICY_TYPE, checkpoint, args, camera_names, joint_limits_deg,
+        camera_map=config.get("camera_map"),
     )
 
 

@@ -49,6 +49,7 @@ def build_grpc_action_source(
     camera_names: dict[int, str],
     joint_limits_deg: dict,
     convert_fn: "Callable[[dict, dict], dict] | None" = None,
+    camera_map: "dict[str, str] | None" = None,
 ) -> "BackendHandles | None":
     """Connect the gRPC bridge for `policy_type`/`checkpoint` and wrap it.
 
@@ -64,6 +65,10 @@ def build_grpc_action_source(
 
     `convert_fn`, when given, wraps the source in `ConvertedBridgeActionSource`
     (see the module docstring for its joint-space-only scope).
+
+    Camera wiring: `args.camera_map` (the `--camera-map` CLI override) wins,
+    then the backend's own `camera_map` (from its backend config), then
+    `robot_client.DEFAULT_CAMERA_MAP`. See `robot_client.connect_bridge()`.
     """
     robot_config = SOFollowerRobotConfig(
         port=args.port,
@@ -81,6 +86,7 @@ def build_grpc_action_source(
         stereo_camera_index=args.stereo_camera_index,
         wrist_camera_index=wrist_camera_index,
         policy_type=policy_type,
+        camera_map=resolve_camera_map(args, camera_map),
     )
     if client is None:
         return None
@@ -97,6 +103,23 @@ def build_grpc_action_source(
         # the robot, closes the gRPC channel -- the pre-Phase-14 teardown.
         shutdown=client.stop,
     )
+
+
+def resolve_camera_map(args, config_camera_map: "dict[str, str] | None") -> "dict[str, str] | None":
+    """`--camera-map` beats the backend config's `camera_map`; `None` means the default.
+
+    A malformed config map exits with the config error rather than reaching
+    the robot; the CLI form is already validated at argument parsing.
+    """
+    cli_map = getattr(args, "camera_map", None)
+    if isinstance(cli_map, dict):
+        return cli_map
+    if config_camera_map is None:
+        return None
+    try:
+        return robot_client.validate_camera_map(config_camera_map)
+    except ValueError as e:
+        raise SystemExit(f"backend config camera_map: {e}") from e
 
 
 class ConvertedBridgeActionSource:
@@ -140,4 +163,4 @@ class ConvertedBridgeActionSource:
         return getattr(inner, name)
 
 
-__all__ = ["ConvertedBridgeActionSource", "build_grpc_action_source"]
+__all__ = ["ConvertedBridgeActionSource", "build_grpc_action_source", "resolve_camera_map"]

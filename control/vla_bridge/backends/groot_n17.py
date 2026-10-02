@@ -35,10 +35,11 @@ Pitfalls found on the same code path, and what this backend does about them:
 - **Cameras.** GR00T tolerates missing views (`GrootN17PackInputsStep` feeds
   whichever declared cameras arrive), but the server indexes
   `policy.config.image_features[key]` for every delivered key
-  (`async_inference/helpers.py::prepare_raw_observation`), and today's bridge
-  delivers only `observation.images.camera1`. No public SO-101 N1.7 checkpoint
-  declares `camera1`, so no default checkpoint ships; `--checkpoint` is required
-  until the bridge follow-up in `deferred-items.md` lands.
+  (`async_inference/helpers.py::prepare_raw_observation`), so the bridge must
+  send only names the checkpoint declares. SO-101 N1.7 checkpoints name their
+  cameras freely (the default declares `front` + `wrist`), so
+  `backend_configs/groot_n17.json`'s `camera_map` maps our feeds onto those
+  names, and `--camera-map` does the same for any other checkpoint.
 
 Actions flow through the unchanged `BridgeActionSource` ->
 `pop_validated_action()` -> `safety_validator.validate_action()`, then the
@@ -85,12 +86,11 @@ def build(args, camera_names: dict[int, str], joint_limits_deg: dict) -> "Backen
     if not checkpoint:
         raise SystemExit(
             f"--backend {BACKEND_NAME} needs --checkpoint or backend_configs/{CONFIG_NAME}.json's "
-            "'checkpoint' field. None is shipped: no public SO-101 GR00T N1.7 checkpoint declares "
-            "camera1, the only camera today's gRPC bridge delivers. See "
-            f"backend_configs/{CONFIG_NAME}.json's notes."
+            "'checkpoint' field"
         )
     return base_grpc.build_grpc_action_source(
-        POLICY_TYPE, checkpoint, args, camera_names, joint_limits_deg, convert_fn=convert_fn
+        POLICY_TYPE, checkpoint, args, camera_names, joint_limits_deg, convert_fn=convert_fn,
+        camera_map=config.get("camera_map"),
     )
 
 

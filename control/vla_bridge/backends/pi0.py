@@ -12,15 +12,12 @@ source, 2026-10-01):
   `"pi05"`. The server resolves them with `get_policy_class()` to
   `PI0Policy` / `PI05Policy`, then loads the checkpoint's own
   `policy_preprocessor.json` / `policy_postprocessor.json`.
-- **Only `observation.images.camera1` reaches the policy.** `RobotClient`
-  builds `lerobot_features` from `robot.observation_features`, which lists
-  only the cameras in `robot_config.cameras`: the `camera1` wrist entry that
-  `connect_bridge()` adds. The stereo halves (`camera2`/`camera3`) that
-  `_wire_stereo_split_cameras()` patches into the raw observation are
-  dropped by `build_dataset_frame()` on the server. A checkpoint therefore
-  must declare `observation.images.camera1`, or `prepare_raw_observation()`
-  raises KeyError on every observation. Any other camera it declares
-  arrives missing and pi0/pi05 mask it as an empty camera.
+- **Cameras.** The bridge sends the camera names in the backend config's
+  `camera_map` (or `--camera-map`): the shipped checkpoints declare `camera1` +
+  `camera2`, which get our wrist frame and the left AR0144 overhead half. A
+  declared camera that is not sent is masked by pi0/pi05 as an empty camera,
+  but a sent name the checkpoint does not declare is a KeyError in
+  `prepare_raw_observation()`, so the map must only use declared names.
 - pi0/pi05 truncate the predicted chunk to the checkpoint's
   `output_features["action"]` dim (6 for the shipped checkpoints), and
   `actions_per_chunk=50` stays within their `chunk_size=50`.
@@ -49,14 +46,16 @@ from vla_bridge.backends import BackendHandles, base_grpc, load_backend_config, 
 def _make_build(policy_type: str):
     def build(args, camera_names: dict[int, str], joint_limits_deg: dict) -> "BackendHandles | None":
         """Returns `None` if the bridge is unreachable (see `build_grpc_action_source`)."""
-        checkpoint = args.checkpoint or (load_backend_config(policy_type) or {}).get("checkpoint")
+        config = load_backend_config(policy_type) or {}
+        checkpoint = args.checkpoint or config.get("checkpoint")
         if not checkpoint:
             raise SystemExit(
                 f"--backend {policy_type} needs --checkpoint or backend_configs/{policy_type}.json's "
                 "'checkpoint' field"
             )
         return base_grpc.build_grpc_action_source(
-            policy_type, checkpoint, args, camera_names, joint_limits_deg
+            policy_type, checkpoint, args, camera_names, joint_limits_deg,
+            camera_map=config.get("camera_map"),
         )
 
     build.__name__ = build.__qualname__ = f"build_{policy_type}"

@@ -1,1 +1,8 @@
-{"checkpoint": "victorvanhalst/smolvla_so101_cube"}
+{
+  "checkpoint": "victorvanhalst/smolvla_so101_cube",
+  "camera_map": {
+    "camera1": "wrist",
+    "camera2": "overhead_left",
+    "camera3": "overhead_right"
+  }
+}

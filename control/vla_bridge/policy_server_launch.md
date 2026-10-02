@@ -818,11 +818,12 @@ differences. Both were verified against the installed `lerobot==0.6.1` source.
 
 **Status:** not yet run on Colab.
 
-**Checkpoint:** no default is shipped. Diffusion Policy doesn't mask missing cameras, and no HF
-Hub Diffusion checkpoint declares `camera1` as its only camera, which today's camera1-only bridge
-requires. See `backend_configs/diffusion_policy.json` and `checkpoint_candidates.md`. Pass a
-checkpoint whose ONLY image key is `observation.images.camera1`, or wait for the bridge
-camera-key follow-up in `deferred-items.md`.
+**Checkpoint:** `hrl7/so101-touch-diffusion-l4` (camera1 + camera2), from
+`backend_configs/diffusion_policy.json`. Diffusion Policy doesn't mask missing cameras, so the
+bridge must send exactly the cameras the checkpoint declares: the config's `camera_map` sends the
+wrist frame as `camera1` and the left AR0144 overhead half as `camera2`. For another checkpoint,
+pass `--camera-map name=source,...` with its own camera names (sources: `wrist`,
+`overhead_left`, `overhead_right`); `check_checkpoint.py --backend diffusion` suggests one.
 
 Run Steps 1, 2 and the token/torchaudio cells of Step 3 as usual, then the two cells below
 **instead of** Step 3's launch cell. A T4 is enough: the models are a ResNet-18 plus a 1-D U-Net.
@@ -895,7 +896,7 @@ Then open the Step 4 tunnel, and run this locally in `control/`:
 
 ```bash
 .venv/bin/python run_vla_episode.py <port> <robot_id> --backend diffusion \
-  --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint <camera1-only diffusion checkpoint> \
+  --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint hrl7/so101-touch-diffusion-l4 \
   --out outputs/diffusion_UNIQUE_NAME --max-steps 20
 ```
 
@@ -935,11 +936,11 @@ converted relative-to-absolute on the laptop (see `backends/relative_ee_conversi
 
 **Status:** not yet run on Colab.
 
-**Checkpoint:** no default is shipped. No public SO-101 N1.7 checkpoint declares `camera1`, the only
-camera today's bridge delivers, so the server raises `KeyError: 'observation.images.camera1'`
-until the bridge camera-key follow-up in `deferred-items.md` lands. The recorded candidate is
-`tsangb34/groot-n17-so101-cube-drawer-40k` (front + wrist, relative joints, degree units). See
-`backend_configs/groot_n17.json`.
+**Checkpoint:** `tsangb34/groot-n17-so101-cube-drawer-40k` (front + wrist, relative joints,
+degree units), from `backend_configs/groot_n17.json`. Its `camera_map` sends the wrist frame as
+`wrist` and the left AR0144 overhead half as `front`. SO-101 N1.7 checkpoints name their cameras
+differently, so another checkpoint needs `--camera-map name=source,...` matching its own
+`observation.images.<name>` keys.
 
 Run Steps 1, 2 and the token/torchaudio cells of Step 3 as usual, then the cells below
 **instead of** Step 3's launch cell.
@@ -1008,7 +1009,7 @@ Then open the Step 4 tunnel, and run this locally in `control/`:
 
 ```bash
 .venv/bin/python run_vla_episode.py <port> <robot_id> --backend groot-n17 \
-  --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint <SO-101 N1.7 checkpoint declaring camera1> \
+  --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint tsangb34/groot-n17-so101-cube-drawer-40k \
   --out outputs/groot_n17_UNIQUE_NAME --max-steps 20
 ```
 
@@ -1017,7 +1018,7 @@ A healthy server log shows `Policy type: groot`, then
 `(GR00T whole-chunk decode)` timing lines. Failures look different:
 - `Error in StreamActions: GrootN17ActionDecodeStep cannot decode native relative actions one step
   at a time`: the stock server is running instead of the patched launcher.
-- `KeyError: 'observation.images.camera1'`: the checkpoint doesn't declare the bridge's camera.
+- `KeyError: 'observation.images.<name>'`: the `camera_map` doesn't match the checkpoint's camera names; pass `--camera-map`.
 - A 401/403 or "gated repo" error for `nvidia/Cosmos-Reason2-2B`: accept its license first.
 
 On the robot, watch for the known N1.7 SO-ARM failure (14-RESEARCH.md Pitfall 1): every joint

@@ -19,8 +19,9 @@ For each candidate repo id this script:
    missing, reporting the file listing instead of crashing.
 4. Judges two kinds of fit: the Phase 11 camera-count fit against the
    2-physical-camera rig, and the gRPC-bridge key fit (see `_bridge_key_fit`):
-   the bridge only ever delivers `observation.images.camera1` to the policy
-   server, so a checkpoint without that key fails server-side.
+   the bridge can deliver up to three feeds (wrist + two AR0144 overhead
+   halves) under whatever names a backend's `camera_map` gives them, and
+   suggests a `camera_map` for each checkpoint.
 
 Writes ONLY that backend's section of
 `control/vla_bridge/checkpoint_candidates.md`, between
@@ -122,15 +123,11 @@ OUT_PATH = Path(__file__).resolve().parent / "checkpoint_candidates.md"
 
 _SAFE_BACKEND_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
-# The key every gRPC-bridge checkpoint must declare. Installed lerobot 0.6.1:
-# `RobotClient.__init__` builds `lerobot_features` from `robot.observation_features`,
-# which only lists cameras in `robot_config.cameras` -- just `camera1` (wrist,
-# added by `connect_bridge()`). The `camera2`/`camera3` stereo halves that
-# `_wire_stereo_split_cameras()` adds to the raw observation are then dropped by
-# `build_dataset_frame()` on the server. And `prepare_raw_observation()` indexes
-# `policy_image_features[key]` for every key that does arrive, so a checkpoint
-# without `observation.images.camera1` raises KeyError on every inference.
-BRIDGE_IMAGE_KEY = "observation.images.camera1"
+# The physical feeds the gRPC bridge can deliver, under any checkpoint names
+# (`robot_client.connect_bridge(camera_map=...)`). Kept in sync with
+# `robot_client.CAMERA_SOURCES`; not imported so this script stays runnable
+# without the lerobot/cv2 stack.
+BRIDGE_CAMERA_SOURCES = ("wrist", "overhead_left", "overhead_right")
 
 
 def _oneline(text: str) -> str:
@@ -304,27 +301,67 @@ def _rig_fit_judgment(camera_summary: str) -> str:
     return f"UNCLEAR FIT — expects {n} camera inputs, does not cleanly map to this project's 2-physical-camera rig"
 
 
-def _bridge_key_fit(image_keys: list[str] | None, masks_missing_cameras: bool = True) -> str:
-    """Will the gRPC bridge's observation load on this checkpoint at all?
+_IMAGE_PREFIX = "observation.images."
 
-    Only `observation.images.camera1` (wrist) reaches the policy server (see
-    `BRIDGE_IMAGE_KEY`). The checkpoint must declare it. Any other declared
-    camera arrives missing: pi0/pi05/SmolVLA mask it as an empty camera, but a
-    policy that does not mask (`masks_missing_cameras=False`: ACT, Diffusion) raises
-    KeyError on it, so for those camera1 must be the ONLY image key.
+
+def _bridge_camera_names(image_keys: list[str]) -> list[str]:
+    """Declared camera names the bridge could feed: `observation.images.<name>`
+    keys, minus pi0/pi05's `empty_camera_*` placeholders (masked on purpose)."""
+    return [
+        k.removeprefix(_IMAGE_PREFIX)
+        for k in image_keys
+        if k.startswith(_IMAGE_PREFIX) and not k.removeprefix(_IMAGE_PREFIX).startswith("empty_camera")
+    ]
+
+
+def suggest_camera_map(image_keys: list[str]) -> dict[str, str]:
+    """A starting `camera_map` for these declared image keys.
+
+    A name containing `wrist`, else `camera1`, gets the wrist feed; the other
+    names get the overhead halves in declaration order, and the wrist feed if
+    it is still free. At most three names are mapped. Training viewpoints are
+    rarely documented, so this is a guess to confirm on hardware, not a
+    verified mapping.
+    """
+    names = _bridge_camera_names(image_keys)
+    wrist = next((n for n in names if "wrist" in n.lower()), "camera1" if "camera1" in names else None)
+    mapping = {wrist: "wrist"} if wrist is not None else {}
+    free = [src for src in BRIDGE_CAMERA_SOURCES if src not in mapping.values()]
+    free = [src for src in free if src != "wrist"] + [src for src in free if src == "wrist"]
+    for name in names:
+        if name in mapping:
+            continue
+        if not free:
+            break
+        mapping[name] = free.pop(0)
+    return mapping
+
+
+def _bridge_key_fit(image_keys: list[str] | None, masks_missing_cameras: bool = True) -> str:
+    """Can the gRPC bridge feed every camera this checkpoint declares?
+
+    The bridge sends the camera names a backend's `camera_map` lists, from up
+    to three physical feeds (`BRIDGE_CAMERA_SOURCES`). A checkpoint declaring
+    more cameras than that gets the rest missing: pi0/pi05/SmolVLA mask them
+    as empty cameras, but a policy that does not mask
+    (`masks_missing_cameras=False`: ACT, Diffusion, GR00T N1.7) raises
+    KeyError on every observation.
     """
     if not image_keys:
         return "UNKNOWN — no image keys found in config.json"
-    if BRIDGE_IMAGE_KEY not in image_keys:
-        return "INCOMPATIBLE — no observation.images.camera1; PolicyServer raises KeyError on every observation"
-    others = [k for k in image_keys if k != BRIDGE_IMAGE_KEY]
-    if others and not masks_missing_cameras:
+    mapping = suggest_camera_map(image_keys)
+    if not mapping:
+        return f"INCOMPATIBLE — no observation.images.<name> camera keys the bridge can feed: {image_keys}"
+    unmapped = [_IMAGE_PREFIX + n for n in _bridge_camera_names(image_keys) if n not in mapping]
+    if unmapped and not masks_missing_cameras:
         return (
-            f"INCOMPATIBLE — declares camera1 but also {others}, which the bridge never delivers; "
-            "this policy does not mask missing cameras, so predict_action_chunk raises KeyError on every observation"
+            f"INCOMPATIBLE — declares {len(image_keys)} cameras; the bridge has only "
+            f"{len(BRIDGE_CAMERA_SOURCES)} feeds, so {unmapped} would be missing, and this policy "
+            "does not mask missing cameras (predict_action_chunk raises KeyError on every observation)"
         )
-    note = f"; {len(others)} other key(s) arrive missing (masked)" if others else ""
-    return f"OK — declares camera1, which receives our wrist frame{note}"
+    camera_map = ",".join(f"{name}={source}" for name, source in mapping.items())
+    note = f"; {len(unmapped)} more key(s) arrive missing (masked)" if unmapped else ""
+    return f"OK — suggested --camera-map {camera_map}{note}"
 
 
 def _section_markers(backend: str) -> tuple[str, str]:

@@ -36,9 +36,11 @@ def _record_grpc_build(monkeypatch):
     calls = {}
     sentinel = object()
 
-    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg):
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg, camera_map=None):
         calls.update(policy_type=policy_type, checkpoint=checkpoint, args=args,
                      camera_names=camera_names, joint_limits_deg=joint_limits_deg)
+        if camera_map is not None:
+            calls["camera_map"] = camera_map
         return sentinel
 
     monkeypatch.setattr(base_grpc, "build_grpc_action_source", fake_build)
@@ -225,7 +227,7 @@ def test_cli_backend_flag_dispatches_to_real_act_build(monkeypatch, tmp_path):
     calls = {}
     handles = BackendHandles(action_source=_ClosableActionSource(), robot=_FakeBackendRobot())
 
-    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg):
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg, camera_map=None):
         calls.update(policy_type=policy_type, checkpoint=checkpoint)
         return handles
 

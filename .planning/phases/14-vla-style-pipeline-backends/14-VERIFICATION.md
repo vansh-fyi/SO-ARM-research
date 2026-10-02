@@ -1,13 +1,20 @@
 ---
 phase: 14-vla-style-pipeline-backends
 verified: 2026-10-01T21:49:39Z
-status: gaps_found
-score: 20/36 must-haves verified (2 failed, 14 uncertain / human-needed)
+status: human_needed
+score: 22/36 must-haves verified (0 failed, 14 uncertain / human-needed); 2 gaps closed 2026-10-02
+re_verified: 2026-10-02T00:00:00Z
 behavior_unverified: 0
 overrides_applied: 0
 gaps:
   - truth: "SC2 (Diffusion Policy, VLAB-12): Diffusion Policy drives the real SO-ARM101 through the VLA-style pattern for at least one live observed action"
-    status: failed
+    status: resolved
+    resolution: >-
+      Closed 2026-10-02 by a direct fix: connect_bridge(camera_map=...) registers the wrist feed under its mapped
+      name and adds every stereo-mapped name to the handshake's lerobot_features, so the server receives exactly the
+      checkpoint's declared cameras. diffusion_policy.json now ships hrl7/so101-touch-diffusion-l4 with camera_map
+      camera1=wrist, camera2=overhead_left. test_robot_client.py runs lerobot's own prepare_raw_observation() on the
+      bridged observation; with the fix removed those tests fail. Live run still pending (human_verification).
     reason: >-
       Unreachable with the code as shipped. The gRPC bridge registers only observation.images.camera1 in
       lerobot_features (robot_client.connect_bridge adds only cameras["camera1"]; camera2/camera3 are injected into
@@ -28,7 +35,11 @@ gaps:
       - "Then select a Diffusion checkpoint (e.g. hrl7/so101-touch-diffusion-l4 or a wrist-keyed one), set it in diffusion_policy.json, and re-verify SmolVLA on hardware (the fix changes the live SmolVLA path)"
       - "Alternative without bridge code: train/obtain a camera1-only SO-101 Diffusion checkpoint"
   - truth: "SC2 (GR00T N1.7, VLAB-10): GR00T N1.7 drives the real SO-ARM101 through the VLA-style pattern for at least one live observed action"
-    status: failed
+    status: resolved
+    resolution: >-
+      Closed 2026-10-02 by the same camera_map fix. groot_n17.json now ships
+      tsangb34/groot-n17-so101-cube-drawer-40k with camera_map wrist=wrist, front=overhead_left; any other N1.7
+      checkpoint uses --camera-map with its own camera names. Live run still pending (human_verification).
     reason: >-
       Unreachable with the code as shipped. Same root cause as Diffusion Policy: the bridge delivers only
       observation.images.camera1, and the PolicyServer's prepare_raw_observation() indexes
@@ -95,9 +106,12 @@ human_verification:
   - test: "HTTP/Gemini lanes: wrist USB camera tolerates two independent cv2.VideoCapture opens (backend's own + run_vla_episode's IOLogger open)"
     expected: "Both opens succeed; wrist frames appear in the POSTed payload/ER request and in episode.jsonl"
     why_human: "Physical device behavior (14-01, carried by 14-03/08/09/10/11/12/13)"
-  - test: "Diffusion Policy and GR00T N1.7 live runs, once the bridge camera-key gap is closed (see gaps)"
-    expected: "Patched launcher log lines then 'Policy type: diffusion' / 'Policy type: groot'; at least one validated non-held action; GR00T: no joint pinned at its per-step clamp in the first steps"
-    why_human: "Blocked today; listed so it is not lost (14-06, 14-07)"
+  - test: "Diffusion Policy and GR00T N1.7 live runs (bridge camera gap closed 2026-10-02): --backend diffusion --checkpoint hrl7/so101-touch-diffusion-l4 via diffusion_policy_server.py, and --backend groot-n17 --checkpoint tsangb34/groot-n17-so101-cube-drawer-40k via groot_n17_server.py"
+    expected: "Patched launcher log lines then 'Policy type: diffusion' / 'Policy type: groot'; no KeyError on observation.images.*; at least one validated non-held action; GR00T: no joint pinned at its per-step clamp in the first steps"
+    why_human: "Needs robot, cameras and a Colab GPU (14-06, 14-07)"
+  - test: "Overhead-camera viewpoint check for checkpoints whose second camera is mapped to an AR0144 overhead half (pi0/pi05 camera2, Diffusion camera2, GR00T N1.7 front, SmolVLA camera2/camera3)"
+    expected: "Behaviour is task-directed; if not, try --camera-map with overhead_right or swap names"
+    why_human: "Training-camera viewpoints of these community checkpoints are undocumented; the mapping is an assumption"
   - test: "Colab install sanity for the patched launchers: diffusers==0.39.0 leaves torch unchanged and DDPMScheduler imports; lerobot[async,groot]==0.6.1 leaves torch unchanged with transformers 5.4-5.6 and GrootPolicy imports"
     expected: "Imports succeed, torch unchanged"
     why_human: "Needs a live Colab runtime (14-06, 14-07)"
@@ -107,7 +121,7 @@ human_verification:
 
 **Phase Goal:** A consistent VLA-style `ActionSource` pattern exists that the already-working SmolVLA integration fits without modification, and twelve new native-action/imitation-learning backends (Gemini Robotics, Gemini Robotics 2, π0/π0.5, Wall-X, ACT, OpenVLA, OpenVLA-OFT, Octo, RDT-1B, GR00T N1.7, GR00T N1.5, Diffusion Policy) each drive the real SO-ARM101 through it, reusing the shared control loop, safety validator, and I/O logger unchanged.
 **Verified:** 2026-10-01T21:49:39Z
-**Status:** gaps_found
+**Status:** human_needed (gaps closed 2026-10-02; see Gap Closure)
 **Re-verification:** No. This is the initial verification; no previous VERIFICATION.md existed.
 
 ## MVP-Mode Discrepancy (WARNING)
@@ -275,6 +289,17 @@ For both backends, `--backend` is wired and unit-tested, but SC2 ("drives the re
 - **(c) Train or obtain camera1-keyed** Diffusion and N1.7 SO-101 checkpoints. This needs no bridge code but is a training-budget decision.
 
 Separately, the other ten backends and SmolVLA are fully implemented and wired through the unchanged safety and logging path. They only await live hardware/GPU confirmation, which nothing in this environment can provide.
+
+### Gap Closure (2026-10-02)
+
+Both gaps above were closed by one direct fix (user-requested, outside a GSD gap plan):
+
+- `robot_client.connect_bridge(camera_map=...)` maps checkpoint camera names to physical feeds (`wrist`, `overhead_left`, `overhead_right`). The wrist feed is registered under its mapped name in `robot_config.cameras`; each stereo-mapped name is added to `client.policy_config.lerobot_features` before the handshake. Unmapped feeds are never sent.
+- Each gRPC backend config carries a `camera_map`; `--camera-map name=source,...` overrides it. `check_checkpoint.py` now suggests a map per checkpoint instead of requiring `camera1`.
+- Defaults: SmolVLA camera1/2/3 (stereo now really delivered), pi0/pi05 camera1+camera2, ACT camera1, Diffusion `hrl7/so101-touch-diffusion-l4` camera1+camera2, GR00T N1.7 `tsangb34/groot-n17-so101-cube-drawer-40k` wrist+front.
+- Evidence: full suite 1003 passed; `test_robot_client.py` feeds the bridged observation through lerobot 0.6.1's `prepare_raw_observation()` and fails if the feature registration is removed.
+
+SC2 now awaits live hardware for all 12 backends, including a SmolVLA regression run since its live path changed.
 
 ---
 

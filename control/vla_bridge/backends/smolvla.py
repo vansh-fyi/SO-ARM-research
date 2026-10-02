@@ -20,14 +20,16 @@ from vla_bridge.backends import BackendHandles, base_grpc, load_backend_config, 
 @register_grpc_backend("smolvla")
 def build(args, camera_names: dict[int, str], joint_limits_deg: dict) -> "BackendHandles | None":
     """Returns `None` if the bridge is unreachable (see `build_grpc_action_source`)."""
-    checkpoint = args.checkpoint or (load_backend_config("smolvla") or {}).get("checkpoint")
+    config = load_backend_config("smolvla") or {}
+    checkpoint = args.checkpoint or config.get("checkpoint")
     if not checkpoint:
         raise SystemExit(
             "--backend smolvla needs --checkpoint or backend_configs/smolvla.json's "
             "'checkpoint' field"
         )
     return base_grpc.build_grpc_action_source(
-        "smolvla", checkpoint, args, camera_names, joint_limits_deg
+        "smolvla", checkpoint, args, camera_names, joint_limits_deg,
+        camera_map=config.get("camera_map"),
     )
 
 

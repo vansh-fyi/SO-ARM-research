@@ -6,6 +6,8 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
 
 ### The gRPC bridge only delivers `camera1` (wrist) to the policy server; `camera2`/`camera3` stereo halves are dropped
 
+> **RESOLVED 2026-10-02 (direct fix after phase verification).** `connect_bridge()` now takes a `camera_map` (checkpoint camera name -> `wrist` / `overhead_left` / `overhead_right`), from each gRPC backend's config or `--camera-map`. The wrist feed is registered under its mapped name, and every stereo-mapped name is added to the handshake's `lerobot_features`, so the server receives exactly the declared cameras (`test_robot_client.py` drives lerobot's own `prepare_raw_observation()` to prove it). SmolVLA now really receives camera2/camera3. Diffusion ships `hrl7/so101-touch-diffusion-l4` (camera1 + camera2) and GR00T N1.7 ships `tsangb34/groot-n17-so101-cube-drawer-40k` (front + wrist) as defaults. Still to verify on hardware: SmolVLA regression, and each checkpoint's assumed viewpoint for its overhead-mapped camera.
+
 - **Affects:** every gRPC-bridge backend, including the existing SmolVLA production path. Not caused by 14-04.
 - **Mechanism (installed `lerobot==0.6.1`, reproduced locally with lerobot's own functions):**
   1. `RobotClient.__init__` computes `lerobot_features = map_robot_keys_to_lerobot_features(self.robot)` from `robot.observation_features`.
@@ -24,6 +26,8 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
 
 ### The camera1-only limitation is stricter for ACT (and possibly Diffusion Policy)
 
+> **RESOLVED 2026-10-02 (direct fix after phase verification).** `connect_bridge()` now takes a `camera_map` (checkpoint camera name -> `wrist` / `overhead_left` / `overhead_right`), from each gRPC backend's config or `--camera-map`. The wrist feed is registered under its mapped name, and every stereo-mapped name is added to the handshake's `lerobot_features`, so the server receives exactly the declared cameras (`test_robot_client.py` drives lerobot's own `prepare_raw_observation()` to prove it). SmolVLA now really receives camera2/camera3. Diffusion ships `hrl7/so101-touch-diffusion-l4` (camera1 + camera2) and GR00T N1.7 ships `tsangb34/groot-n17-so101-cube-drawer-40k` (front + wrist) as defaults. Still to verify on hardware: SmolVLA regression, and each checkpoint's assumed viewpoint for its overhead-mapped camera.
+
 - **Not fixed here; recorded for the follow-up above.**
 - **Mechanism (installed `lerobot==0.6.1`):**
   - `ACTPolicy.predict_action_chunk()` builds `[batch[key] for key in self.config.image_features]`, with no missing-camera masking.
@@ -37,6 +41,8 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
 ## From 14-06 (Diffusion Policy)
 
 ### Diffusion Policy is confirmed non-masking, and no camera1-only Diffusion checkpoint exists
+
+> **RESOLVED 2026-10-02 (direct fix after phase verification).** `connect_bridge()` now takes a `camera_map` (checkpoint camera name -> `wrist` / `overhead_left` / `overhead_right`), from each gRPC backend's config or `--camera-map`. The wrist feed is registered under its mapped name, and every stereo-mapped name is added to the handshake's `lerobot_features`, so the server receives exactly the declared cameras (`test_robot_client.py` drives lerobot's own `prepare_raw_observation()` to prove it). SmolVLA now really receives camera2/camera3. Diffusion ships `hrl7/so101-touch-diffusion-l4` (camera1 + camera2) and GR00T N1.7 ships `tsangb34/groot-n17-so101-cube-drawer-40k` (front + wrist) as defaults. Still to verify on hardware: SmolVLA regression, and each checkpoint's assumed viewpoint for its overhead-mapped camera.
 
 - **Not fixed here; recorded for the bridge follow-up above.**
 - **Confirmed in installed `lerobot==0.6.1`:**
@@ -71,6 +77,8 @@ Out-of-scope discoveries logged during plan execution. None of these were fixed 
 ## From 14-07 (GR00T N1.7)
 
 ### No public SO-101 GR00T N1.7 checkpoint declares `camera1`
+
+> **RESOLVED 2026-10-02 (direct fix after phase verification).** `connect_bridge()` now takes a `camera_map` (checkpoint camera name -> `wrist` / `overhead_left` / `overhead_right`), from each gRPC backend's config or `--camera-map`. The wrist feed is registered under its mapped name, and every stereo-mapped name is added to the handshake's `lerobot_features`, so the server receives exactly the declared cameras (`test_robot_client.py` drives lerobot's own `prepare_raw_observation()` to prove it). SmolVLA now really receives camera2/camera3. Diffusion ships `hrl7/so101-touch-diffusion-l4` (camera1 + camera2) and GR00T N1.7 ships `tsangb34/groot-n17-so101-cube-drawer-40k` (front + wrist) as defaults. Still to verify on hardware: SmolVLA regression, and each checkpoint's assumed viewpoint for its overhead-mapped camera.
 
 - **Not fixed here; recorded for the bridge follow-up above.**
 - GR00T itself tolerates missing views: `GrootN17PackInputsStep` feeds whichever declared cameras

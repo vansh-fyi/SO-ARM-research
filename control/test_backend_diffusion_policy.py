@@ -36,9 +36,11 @@ def _record_grpc_build(monkeypatch):
     calls = {}
     sentinel = object()
 
-    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg):
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg, camera_map=None):
         calls.update(policy_type=policy_type, checkpoint=checkpoint, args=args,
                      camera_names=camera_names, joint_limits_deg=joint_limits_deg)
+        if camera_map is not None:
+            calls["camera_map"] = camera_map
         return sentinel
 
     monkeypatch.setattr(base_grpc, "build_grpc_action_source", fake_build)
@@ -141,22 +143,24 @@ CANDIDATE_DIFFUSION_CHECKPOINT = "hrl7/so101-touch-diffusion-l4"
 CANDIDATE_DIFFUSION_REVISION = "56c702bac49b28894fe4e6afcaa0789d6551cb63"
 
 
-def test_shipped_config_has_no_default_checkpoint_and_records_the_candidate():
+def test_shipped_config_ships_the_candidate_with_a_matching_camera_map():
+    """The bridge now sends the cameras a backend's camera_map names, so the SO-101
+    candidate (camera1 + camera2) is the default checkpoint."""
     config = backends.load_backend_config("diffusion_policy")
 
-    assert config is not None
-    assert "checkpoint" not in config
-    assert config["candidate_checkpoint"] == CANDIDATE_DIFFUSION_CHECKPOINT
-    assert config["candidate_verified_revision"] == CANDIDATE_DIFFUSION_REVISION
-    assert "camera1" in config["notes"]
+    assert config["checkpoint"] == CANDIDATE_DIFFUSION_CHECKPOINT
+    assert config["verified_revision"] == CANDIDATE_DIFFUSION_REVISION
+    assert config["camera_map"] == {"camera1": "wrist", "camera2": "overhead_left"}
 
 
-def test_shipped_config_makes_build_exit_with_the_reason(monkeypatch):
-    calls, _ = _record_grpc_build(monkeypatch)
+def test_shipped_config_build_passes_its_checkpoint_and_camera_map(monkeypatch):
+    calls, sentinel = _record_grpc_build(monkeypatch)
 
-    with pytest.raises(SystemExit, match=r"(?s)--backend diffusion .*checkpoint.*camera1"):
-        backends.BACKEND_REGISTRY["diffusion"](_args(checkpoint=None), {0: "wrist"}, {})
-    assert calls == {}
+    result = backends.BACKEND_REGISTRY["diffusion"](_args(checkpoint=None), {0: "wrist"}, {})
+
+    assert result is sentinel
+    assert calls["checkpoint"] == CANDIDATE_DIFFUSION_CHECKPOINT
+    assert calls["camera_map"] == {"camera1": "wrist", "camera2": "overhead_left"}
 
 
 def test_check_checkpoint_treats_diffusion_as_non_masking():
@@ -268,7 +272,7 @@ def test_cli_backend_flag_dispatches_to_real_diffusion_build(monkeypatch, tmp_pa
     calls = {}
     handles = BackendHandles(action_source=_ClosableActionSource(), robot=_FakeBackendRobot())
 
-    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg):
+    def fake_build(policy_type, checkpoint, args, camera_names, joint_limits_deg, camera_map=None):
         calls.update(policy_type=policy_type, checkpoint=checkpoint)
         return handles
 

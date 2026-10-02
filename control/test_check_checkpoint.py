@@ -66,12 +66,45 @@ def test_replace_section_rejects_unsafe_backend_names():
     [
         (["observation.images.camera1", "observation.images.camera2"], "OK"),
         (["observation.images.camera1", "observation.images.camera2", "observation.images.camera3"], "OK"),
-        (["observation.images.base_0_rgb", "observation.images.left_wrist_0_rgb"], "INCOMPATIBLE"),
+        (["observation.images.base_0_rgb", "observation.images.left_wrist_0_rgb"], "OK"),
+        ([f"observation.images.c{i}" for i in range(4)], "OK"),
         ([], "UNKNOWN"),
     ],
 )
-def test_bridge_key_fit_requires_camera1(image_keys, expected_prefix):
+def test_bridge_key_fit_with_masking_accepts_any_camera_names(image_keys, expected_prefix):
+    # camera_map can send any names; a masking policy tolerates a 4th, unsent camera.
     assert cc._bridge_key_fit(image_keys).startswith(expected_prefix)
+
+
+def test_suggest_camera_map_gives_the_wrist_feed_to_the_wrist_named_key():
+    assert cc.suggest_camera_map(["observation.images.front", "observation.images.wrist"]) == {
+        "wrist": "wrist",
+        "front": "overhead_left",
+    }
+    assert cc.suggest_camera_map(
+        ["observation.images.camera1", "observation.images.camera2", "observation.images.camera3"]
+    ) == {"camera1": "wrist", "camera2": "overhead_left", "camera3": "overhead_right"}
+
+
+def test_suggest_camera_map_skips_placeholders_and_keeps_the_wrist_feed_for_wrist_views():
+    # pi0/pi05 declare `empty_camera_*` slots they mask on purpose; never feed them.
+    assert cc.suggest_camera_map(
+        ["observation.images.camera1", "observation.images.camera2", "observation.images.empty_camera_0"]
+    ) == {"camera1": "wrist", "camera2": "overhead_left"}
+    # A lone third-person camera gets an overhead feed, not the wrist feed.
+    assert cc.suggest_camera_map(["observation.images.top"]) == {"top": "overhead_left"}
+
+
+def test_bridge_key_fit_rejects_legacy_non_images_keys():
+    assert cc._bridge_key_fit(["observation.image"]).startswith("INCOMPATIBLE")
+
+
+def test_bridge_key_fit_suggests_a_parseable_camera_map():
+    from vla_bridge import robot_client
+
+    fit = cc._bridge_key_fit(["observation.images.front", "observation.images.wrist"])
+    suggested = fit.split("--camera-map ", 1)[1]
+    assert robot_client.parse_camera_map(suggested) == {"wrist": "wrist", "front": "overhead_left"}
 
 
 def test_render_section_has_one_row_per_candidate_and_escapes_pipes():
@@ -97,7 +130,8 @@ def test_render_section_has_one_row_per_candidate_and_escapes_pipes():
 # Installed lerobot 0.6.1 `ACTPolicy.predict_action_chunk()` builds
 # `[batch[key] for key in self.config.image_features]`, so unlike pi0/pi05/SmolVLA
 # a declared camera that the bridge never delivers is a KeyError, not a masked
-# empty camera. For ACT the bridge fit is OK only when camera1 is the ONLY image key.
+# empty camera. The bridge has three feeds, so for ACT the fit is OK only when
+# every declared camera can be mapped to one of them.
 
 
 def test_candidate_groups_add_act():
@@ -111,18 +145,19 @@ def test_candidate_groups_add_act():
     "image_keys, expected_prefix",
     [
         (["observation.images.camera1"], "OK"),
-        (["observation.images.camera1", "observation.images.camera2"], "INCOMPATIBLE"),
-        (["observation.images.front"], "INCOMPATIBLE"),
+        (["observation.images.camera1", "observation.images.camera2"], "OK"),
+        (["observation.images.front"], "OK"),
+        ([f"observation.images.c{i}" for i in range(4)], "INCOMPATIBLE"),
         ([], "UNKNOWN"),
     ],
 )
-def test_bridge_key_fit_without_camera_masking_requires_camera1_only(image_keys, expected_prefix):
+def test_bridge_key_fit_without_camera_masking_needs_every_camera_mapped(image_keys, expected_prefix):
     assert cc._bridge_key_fit(image_keys, masks_missing_cameras=False).startswith(expected_prefix)
 
 
 def test_bridge_key_fit_without_masking_names_the_undelivered_keys():
     fit = cc._bridge_key_fit(
-        ["observation.images.camera1", "observation.images.camera2"], masks_missing_cameras=False
+        [f"observation.images.c{i}" for i in range(4)], masks_missing_cameras=False
     )
-    assert "observation.images.camera2" in fit
+    assert "observation.images.c3" in fit
     assert "KeyError" in fit

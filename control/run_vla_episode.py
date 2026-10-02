@@ -41,7 +41,7 @@ import cv2
 import detect_devices
 
 from keyboard_joint_control import move_to_positions, read_positions
-from vla_bridge import action_contract, safety_validator
+from vla_bridge import action_contract, robot_client, safety_validator
 from vla_bridge.backends import BACKEND_REGISTRY, GRPC_BRIDGE_BACKENDS, get_backend_names
 # Re-exported: the class moved to vla_bridge/backends/scripted.py (Plan 14-02) so
 # the backend registry can build it without importing this script.
@@ -484,6 +484,18 @@ def main():
         "are fallback values. Defaults to 1 when the device map is unavailable.",
     )
     parser.add_argument(
+        "--camera-map",
+        type=str,
+        default=None,
+        help="gRPC-bridge backends only: which camera feed the checkpoint receives under which "
+        "observation.images.<name> key, as name=source pairs, e.g. "
+        "'wrist=wrist,front=overhead_left'. Sources: wrist, overhead_left, overhead_right. "
+        "Overrides the backend config's camera_map (default camera1=wrist, "
+        "camera2=overhead_left, camera3=overhead_right). Give exactly the camera names the "
+        "checkpoint declares: ACT, Diffusion Policy and GR00T N1.7 fail on any declared camera "
+        "that is not sent.",
+    )
+    parser.add_argument(
         "--depth-endpoint",
         type=str,
         default=None,
@@ -526,6 +538,13 @@ def main():
         if not args.server_address:
             parser.error(f"--backend {args.backend} rides the Colab gRPC bridge and needs "
                          "--server-address and --checkpoint")
+    if args.camera_map is not None:
+        if args.backend not in GRPC_BRIDGE_BACKENDS:
+            parser.error(f"--camera-map only applies to gRPC-bridge backends, not --backend {args.backend}")
+        try:
+            args.camera_map = robot_client.parse_camera_map(args.camera_map)
+        except ValueError as e:
+            parser.error(str(e))
     if (args.depth_endpoint is None) != (args.depth_calibration is None):
         parser.error("--depth-endpoint and --depth-calibration must be given together")
     if args.depth_endpoint and not args.server_address:
