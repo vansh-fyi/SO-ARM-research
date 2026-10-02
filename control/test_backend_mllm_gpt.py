@@ -13,24 +13,37 @@ import ast
 import base64
 import inspect
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from fake_providers import make_chunk_text, png_bytes
-from vla_bridge import backends
+import test_backend_mllm_claude as claude_tests
+from fake_providers import (
+    FakeCaptureCamera,
+    FakeCollector,
+    FakeStereoCamera,
+    FakeWristCap,
+    make_chunk_text,
+    png_bytes,
+)
+from run_vla_episode import run_episode
+from vla_bridge import action_contract, backends
+from vla_bridge.action_contract import JOINT_ORDER
 from vla_bridge.backends import BACKEND_REGISTRY, GRPC_BRIDGE_BACKENDS, base_mllm, base_mllm_build
-from vla_bridge.backends import mllm_gpt
+from vla_bridge.backends import mllm_claude, mllm_gpt
 from vla_bridge.backends.base_mllm import (
     IMAGE_ORDER,
     STOP_COMPLETE,
     STOP_OTHER,
     STOP_REFUSAL,
     STOP_TRUNCATED,
+    MllmActionSourceBase,
     ProviderRequest,
     load_mllm_settings,
 )
+from vla_bridge.io_logger import IOLogger
 from vla_bridge.mllm_schema import SCHEMA_NAME, build_action_chunk_schema
 
 BACKEND_NAME = "mllm-gpt"
@@ -659,3 +672,201 @@ def test_adapter_close_closes_the_client():
     adapter, client = _adapter()
     adapter.close()
     assert client.state.closed is True
+
+
+# =============================================================================
+# End to end: registered build -> shared builder -> real run_episode loop
+# =============================================================================
+
+
+RecordingMockRobot = claude_tests.RecordingMockRobot  # one copy of the helper, shared with 15-06
+
+
+def _run_registered(monkeypatch, tmp_path, mock_calibration_file, client, ticks=20):
+    """Build `--backend mllm-gpt` through BACKEND_REGISTRY with fake hardware and run `ticks` ticks."""
+    RecordingMockRobot.instances = []
+    monkeypatch.setattr(base_mllm_build, "SO101Follower", RecordingMockRobot)
+    monkeypatch.setattr(base_mllm_build, "StereoSplitCamera", lambda index=1: FakeStereoCamera())
+    monkeypatch.setattr(base_mllm_build.cv2, "VideoCapture", lambda index: FakeWristCap())
+    monkeypatch.setenv("OPENAI_API_KEY", SECRET)
+    made = []
+
+    def fake_client_factory(api_key, timeout_s):
+        made.append((api_key, timeout_s))
+        return client
+
+    monkeypatch.setattr(mllm_gpt, "_make_openai_client", fake_client_factory)
+    out = tmp_path / "out"
+    args = SimpleNamespace(port="/dev/null", robot_id="soarm_follower_02", instruction="pick up the pen",
+                           stereo_camera_index=1, out=out, depth_endpoint=None, depth_calibration=None)
+    limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+
+    handles = BACKEND_REGISTRY[BACKEND_NAME](args, dict(CAMERA_NAMES), limits)
+    (robot,) = RecordingMockRobot.instances
+    assert handles.robot is robot
+    assert made == [(SECRET, 900)]
+
+    with IOLogger(out, {0: "wrist"}) as io_logger:
+        run_episode(robot, {0: FakeCaptureCamera()}, {0: "wrist"}, io_logger, handles.action_source,
+                    "pick up the pen", ticks, 100.0, limits)
+    handles.action_source.close()
+    lines = (out / "episode.jsonl").read_text().strip().splitlines()
+    return out, [json.loads(line) for line in lines]
+
+
+def _assert_secret_absent(out, capsys):
+    scanned = 0
+    for path in out.rglob("*"):
+        if path.is_file():
+            scanned += 1
+            assert SECRET.encode() not in path.read_bytes(), path
+    assert scanned > 0
+    assert SECRET not in capsys.readouterr().out
+
+
+def test_end_to_end_one_chunk_through_run_episode(monkeypatch, tmp_path, mock_calibration_file, capsys):
+    usage = _usage(input_tokens=1200, output_tokens=300, cached_tokens=200, reasoning_tokens=120)
+    plan_with_secret = make_chunk_text(20, plan=f"Reach the pen (never echo {SECRET})")
+    client = _client([make_response(text=plan_with_secret, summary=f"summary mentions {SECRET}", usage=usage)])
+
+    out, records = _run_registered(monkeypatch, tmp_path, mock_calibration_file, client)
+
+    assert len(client.state.calls) == 1  # one paid call across 20 ticks
+    assert len(records) == 20
+    call = records[0]["action_details"]["mllm_call"]
+    assert call["provider"] == "openai"
+    assert call["model_requested"] == MODEL
+    assert call["model_returned"] == f"{MODEL}-2026-09-15"
+    assert call["request_id"] == "req_fake_gpt_123"
+    assert call["sdk"] == {"name": "openai", "version": "3.23.0"}
+    assert call["usage"]["reasoning_tokens"] == 120
+    expected_cost = ((1200 - 200) * 10.0 + 200 * 1.0 + 300 * 50.0) / 1e6
+    assert math.isclose(call["cost_usd_est"], expected_cost)
+    assert call["sidecar_dir"] == "mllm_calls/0000"
+    assert call["settings"]["omitted"].keys() == {"temperature", "top_p"}
+    assert call["settings"]["applied"]["store"] is False
+    assert call["trace"]["native_thinking_kind"] == "summary"
+    assert call["stop"]["reason"] == STOP_COMPLETE
+    assert records[0]["model_version"] == f"{BACKEND_NAME}@mllm-chunk"
+    assert all("mllm_call" not in r["action_details"] for r in records[1:])
+    assert all(r["action_details"].get("chunk_ref") is not None for r in records[1:])
+    sidecar = out / "mllm_calls" / "0000"
+    assert {"prompt.txt", "request_meta.json", "response_raw.json", "thinking.txt"} <= {
+        p.name for p in sidecar.iterdir() if p.is_file()}
+    sent = client.state.calls[0]
+    assert sent["store"] is False and "temperature" not in sent and "top_p" not in sent
+    _assert_secret_absent(out, capsys)
+
+
+@pytest.mark.parametrize("case,reason", [
+    ("exception", "provider-error"),
+    ("incomplete", "truncated"),
+    ("refusal", "refusal"),
+])
+def test_failed_call_holds_the_whole_chunk_and_never_leaks_the_key(
+        monkeypatch, tmp_path, mock_calibration_file, capsys, case, reason):
+    if case == "exception":
+        client = _client(exc=RuntimeError(f"401 Incorrect API key provided: {SECRET}"))
+    elif case == "incomplete":
+        client = _client([make_response(text='{"actions": [', summary=[], status="incomplete",
+                                         incomplete_reason="max_output_tokens")])
+    else:
+        client = _client([make_response(refusal=f"I can't help with that ({SECRET}).")])
+
+    out, records = _run_registered(monkeypatch, tmp_path, mock_calibration_file, client)
+
+    assert len(client.state.calls) == 1  # one call per chunk_len ticks, never retried
+    assert len(records) == 20
+    assert [r["model_version"] for r in records] == [f"{BACKEND_NAME}@{reason}-holding-position"] * 20
+    call = records[0]["action_details"]["mllm_call"]
+    assert call["parse"]["ok"] is False
+    if case == "incomplete":
+        assert call["stop"]["incomplete_reason"] == "max_output_tokens"
+    _assert_secret_absent(out, capsys)
+
+
+# =============================================================================
+# Cross-provider identity (PIPE-02, success criterion 1)
+# =============================================================================
+
+
+def _claude_sequence(kwargs):
+    seq = []
+    for block in kwargs["messages"][0]["content"]:
+        if block["type"] == "text":
+            seq.append(("text", block["text"]))
+        else:
+            assert block["type"] == "image"
+            seq.append(("image", base64.b64decode(block["source"]["data"])))
+    return seq
+
+
+def _gpt_sequence(kwargs):
+    seq = []
+    for part in kwargs["input"][0]["content"]:
+        if part["type"] == "input_text":
+            seq.append(("text", part["text"]))
+        else:
+            assert part["type"] == "input_image"
+            seq.append(("image", base64.b64decode(part["image_url"].split(",", 1)[1])))
+    return seq
+
+
+def _both_providers_capture(request):
+    claude_client = claude_tests._client([claude_tests.make_message(text=make_chunk_text(20))])
+    gpt_client = _client([make_response(text=make_chunk_text(20))])
+    mllm_claude.AnthropicAdapter(claude_client, load_mllm_settings("mllm_claude")).call(request)
+    mllm_gpt.OpenAIResponsesAdapter(gpt_client, _config()).call(request)
+    (claude_kwargs,) = claude_client.state.calls
+    (gpt_kwargs,) = gpt_client.state.calls
+    return claude_kwargs, gpt_kwargs
+
+
+def test_payload_order_matches_the_claude_adapter_element_for_element():
+    request = _request(roles=IMAGE_ORDER)
+    claude_kwargs, gpt_kwargs = _both_providers_capture(request)
+
+    claude_seq, gpt_seq = _claude_sequence(claude_kwargs), _gpt_sequence(gpt_kwargs)
+
+    assert gpt_seq == claude_seq
+    expected = []
+    for role, data in request.images:
+        expected += [("text", f"Image: {role}"), ("image", data)]
+    expected.append(("text", request.user_text))
+    assert gpt_seq == expected
+    assert gpt_seq[-1] == ("text", request.user_text)
+
+
+def test_the_same_system_prompt_and_schema_objects_reach_both_providers_unchanged():
+    request = _request(roles=IMAGE_ORDER)
+    claude_kwargs, gpt_kwargs = _both_providers_capture(request)
+
+    assert claude_kwargs["system"] is request.system_prompt
+    assert gpt_kwargs["instructions"] is request.system_prompt
+    assert claude_kwargs["output_config"]["format"]["schema"] is request.schema
+    assert gpt_kwargs["text"]["format"]["schema"] is request.schema
+    assert gpt_kwargs["text"]["format"]["name"] == request.schema_name
+
+
+def test_the_shared_base_builds_identical_prompt_and_schema_for_both_providers():
+    """Through MllmActionSourceBase (real prompt + schema), both vendors receive the same text and schema."""
+    claude_client = claude_tests._client([claude_tests.make_message(text=make_chunk_text(2))])
+    gpt_client = _client([make_response(text=make_chunk_text(2))])
+    limits = {joint: (-180.0, 180.0) for joint in JOINT_ORDER}
+    joint_state = {joint: 3.0 for joint in JOINT_ORDER}
+    for config_name, adapter in (
+            ("mllm_claude", mllm_claude.AnthropicAdapter(claude_client, load_mllm_settings("mllm_claude"))),
+            (CONFIG_NAME, mllm_gpt.OpenAIResponsesAdapter(gpt_client, _config()))):
+        settings = load_mllm_settings(config_name)
+        settings["chunk_len"] = 2
+        source = MllmActionSourceBase(adapter, FakeCollector(include_depth=True), settings, limits,
+                                      "cross-check", secrets=[SECRET])
+        source.get_action(joint_state, "pick up the pen")
+
+    (claude_kwargs,) = claude_client.state.calls
+    (gpt_kwargs,) = gpt_client.state.calls
+    assert gpt_kwargs["instructions"] == claude_kwargs["system"]
+    assert gpt_kwargs["text"]["format"]["schema"] == claude_kwargs["output_config"]["format"]["schema"]
+    assert _gpt_sequence(gpt_kwargs) == _claude_sequence(claude_kwargs)
+    assert [item for item in _gpt_sequence(gpt_kwargs) if item[0] == "text"][:-1] == [
+        ("text", f"Image: {role}") for role in IMAGE_ORDER]
