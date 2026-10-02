@@ -1,0 +1,42 @@
+{
+  "chunk_len": 20,
+  "step_dt_s": 0.785,
+  "step_dt_evidence": "Phase 12 live episodes control/outputs/vla_episode_004 (n=182) and vla_episode_20260930_121123 (n=54): median step-to-step wall clock 0.785 s over 236 non-stall ticks (episode 121123 alone: median 0.783 s). The nominal --control-hz 2.0 would be 0.5 s; latency_ms.action_to_execution alone is 640-690 ms (50 interpolated waypoints at --execution-hz 100 plus driver latency).",
+  "chunk_len_derivation": {
+    "measured": {
+      "tick_period_s_median": 0.785,
+      "n_ticks": 236,
+      "depth_roundtrip_s": {"min": 5.13, "median": 6.15, "max": 7.13, "n": 26},
+      "smolvla_refetch_stall_s": "3.3-5.0 typical, outliers 14.3 and 23.0",
+      "action_to_execution_ms": "640-690"
+    },
+    "lower_bound": "N >= 10, so each call buys >= ~8 s of motion (10 x 0.785 s = 7.9 s) against the ~6 s depth fetch and per-call overhead.",
+    "upper_bound": "N <= 20, so open-loop execution stays under ~16 s (20 x 0.785 s = 15.7 s) and the default 60-tick --max-steps budget allows >= 3 closed-loop calls (D-08).",
+    "chosen": 20,
+    "duty_cycle_table": {
+      "assumed_call_latency_s": 60,
+      "motion_fraction_by_chunk_len": {"10": "12%", "20": "21%", "30": "28%", "50": "39%"},
+      "formula": "N*0.785 / (N*0.785 + call_latency_s)"
+    },
+    "not_measured": "MLLM API latency (Phase 12 measured only the VLA bridge and depth). Re-derive chunk_len from the per-call latency_ms.api in the episode records after the first live calls, per Plan 15-10."
+  },
+  "include_urdf": true,
+  "disclose_safety_caps": false,
+  "left_image_source": "raw",
+  "depth_presentation": "both",
+  "image_format": "png",
+  "image_max_side": 640,
+  "max_consecutive_failed_calls": 3,
+  "sampling": {"temperature": 1.0, "top_p": 0.95},
+  "timeout_s": 900,
+  "depth": {
+    "range_m": [0.2, 1.5],
+    "grid_rows": 24,
+    "grid_cols": 32,
+    "grid_decimals": 2,
+    "retry_429": 2,
+    "retry_sleep_s": 2.0
+  },
+  "requirement": "MLLM-05",
+  "notes": "Shared defaults for every MLLM backend (Phase 15); a backend's own backend_configs/<name>.json may override any key (dict-valued keys sampling/depth/prices merge one level deep), per D-02. chunk_len is a FIXED N the prompt asks for exactly (D-17); the model never chooses it, so it cannot become a cross-backend confound. step_dt_s is the MEASURED 0.785 s tick, not the nominal 0.5 s from --control-hz 2.0 (D-24): the prompt states N steps = N*0.785 s (20 steps = 15.7 s), and every call record also logs the measured tick period of the previous chunk (prev_chunk_tick_period_s). With chunk_len 20 a 60-tick episode allows only 3 calls, so raise --max-steps for MLLM runs. sampling is the shared nominal setting (D-20); providers that fix it omit it and log requested-vs-applied. depth_presentation heatmap|grid|both (D-28) and left_image_source raw|aligned (D-26) are Phase 16 ablation toggles."
+}

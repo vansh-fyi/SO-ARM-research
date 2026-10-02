@@ -32,7 +32,7 @@ from vla_bridge.mllm_schema import build_action_chunk_schema
 
 # Pinned after the first green run. Bump PROMPT_TEMPLATE_VERSION whenever
 # this (or GOLDEN_SCHEMA_SHA256 in test_mllm_schema.py) changes.
-GOLDEN_TEMPLATE_SHA256 = "PIN_AFTER_FIRST_GREEN_RUN"
+GOLDEN_TEMPLATE_SHA256 = "ce29b4ed253d87e07e6341e6b85bb001ea839cb96c6400a5a7bfa817a0202b37"
 
 LIMITS = {
     "shoulder_pan": (-70.33, 70.33),

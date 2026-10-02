@@ -24,7 +24,7 @@ from vla_bridge.mllm_schema import (
 # Pinned after the first green run. Bump mllm_prompt.PROMPT_TEMPLATE_VERSION
 # whenever this (or GOLDEN_TEMPLATE_SHA256 in test_mllm_prompt.py) changes, so
 # per-call records stay comparable across runs.
-GOLDEN_SCHEMA_SHA256 = "PIN_AFTER_FIRST_GREEN_RUN"
+GOLDEN_SCHEMA_SHA256 = "2e5e5f0963f53b8328abb7342b2acd64042e895a51d36f4ea8ee9652c98f37e4"
 
 
 def _walk(node):
