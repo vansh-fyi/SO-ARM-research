@@ -12,12 +12,18 @@ that still passes the unmodified safety validator on every tick (MLLM-04).
 
 Model facts: verified, not guessed (2026-10-02)
 -----------------------------------------------
-  - platform.claude.com/docs/en/models/overview and models/fable-5-1:
-    `claude-fable-5-1`, released 2026-09-01, 1M context, 128K max output,
-    vision input, $10 input / $50 output / $0.25 cache read per million
-    tokens. It is a Covered Model with 30-day retention, not ZDR.
-    `claude-mythos-5-1` is invitation-only; `claude-opus-5-5` is Anthropic's
-    default recommendation, but D-14 asks for the top available flagship.
+  - platform.claude.com/docs/en/models/opus-5-5/overview:
+    `claude-opus-5-5`, released 2026-09-22, status Active (latest), 1M
+    context, 128K max output, text and image input, $4 input / $20 output /
+    $0.20 cache read per million tokens. Adaptive thinking is always on and
+    the default effort is `medium`, so the config sets `xhigh` explicitly.
+    History: the backend shipped on `claude-fable-5-1`; switched to
+    `claude-opus-5-5` by user decision 2026-10-02 (15-LIVE-RESULTS.md s.2).
+  - models/opus-5-5/whats-new-opus-5-5: `thinking` `disabled` or
+    `enabled` + `budget_tokens` -> 400 (send `adaptive`); forced tool_choice
+    any/tool -> 400; at xhigh/max the model thinks more per turn than earlier
+    models (max_tokens 64000 leaves room); refusals are HTTP 200 with
+    `stop_reason: "refusal"` and `stop_details` (e.g. reasoning_extraction).
   - build-with-claude/structured-outputs: native structured output through
     `output_config.format = {"type": "json_schema", "schema": ...}`. It works
     with streaming and thinking, and is incompatible with prefill. No tool use
@@ -63,9 +69,10 @@ never catches exceptions: the base redacts any error text that might echo it.
 
 Conflict notes
 --------------
-  - C3 (D-20 shared sampling): the provider fixes sampling, so temperature,
-    top_p and top_k are never sent; `settings_summary` logs the shared nominal
-    values as requested and each one as omitted with a provider-fixed reason.
+  - C3 (D-20 shared sampling): the adapter never sends temperature, top_p or
+    top_k to Claude models with adaptive thinking (the SDK's
+    `Messages.stream` has no such parameter); `settings_summary` logs the
+    shared nominal values as requested and each one as omitted ("not sent").
   - C4 (staged fields vs reasoning extraction): the prompt and schema stay
     lint-clean (Plan 15-01); a `refusal` stop (category preserved, e.g.
     `reasoning_extraction`) or a `max_tokens` stop is reported through
@@ -96,9 +103,10 @@ _STOP_MAP = {
 }
 _THINKING_TYPES = ("adaptive",)
 _THINKING_DISPLAYS = ("summarized", "omitted")
-_PROVIDER_FIXED_REASON = (
-    "provider-fixed: {model} rejects any non-default {param} with HTTP 400 and the anthropic "
-    "SDK has no such parameter, so it is never sent (research C3)"
+_NOT_SENT_REASON = (
+    "not sent: the adapter never sends sampling parameters ({param}) to Claude models with "
+    "adaptive thinking such as {model}, and the anthropic SDK's Messages.stream has no such "
+    "parameter (research C3)"
 )
 
 
@@ -229,7 +237,7 @@ class AnthropicAdapter:
             "requested": requested,
             "applied": applied,
             "omitted": {
-                param: _PROVIDER_FIXED_REASON.format(model=self.model, param=param)
+                param: _NOT_SENT_REASON.format(model=self.model, param=param)
                 for param in ("temperature", "top_p", "top_k")
             },
         }
