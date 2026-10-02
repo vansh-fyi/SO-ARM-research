@@ -519,7 +519,7 @@ Plans:
   4. Each backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured in `io_logger.py` alongside its action chunk, per step
   5. The action-chunk size used by all 5 registered backends is derived from Phase 12's measured real latency data, documented as such rather than guessed
 
-**Plans**: 8/10 plans executed
+**Plans**: 9/10 plans executed
 Plans:
 **Wave 1**
 
@@ -543,7 +543,7 @@ Plans:
 
 **Wave 5** *(blocked on 15-06, 15-07, 15-08)*
 
-- [ ] 15-09-PLAN.md — Cross-backend conformance and hygiene suite, docs alignment (C9), live smoke CLI (PIPE-02, MLLM-01..MLLM-07)
+- [x] 15-09-PLAN.md — Cross-backend conformance and hygiene suite, docs alignment (C9), live smoke CLI (PIPE-02, MLLM-01..MLLM-07)
 
 **Wave 6** *(blocked on 15-09; human-action, needs keys and hardware)*
 
@@ -613,6 +613,6 @@ Plans:
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
 | 13. Camera Device Resolution Unification | 4/4 | Human verification pending | - |
 | 14. VLA-Style Pipeline & Backends | 15/15 | Complete   | 2026-10-01 |
-| 15. MLLM-Style Pipeline & Backends | 8/10 | In Progress|  |
+| 15. MLLM-Style Pipeline & Backends | 9/10 | In Progress|  |
 | 16. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
 | 17. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |

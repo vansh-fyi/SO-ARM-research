@@ -5,15 +5,15 @@ milestone_name: MLLM Raw-Autonomy Benchmark
 current_phase: 15
 current_phase_name: mllm-style-pipeline-backends
 status: executing
-stopped_at: Phase 15 context updated (D-16..D-22)
-last_updated: "2026-10-02T12:30:47.002Z"
+stopped_at: Completed 15-09-PLAN.md
+last_updated: "2026-10-02T16:35:27.637Z"
 last_activity: 2026-10-02
-last_activity_desc: Phase 15 execution started
+last_activity_desc: Completed 15-09
 progress:
   total_phases: 17
   completed_phases: 12
   total_plans: 73
-  completed_plans: 63
+  completed_plans: 72
   percent: 71
 ---
 
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 15 (mllm-style-pipeline-backends) — EXECUTING
-Plan: 1 of 10
-Status: Executing Phase 15
-Last activity: 2026-10-02 — Phase 15 execution started
+Plan: 10 of 10
+Status: Ready to execute
+Last activity: 2026-10-02 — Completed 15-09 (conformance suite, five-backend docs, mllm_smoke CLI)
 
 Plan execution: [██████████] 100% — phase acceptance pending
 
@@ -64,6 +64,7 @@ Plan execution: [██████████] 100% — phase acceptance pendi
 | Phase 13 P02 | 3min | 1 tasks | 2 files |
 | Phase 13 P03 | 8min | 2 tasks | 2 files |
 | Phase 13 P04 | 3min | 3 tasks | 2 files |
+| Phase 15 P09 | 9 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,8 @@ Recent decisions affecting current work:
 - [Phase 04]: GRIPPER UPGRADE (LOCKED, D-07): stock ~2-3cm jaw can't grasp any LIBERO object; adopted roboninecom 84mm parallel gripper — carries forward to Phase 10's real-gripper-direction success criterion (TWIN-03/07)
 - [Phase 10 context]: `coppelia/export_model_library.py`'s own comments confirm the exported URDF's bug: the gripper is positioned near the wrist but never parented under the arm.
 - [Phase 13]: Numeric wrist_name fallback values skip live name probing.
+- [Phase 15]: 15-09: mllm_smoke's SyntheticCollector delegates to the real MllmInputCollector fed synthetic wrist/stereo/depth sources, so smoke inputs match the robot path by construction
+- [Phase 15]: 15-09: PIPE-02/MLLM-* requirement checkboxes stay Pending until Plan 15-10 live verification (plan forbids changing checkbox/traceability state here)
 
 ### Pending Todos
 
@@ -141,8 +144,8 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 
 ## Session Continuity
 
-Last session: 2026-10-02T08:54:18.697Z
-Stopped at: Phase 15 context updated (D-16..D-22)
+Last session: 2026-10-02T16:35:10.258Z
+Stopped at: Completed 15-09-PLAN.md (next: 15-10 live verification, human-action)
 Resume file: .planning/phases/15-mllm-style-pipeline-backends/15-CONTEXT.md
 
 Phase 12 closed 2026-09-30 with 15/15 UAT tests passing (12-UAT.md has full

@@ -216,3 +216,9 @@ None beyond the plan's threat register. Each mitigation is implemented and teste
 ## User Setup Required
 
 None for this plan. Plan 15-10 runs `python -m vla_bridge.mllm_smoke --backend <name> --chunk-len 3 --out outputs/smoke_<name> --confirm-spend` once per backend. It needs `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `HF_TOKEN` (fine-grained, with Inference Providers permission and purchased credits) exported in the shell. On the first GPT call, check whether `reasoning.summary` is accepted; if it is not, set `capabilities.summary_supported` to false in `mllm_gpt.json`.
+
+## Self-Check: PASSED
+
+- FOUND: control/test_mllm_conformance.py, control/vla_bridge/mllm_smoke.py, control/test_mllm_smoke.py, .planning/phases/15-mllm-style-pipeline-backends/15-09-SUMMARY.md
+- FOUND commits: 3a91510, bcb4299, 4cdf404, 2145a34, b6e8960
+- No tracked files deleted.
