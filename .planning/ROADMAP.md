@@ -519,7 +519,7 @@ Plans:
   4. Each backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured in `io_logger.py` alongside its action chunk, per step
   5. The action-chunk size used by all 3 backends is derived from Phase 12's measured real latency data, documented as such rather than guessed
 
-**Plans**: 5/10 plans executed
+**Plans**: 6/10 plans executed
 Plans:
 **Wave 1**
 
@@ -534,7 +534,7 @@ Plans:
 
 **Wave 3** *(blocked on 15-01 through 15-05)*
 
-- [ ] 15-06-PLAN.md — Shared hardware builder + config validator and the Claude backend (mllm-claude) (PIPE-02, MLLM-02, MLLM-04)
+- [x] 15-06-PLAN.md — Shared hardware builder + config validator and the Claude backend (mllm-claude) (PIPE-02, MLLM-02, MLLM-04)
 
 **Wave 4** *(blocked on 15-06; GPT and HF run in parallel)*
 
@@ -613,6 +613,6 @@ Plans:
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
 | 13. Camera Device Resolution Unification | 4/4 | Human verification pending | - |
 | 14. VLA-Style Pipeline & Backends | 15/15 | Complete   | 2026-10-01 |
-| 15. MLLM-Style Pipeline & Backends | 5/10 | In Progress|  |
+| 15. MLLM-Style Pipeline & Backends | 6/10 | In Progress|  |
 | 16. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
 | 17. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |
