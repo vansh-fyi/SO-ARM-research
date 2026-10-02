@@ -528,7 +528,8 @@ def test_sidecar_collector_files_written_when_whitelisted_and_ignored_otherwise(
     call = source.last_details["mllm_call"]
     chunk_dir = tmp_path / "mllm_calls" / "0000"
     names = {p.name for p in chunk_dir.iterdir() if p.is_file()}
-    assert names == EXPECTED_SIDECAR | {"depth.npy", "aligned_left.png", "depth_heatmap.png", "depth_grid.txt"}
+    no_thinking = EXPECTED_SIDECAR - {"thinking.txt"}  # this result carries no native thinking
+    assert names == no_thinking | {"depth.npy", "aligned_left.png", "depth_heatmap.png", "depth_grid.txt"}
     assert set(call["sidecar_files"]) == names
     assert (chunk_dir / "depth.npy").read_bytes() == b"\x93NUMPY fake depth"
     assert (chunk_dir / "aligned_left.png").read_bytes() == png_bytes(50)
