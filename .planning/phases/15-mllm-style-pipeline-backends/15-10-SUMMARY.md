@@ -146,7 +146,7 @@ metrics:
 
 # Phase 15 Plan 10: Live verification of the five MLLM backends Summary
 
-**All five MLLM backends passed a live paid smoke call. Depth was confirmed live, the joint and gripper sign conventions were checked on the real arm, and each backend drove the SO-ARM101 for one 40-step "Pick up the pen" episode. mllm-claude (claude-opus-5-5) completed the first successful raw-autonomy pick, and its task_complete claim matched the scene.** All evidence is in `15-LIVE-RESULTS.md`.
+**All five MLLM backends passed a live paid smoke call. Depth was confirmed live, the joint and gripper sign conventions were checked on the real arm, and each backend ran one 40-step "Pick up the pen" episode on the SO-ARM101. Four drove the arm in that episode. mllm-hf-deepseek's episode only held, because both calls degenerated; its valid executed chunk is in the Ctrl-C run 1 (control/outputs/mllm_ctrlc_001). mllm-claude (claude-opus-5-5) completed the first successful raw-autonomy pick, and its task_complete claim matched the scene.** All evidence is in `15-LIVE-RESULTS.md`.
 
 ## Performance
 
@@ -187,7 +187,7 @@ metrics:
   - The signs of all five joints match the URDF.
   - The gripper matches the prompt (0 is closed, 100 is open).
   - There is no blocking finding.
-- **Hardware episodes (step C, section 5).** One 40-step "Pick up the pen" episode per backend, with zero validator flags. The arm held position during every blocking call.
+- **Hardware episodes (step C, section 5).** One 40-step "Pick up the pen" episode per backend. The only validator flag was one gripper clamp in the Qwen episode (step 21, 100.0 -> 92.49 by the per-step displacement cap). The arm held position during every blocking call.
 
   | backend | result |
   |---------|--------|

@@ -194,7 +194,7 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 - [x] **MLLM-01**: One or more HuggingFace-hosted open reasoning models (Qwen3.8-27B, DeepSeek-V4.1-Flash, Kimi-K3, registered as variants on one shared adapter) are integrated as MLLM-style backends via HF Inference Providers; Phase 16 decides which variants run
 - [x] **MLLM-02**: Claude (paid tier) is integrated as an MLLM-style backend
 - [x] **MLLM-03**: GPT is integrated as an MLLM-style backend
-- [ ] **MLLM-04**: Each MLLM backend's action-chunk JSON schema is generated programmatically from `action_contract.py`'s constants (`JOINT_ORDER`, units) and validated through the unmodified `safety_validator.py`
+- [x] **MLLM-04**: Each MLLM backend's action-chunk JSON schema is generated programmatically from `action_contract.py`'s constants (`JOINT_ORDER`, units) and validated through the unmodified `safety_validator.py`
 - [x] **MLLM-05**: Action-chunk size for MLLM backends is derived from Phase 1's real measured latency/timing data, not guessed
 - [x] **MLLM-06**: Each MLLM backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured alongside its action chunk, per step
 - [x] **MLLM-07**: A malformed/parse-failing action within a chunk holds the robot's current position rather than zero-filling or crashing the episode
@@ -314,7 +314,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MLLM-01 | Phase 15 | Complete |
 | MLLM-02 | Phase 15 | Complete |
 | MLLM-03 | Phase 15 | Complete |
-| MLLM-04 | Phase 15 | Pending |
+| MLLM-04 | Phase 15 | Complete |
 | MLLM-05 | Phase 15 | Complete |
 | MLLM-06 | Phase 15 | Complete |
 | MLLM-07 | Phase 15 | Complete |
