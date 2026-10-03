@@ -568,13 +568,19 @@ def _duty_cycle(chunk_len: int, step_dt_s: float, depth_s: float, api_s: float) 
 
 
 def _section_6_rows() -> dict[str, list[str]]:
-    """Backend name -> cells of its row in section 6 of the live results file."""
+    """Backend name -> cells of its row in the FIRST table of section 6 of the live results file.
+
+    That table is the smoke-latency record mllm_defaults.json mirrors; later tables in the
+    section (the Task 3 episode re-derivation) have a different column layout.
+    """
     section = LIVE_RESULTS_MD.read_text().split(SECTION_6_HEADING, 1)[1]
     rows = {}
     for line in section.splitlines():
         if line.startswith("| mllm-"):
             cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
             rows[cells[0]] = cells
+        elif rows and not line.startswith("|"):
+            break
     return rows
 
 
