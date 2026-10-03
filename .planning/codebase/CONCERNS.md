@@ -1,123 +1,145 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-09-05
+**Analysis Date:** 2026-10-03
 
 ## Tech Debt
 
-**Stale HDF5 gripper-shape test assertion:**
-- Issue: `test_schema_and_obs_key_naming` in `LIBERO/libero/libero/datasets/test_hdf5_writer.py` asserts `gripper_states.shape[1] == 1`, but this was never updated after the D-07 gripper upgrade (stock ~2-3cm jaw → roboninecom 84mm 2-DOF parallel gripper). Actual shape is now 2.
-- Files: `LIBERO/libero/libero/datasets/test_hdf5_writer.py`
-- Impact: Test fails/misleads on every run touching HDF5 writing; masks real regressions in obs-key schema validation.
-- Fix approach: Update assertion to `== 2` and add a comment documenting the D-07 gripper DOF change. Logged in `.planning/STATE.md` as candidate cleanup for Phase 7 (touches same HDF5/camera code).
+**Backend proliferation in the VLA bridge:**
+- Issue: There are about 30 backend modules (VLA servers, HTTP/gRPC adapters, Gemini and MLLM chat backends), each paired with its own large test file. Shared logic lives in `base_*` modules, but every new backend repeats the server, adapter, and test wiring.
+- Files: `control/vla_bridge/backends/*.py`, `control/vla_bridge/*_server.py`, `control/test_backend_*.py`
+- Impact: Changing the action contract or observation format means editing many files at once.
+- Fix approach: Pull the common server boilerplate (Flask app, `/act` route, pinned-dependency check) into one shared module. Generate per-backend conformance tests from `control/test_backend_registry.py`.
 
-**Replay obs-regeneration pixel mismatch (undiagnosed):**
-- Issue: `test_verify_full_obs_regeneration_passes_on_04_02_output` in `LIBERO/libero/libero/datasets/test_replay.py` fails with a pixel mismatch in `(demo_1, 0, agentview_rgb)`. Suspected MuJoCo offscreen-render non-determinism, but not investigated.
-- Files: `LIBERO/libero/libero/datasets/test_replay.py`
-- Impact: Unknown whether replay-based obs regeneration is trustworthy for demo re-collection (Phase 9 depends on this).
-- Fix approach: Root-cause whether the mismatch is renderer non-determinism (seed/GL context) vs. a real state-replay bug; both open since 2026-08-10 per `.planning/STATE.md`.
+**Large monolithic modules and tests:**
+- Issue: `control/vla_bridge/backends/base_mllm.py` (915 lines), `control/run_vla_episode.py` (737), and `scripts/mjcf_to_urdf.py` (749) each mix several responsibilities. Some test files run past 1000 lines (`control/test_run_vla_episode.py` 2048, `control/test_backend_mllm_hf.py` 1178, `control/test_robot_client.py` 1053).
+- Impact: These files are hard to review and edits to them often collide.
+- Fix approach: Split `base_mllm.py` into separate modules for prompts, parsing, and conversion. Split `run_vla_episode.py` into CLI parsing and an episode loop.
 
-**Ultralytics installed but unused:**
-- Issue: `ultralytics==8.4.138` is pinned in `control/requirements.txt` "for the planned YOLO object-follow feature (adapting XLeRobot's `3_so100_yolo_ee_follow.py`) - not yet wired into any script."
-- Files: `control/requirements.txt`
-- Impact: Unused heavyweight dependency inflates install size/time in the `control/` venv; risk of silent version drift before the feature is actually built.
-- Fix approach: Either build the YOLO follow script soon or move the pin to a comment-only TODO until implementation starts.
+**sys.path manipulation in policy servers:**
+- Issue: Servers call `sys.path.insert` to import external model repos that are cloned on Colab.
+- Files: `control/vla_bridge/rdt1b_server.py:170`, `control/vla_bridge/openvla_oft_server.py:254`, `control/vla_bridge/groot_n15_server.py:258`, `control/vla_bridge/fastfs_server.py:111`
+- Impact: Imports only work when the repo layout matches what the code expects. Upstream repo changes break them silently.
+- Fix approach: Pin each repo to a commit in `control/vla_bridge/policy_server.ipynb` and validate the path at startup with a clear error.
 
-**No shared library across exploration/control/diagnostics scripts:**
-- Issue: `explorations/`, `control/`, and `diagnostics/` each resolve paths, servo protocol constants, and MuJoCo env setup independently with no shared module.
-- Files: `explorations/create_scene.py`, `explorations/soarm_sanity.py`, `diagnostics/servo_scan.py`, `diagnostics/servo_move_test.py`, `diagnostics/servo_set_id.py`, `diagnostics/servo_set_torque_limit.py`, `diagnostics/servo_torque.py`, `diagnostics/servo_drive_to_stall.py`, `diagnostics/servo_set_protection.py`
-- Impact: Protocol constants (e.g. `STS_PROTOCOL_END`, `ADDR_PRESENT_POSITION`, baud tables) are duplicated across diagnostics scripts; a bug fix in one script's servo addressing must be manually propagated to the others.
-- Fix approach: Extract a small `diagnostics/servo_common.py` (or similar) for shared Feetech STS3215 protocol constants and port-handling helpers.
+**Notebook/source drift:**
+- Issue: `control/vla_bridge/policy_server.ipynb` is kept in sync by `scripts/sync_policy_notebook.py`, and the notebook currently has uncommitted modifications.
+- Impact: The Colab runtime can run different code from the tested `.py` sources.
+- Fix approach: Always run the sync script before a Colab session and add a CI or pre-commit check for drift.
 
-**Repo-ahead-of-origin drift (recurring, cross-session):**
-- Issue: The outer repo has repeatedly drifted commits-ahead of `origin/main` without being pushed, and Colab always clones/pulls from `origin/main` — meaning Colab work can silently run against stale code.
-- Files: n/a (repo-level git workflow issue)
-- Impact: Confusing failures during Colab runs when local fixes were never pushed; wasted debugging time diagnosing "bugs" that were already fixed locally.
-- Fix approach: Check `git status -sb` for an "ahead" count before telling the user to `git pull` on Colab, every session (documented as a standing lesson in `.planning/STATE.md`).
+**Vendored LIBERO tree:**
+- Issue: `LIBERO/` is embedded with old pins (transformers 4.21.1, robosuite 1.4, MuJoCo 2.3.7). `control/requirements.txt` uses modern stacks (lerobot 0.6.1, opencv 5.x).
+- Impact: Simulation and hardware control cannot share one environment.
+- Fix approach: Keep separate venvs (`control/.venv`, `diagnostics/.venv`) and document which entry point needs which one.
 
 ## Known Bugs
 
-**Trivial pass-at-spawn on 3 of 4 Phase 6 eval tasks:**
-- Symptoms: `RightOfX`, `NearTo`, and `LeftOfX` eval tasks pass at 100% both before AND after fine-tuning — they are satisfied by the object's spawn position without requiring any real manipulation. Only the one real `On`-predicate task showed genuine 0%→improvement signal.
-- Files: LIBERO benchmark task/predicate definitions consumed via `LIBERO/libero/libero/bddl_files/` and Phase 6 eval outputs (`06b_eval_videos/`)
-- Trigger: Run the Phase 6 checkpoint benchmark suite; spatial-predicate tasks are satisfied trivially by initial object placement.
-- Workaround: None yet — root cause of the v1.1 BENCH-01..04 requirements (Phase 8 is chartered to fix task/object placement so predicates are not trivially satisfied at spawn).
+**Version-sensitive model loading (OpenVLA):**
+- Symptoms: Action tokens are decoded incorrectly, or loading fails, when the dependency versions are wrong.
+- Files: `control/vla_bridge/openvla_server.py` (`PINNED_DEPENDENCIES`, lines ~30-143)
+- Trigger: A Colab runtime with transformers or tokenizers versions other than 4.40.1 / 0.19.1. The docstring also notes a gripper normalization issue that clipped values to 1.0.
+- Workaround: The server checks the pins and warns or fails at startup.
+
+**Stock gripper cannot grasp LIBERO objects:**
+- Symptoms: The roughly 2-3 cm jaw opening fails on every LIBERO object.
+- Files: `So-101/` MJCF assets, `diagnostics/render_gripper_clamp.py`
+- Workaround: Switch to the 84 mm parallel gripper (tracked in project memory).
 
 ## Security Considerations
 
-**No secrets detected in tracked files:**
-- Risk: None identified — no `.env`, credentials, or hardcoded API keys found in `explorations/`, `control/`, `diagnostics/`, or `LIBERO/` during this audit.
-- Files: n/a
-- Current mitigation: `explorations/data/` and other data directories are gitignored.
-- Recommendations: Continue excluding `HF_ADAPTER_REPO_ID` and any Colab secrets from being committed; verify `.gitignore` covers `.venv/` directories under `control/` and `diagnostics/` (both contain full virtualenvs with `site-packages` — confirm these are not accidentally tracked).
+**Unauthenticated policy servers bound to 0.0.0.0:**
+- Risk: Any host that can reach the port can send observations and get actions, or overload the GPU. Exposure through tunnels (Colab, ngrok) makes these servers public.
+- Files: `control/vla_bridge/openvla_server.py:382`, `control/vla_bridge/openvla_oft_server.py`, `control/vla_bridge/octo_server.py`, `control/vla_bridge/rdt1b_server.py`, `control/vla_bridge/groot_n15_server.py`, `control/vla_bridge/groot_n17_server.py`, `control/vla_bridge/wallx_server.py`, `control/vla_bridge/diffusion_policy_server.py`, `control/vla_bridge/fastfs_server.py`
+- Current mitigation: None in code.
+- Recommendations: Require a shared-secret header checked by `control/vla_bridge/backends/base_http_adapter.py`, and bind to localhost when no tunnel is used.
+
+**Physical robot actuation from remote model output:**
+- Risk: Bad model actions drive the real SO-101 arm.
+- Files: `control/vla_bridge/safety_validator.py`, `control/vla_bridge/robot_client.py`, `control/run_vla_episode.py`
+- Current mitigation: Each action is clamped to absolute joint limits, a per-step delta, and a velocity bound, with flags logged.
+- Recommendations: Add a watchdog that stops the robot when the server times out. Never bypass `validate_action` in new backends.
+
+**Third-party LLM API keys:**
+- Risk: Keys could leak through logs or I/O recordings.
+- Files: `control/vla_bridge/backends/base_gemini.py`, `control/vla_bridge/backends/mllm_claude.py`, `control/vla_bridge/backends/mllm_gpt.py`, `control/vla_bridge/io_logger.py`, `control/vla_bridge/mllm_record.py`
+- Current mitigation: Keys come from environment variables, and `**/.env` is gitignored.
+- Recommendations: Redact request headers in `io_logger.py` and `mllm_record.py` output.
 
 ## Performance Bottlenecks
 
-**No significant bottlenecks identified in this pass.**
-- The codebase is research/exploration-scale (single-episode rendering, single-arm servo control); no high-throughput or latency-critical paths were found that warrant explicit performance concern documentation at this time.
+**Remote inference round-trip per control tick:**
+- Problem: Each action requires an HTTP or gRPC call from the local machine to Colab.
+- Files: `control/vla_bridge/robot_client.py`, `control/tune_execution_hz.py`, `control/vla_bridge/backends/base_http_adapter.py`
+- Cause: Network latency plus model inference on a T4/A100. Phase 12 ("bridge tick latency fix") addressed part of this.
+- Improvement path: Use action chunking and asynchronous prefetch, and keep the inference servers resident.
+
+**MLLM backends:**
+- Problem: Chat-model calls (Claude, GPT, Gemini, HF Qwen/Kimi/DeepSeek) take seconds per step.
+- Files: `control/vla_bridge/backends/base_mllm*.py`
+- Improvement path: Request multi-step plans and run low-level control locally.
 
 ## Fragile Areas
 
-**LIBERO import path setup:**
-- Files: `explorations/create_scene.py`, `explorations/soarm_sanity.py`
-- Why fragile: Both scripts manually insert `explorations/LIBERO` into `sys.path` before importing `libero.*`, and both hardcode `MUJOCO_GL=glfw` inline for macOS headless rendering (documented as an architectural constraint — `osmesa` is Linux-only and would silently fail on macOS if swapped in). Any new script importing LIBERO must replicate this exact pattern or fail with unclear import errors.
-- Safe modification: Any new LIBERO-consuming script must set `MUJOCO_GL` and extend `sys.path` before the first `import libero` statement; do not assume it's set globally.
-- Test coverage: No test verifies this setup pattern; failures surface only at runtime with cryptic MuJoCo/GL errors.
+**Broad exception handling:**
+- Files: `control/vla_bridge/backends/base_mllm.py` (5 broad `except Exception`), `control/vla_bridge/check_checkpoint.py` (4), `control/vla_bridge/mllm_record.py` (4), `control/vla_bridge/backends/base_gemini.py` (2), and others
+- Why fragile: Real failures can be swallowed and turned into silent fallbacks.
+- Safe modification: Narrow the exception types and log the original error.
 
-**`~/.libero/config.yaml` first-import interactive prompt:**
-- Files: LIBERO package import surface (`LIBERO/libero/`)
-- Why fragile: The first import of LIBERO reads `~/.libero/config.yaml` from the user's home directory; if absent, the package prompts interactively, causing `EOFError` in non-interactive contexts (Colab, CI, scripted runs).
-- Safe modification: Any automation (Colab notebook cells, CI, scripted diagnostics) must ensure `~/.libero/config.yaml` exists before the first LIBERO import.
-- Test coverage: None — this is a known operational gotcha, not test-covered.
+**Hardware device resolution:**
+- Files: `control/detect_devices.py`, `control/device_map.json` (gitignored, machine-local), `control/vla_bridge/depth_camera.py`, `control/vla_bridge/stereo_camera.py`
+- Why fragile: Serial ports (`/dev/cu.usbmodem*`) and camera indices change between machines and sessions.
+- Safe modification: Always resolve devices through `detect_devices.py`. Never hardcode indices.
 
-**Physical hardware scripts have no automated tests:**
-- Files: `diagnostics/servo_scan.py`, `diagnostics/servo_move_test.py`, `diagnostics/servo_drive_to_stall.py`, `diagnostics/servo_set_protection.py`, `diagnostics/servo_set_id.py`, `diagnostics/servo_set_torque_limit.py`, `diagnostics/servo_torque.py`, `diagnostics/camera_test.py`, `control/keyboard_joint_control.py`, `control/record_episode.py`, `control/joint_jog.py`
-- Why fragile: These scripts directly drive physical Feetech STS3215 servos over serial (torque limits, ID assignment, stall-drive protection tuning) — incorrect protocol constants or baud handling can physically damage hardware (e.g. `servo_drive_to_stall.py`, `servo_set_protection.py`). There is no simulation/mocking layer; verification is manual (`diagnostics/UAT/`).
-- Safe modification: Changes to servo addressing constants (`ADDR_PRESENT_POSITION`, protocol end byte, baud tables) must be manually cross-checked against the Feetech STS3215 control table before running against real hardware; test on a single servo ID first via `--ids` scoping.
-- Test coverage: `diagnostics/UAT/` contains manual UAT procedures, not automated tests — no CI or simulated hardware-in-the-loop coverage exists.
+**Calibration and URDF derivation:**
+- Files: `scripts/mjcf_to_urdf.py`, `scripts/verify_urdf.py`, `control/vla_bridge/mllm_urdf.py`, `control/vla_bridge/backends/eef_to_joint.py`, `diagnostics/*coppelia*.py`
+- Why fragile: EEF-to-joint conversion through ikpy depends on the derived URDF matching the hardware. Joint-frame errors show up as wrong motions, not as exceptions.
+- Test coverage: `scripts/test_verify_urdf.py` and `control/test_eef_to_joint.py` exist. Real-hardware conformance is checked manually.
 
 ## Scaling Limits
 
-**Not applicable at current project scale.**
-- This is a single-researcher, Colab-GPU-budget project (SO-ARM101 desktop arm, single-arm single-camera setup). No scaling concerns were identified — the relevant constraints are compute-budget and physical-embodiment limits (see Missing Critical Features / embodiment note below), not software scaling.
+**Colab compute:**
+- Current capacity: A single T4 or A100 session, depending on tier.
+- Limit: Session timeouts and runtime drift (see the phase 6 fine-tuning blockers).
+- Scaling path: Use a persistent GPU host or a containerized server image.
 
 ## Dependencies at Risk
 
-**Loose/unpinned dependency versions in `explorations/requirements.txt`:**
-- Risk: `explorations/requirements.txt` uses loose lower-bound pins (`>=1.11.0`, `>=1.21.0`, `>=1.4.0`, etc.) with no lockfile, while `LIBERO/requirements.txt` and `control/requirements.txt` use exact pins.
-- Impact: Exploration scripts can silently pick up breaking upstream releases (numpy, torch, transformers) between runs, especially problematic given the project's own documented note that transformers version conflicts exist between LIBERO training and VLA inference (hence "two separate Colab kernel groups needed").
-- Migration plan: Pin `explorations/requirements.txt` to exact versions matching what's validated on Colab, mirroring the `control/requirements.txt` pinning pattern already adopted (`chore(control): pin requirements.txt to actual installed versions`).
+**Exact pins on fast-moving packages:**
+- Risk: `google-genai==2.25.0` (preview Robotics-ER API), `lerobot[feetech,async]==0.6.1`, and the transformers pin in the OpenVLA server are tied to preview or unstable APIs.
+- Files: `control/requirements.txt`, `control/vla_bridge/openvla_server.py`
+- Impact: Preview model IDs such as `gemini-robotics-er-2-preview` may be removed.
+- Migration plan: Keep model IDs configurable and the pins centralized.
 
-**No SOARM URDF/MJCF from vendor — derived model:**
-- Risk: The SOARM MJCF used in simulation is derived from `so101_new_calib.xml` rather than an authoritative vendor model (documented research decision), since no official SOARM URDF/MJCF exists.
-- Impact: Any physical/simulated mismatch (mass, joint limits, gripper geometry) traces back to this derived model, not a vendor spec — compounds with the D-07 gripper upgrade (roboninecom 84mm parallel gripper) which required custom MJCF modeling (see MEMORY.md `soarm-gripper-mjcf-modeling-notes`).
-- Migration plan: None planned; this is an accepted project constraint, not a bug — flagged here for future debugging context when sim-to-real discrepancies appear.
+**No lockfile:**
+- Risk: Transitive dependencies drift.
+- Migration plan: Generate hash-locked requirements, for example with `pip-compile`.
 
 ## Missing Critical Features
 
-**Physical hardware transfer deferred to v2, but now an active parallel track:**
-- Problem: `PHYS-01` to `PHYS-03` (SOARM hardware transfer) were originally deferred to v2, but per the most recent quick task (`260902-kcf`), physical hardware integration is now an active parallel track — yet `.planning/STATE.md`'s "Deferred Items" table still lists it as "v2 deferred."
-- Blocks: Risk of stale planning docs causing confusion about whether physical-hardware work (`control/`, `diagnostics/`) is in-scope for the current milestone.
-- Files: `.planning/STATE.md` (Deferred Items table), `.planning/PROJECT.md`
+**No CI:**
+- Problem: `.github/` is gitignored and there is no automated test run.
+- Blocks: Regressions across the many backends go undetected.
 
-**Embodiment constraint must be respected by all new Phase 7/8/9 tasks:**
-- Problem: SO-ARM101 is a small ~500g-payload desktop arm. New tasks/objects must keep objects AND targets within ~0.45m reach, objects ≤84mm graspable width (post D-07 gripper upgrade), and avoid the base's forward centerline collision corridor (the forearm sweeps through y≈0 near the base).
-- Blocks: Any new BDDL task/object authored in Phase 8 without respecting these constraints will produce ungraspable or arm-colliding tasks — this is the binding constraint carried forward from Phase 4.
-- Files: LIBERO BDDL task files under `LIBERO/libero/libero/bddl_files/`, referenced in `.planning/STATE.md` Blockers/Concerns.
+**No end-to-end sim-to-real evaluation harness:**
+- Problem: Evaluation artifacts (`06b_eval_videos/`, `reports/`) are produced manually.
 
 ## Test Coverage Gaps
 
-**No automated tests for `control/` and `diagnostics/` scripts:**
-- What's not tested: `control/keyboard_joint_control.py`, `control/record_episode.py`, `control/joint_jog.py`, and all `diagnostics/servo_*.py` / `diagnostics/camera_test.py` scripts — all physical-hardware-facing.
-- Files: `control/*.py`, `diagnostics/*.py`
-- Risk: Regressions in servo protocol handling, torque limits, or recording logic could go unnoticed until run against physical hardware, with potential for hardware damage (torque/stall scripts) or silent data-quality loss (episode recording).
-- Priority: Medium — mitigated by manual UAT procedures in `diagnostics/UAT/`, but no regression safety net exists for future refactors.
+**Real model inference paths:**
+- What's not tested: Backends are tested against fakes (`control/fake_providers.py`). The real servers' model loading is not exercised.
+- Files: `control/vla_bridge/*_server.py`
+- Risk: Dependency or upstream API breaks only show up on Colab.
+- Priority: High
 
-**Two pre-existing open test failures in LIBERO dataset layer:**
-- What's not tested/passing: `test_hdf5_writer.py::test_schema_and_obs_key_naming` (stale gripper shape assertion) and `test_replay.py::test_verify_full_obs_regeneration_passes_on_04_02_output` (pixel mismatch, undiagnosed) — see Tech Debt above.
-- Files: `LIBERO/libero/libero/datasets/test_hdf5_writer.py`, `LIBERO/libero/libero/datasets/test_replay.py`
-- Risk: Both tests touch the exact data pipeline (HDF5 writing, obs replay) that Phase 7 (camera & depth perception) and Phase 9 (demo re-collection) depend on — undiagnosed failures here could mask real regressions introduced by upcoming camera/depth pipeline changes.
-- Priority: High — explicitly flagged in `.planning/STATE.md` as candidate cleanup for Phase 7 since it touches the same HDF5/camera-rendering code path.
+**Diagnostics scripts:**
+- What's not tested: Most of `diagnostics/servo_*.py` and the camera tuning scripts.
+- Files: `diagnostics/`
+- Risk: Servo ID, protection, or torque writes could misconfigure hardware.
+- Priority: Medium
+
+**LIBERO / simulation integration:**
+- What's not tested: `explorations/soarm_sanity.py` and the LIBERO env construction with the SOARM model.
+- Priority: Medium
 
 ---
 
-*Concerns audit: 2026-09-05*
+*Concerns audit: 2026-10-03*

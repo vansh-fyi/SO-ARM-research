@@ -1,248 +1,199 @@
-<!-- refreshed: 2026-09-05 -->
+<!-- refreshed: 2026-10-03 -->
 # Architecture
 
-**Analysis Date:** 2026-09-05
+**Analysis Date:** 2026-10-03
 
 ## System Overview
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Research Track (Colab / MuJoCo)                  │
-├──────────────────────┬────────────────────┬──────────────────────────┤
-│  Exploration Scripts  │   LIBERO Benchmark  │   Notebooks (Colab)      │
-│  `explorations/`      │   `LIBERO/libero/`  │   `LIBERO/notebooks/`   │
-└──────────┬─────────────┴──────────┬──────────┴────────────┬───────────┘
-           │                        │                        │
-           ▼                        ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  MuJoCo / robosuite Sim   │  Lifelong Learning Loop │  VLA Inference  │
-│  `LIBERO/libero/libero/   │  `LIBERO/libero/         │  (π0 / OFT via  │
-│   envs/`                  │   lifelong/`             │  notebooks)     │
-└────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│               Real-Hardware VLA/MLLM Harness (Mac, local)                 │
+│   `control/run_vla_episode.py`  (CLI: --backend <name>)                   │
+├───────────────┬───────────────────┬───────────────────┬──────────────────┤
+│ Backend        │ ActionSource       │ Safety gate        │ I/O + sensors    │
+│ registry       │ (per backend)      │ `vla_bridge/       │ `io_logger.py`,  │
+│ `vla_bridge/   │ `vla_bridge/       │  safety_validator  │ `stereo_camera`, │
+│  backends/     │  backends/*.py`    │  .py` +            │ `depth_camera`,  │
+│  __init__.py`  │                    │ `action_contract`  │ `depth_recorder` │
+└──────┬────────┴─────────┬─────────┴─────────┬─────────┴──────────────────┘
+       │ Tier A/B gRPC     │ Tier C HTTP        │ Direct cloud HTTPS
+       ▼                   ▼                    ▼
+┌──────────────────┐ ┌────────────────────┐ ┌──────────────────────────────┐
+│ Colab PolicyServer│ │ Colab resident HTTP │ │ Gemini / Claude / GPT / HF   │
+│ (LeRobot async)   │ │ servers             │ │ MLLM providers               │
+│ `vla_bridge/      │ │ `vla_bridge/*_      │ │ `backends/base_mllm*.py`,    │
+│ policy_server     │ │  server.py`         │ │ `backends/base_gemini.py`    │
+│ .ipynb`           │ │ (+ `fastfs_server`) │ │                              │
+└──────────────────┘ └────────────────────┘ └──────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ SO-ARM101 follower (LeRobot `SO101Follower`, Feetech STS3215 bus)         │
+│ helpers: `control/keyboard_joint_control.py`, `diagnostics/servo_*.py`    │
+└──────────────────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────┐
-│                  Physical Hardware Track (parallel)                  │
-├──────────────────────────────┬───────────────────────────────────────┤
-│  Diagnostics (bring-up/UAT)   │   Control (teleop/data capture)       │
-│  `diagnostics/`               │   `control/`                          │
-└──────────────────────────────┴───────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Simulation track (Colab / MuJoCo): `LIBERO/` (vendored, SOARM robot added │
+│ under `LIBERO/libero/libero/assets/robots/soarm101`), notebooks           │
+│ `LIBERO/notebooks/0*.ipynb`, explorations `explorations/`                 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Component Responsibilities
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| Real-3DQA Explorer | Load `.pth` point clouds and `.jsonl` QA annotations, render bird's-eye/3D visualizations | `explorations/real3dqa/explore.py` |
-| LIBERO Data Explorer | Load HuggingFace parquet episode frames from manipulation dataset, render episode grids | `explorations/lib/explore.py` |
-| Scene Creator | Instantiate MuJoCo LIBERO environment from a BDDL file, render multi-camera frames | `explorations/create_scene.py` |
-| Point Cloud Renderer | Software-rasterize ScanNet `.pth` point clouds to PNG without GPU | `explorations/render_scenes.py` |
-| Dataset Downloader | Download Real-3DQA dataset from remote source | `explorations/download_real3dqa.py` |
-| SOARM Sanity Check | Validate SOARM model/env loads correctly before deeper exploration | `explorations/soarm_sanity.py` |
-| LIBERO Core Library | Simulation environments (MuJoCo), BDDL-driven task definitions, robot/arena/object classes | `LIBERO/libero/libero/envs/` |
-| LIBERO Lifelong Learning | Continual/lifelong learning training loop, algorithms (EWC, AGEM, PackNet, ER), evaluation | `LIBERO/libero/lifelong/` |
-| LIBERO Benchmark Scripts | Dataset download, task suite checks, single-task rendering, dataset integrity checks | `LIBERO/benchmark_scripts/` |
-| LIBERO Notebooks | Colab-driven pipeline: env setup → integration check → OFT/π0 inference → finetune → eval | `LIBERO/notebooks/*.ipynb` |
-| Hardware Diagnostics | Servo bring-up, torque/protection tuning, camera checks, UAT scripts for physical SOARM | `diagnostics/` |
-| Hardware Control | Teleop (joint jog/keyboard) and episode recording from the physical arm | `control/` |
-| GSD Planning System | Multi-CLI orchestration scaffolding (agents/skills/commands) driving phased execution | `.claude/`, `.agents/`, `.codex/`, `.github/`, `.opencode/` |
-| Planning State | Roadmap, phase plans, requirements, and codebase docs consumed by GSD workflow | `.planning/` |
+| Episode harness | Control loop, camera open, e-stop, return-to-start, termination record | `control/run_vla_episode.py` |
+| Backend registry | Auto-discover backend modules, `@register`/`@register_grpc_backend`, load per-backend JSON config | `control/vla_bridge/backends/__init__.py` |
+| Backend configs | Per-backend checkpoint/endpoint/action-space/camera_map | `control/vla_bridge/backend_configs/*.json` |
+| gRPC lane base | LeRobot PolicyServer client wrapper + action conversion | `control/vla_bridge/backends/base_grpc.py`, `control/vla_bridge/robot_client.py` |
+| HTTP adapter base | Tier C resident-server client (PNG obs, joint action) | `control/vla_bridge/backends/base_http_adapter.py` |
+| MLLM base | Chunked joint-target prompting, JSON schema parsing, holds, failure cap | `control/vla_bridge/backends/base_mllm.py`, `base_mllm_build.py`, `base_mllm_chat.py` |
+| Gemini base | Gemini Robotics direct-cloud lane | `control/vla_bridge/backends/base_gemini.py` |
+| Action conversions | EEF/relative-EE to joint targets | `control/vla_bridge/backends/eef_to_joint.py`, `relative_ee_conversion.py`, `er_conversion.py` |
+| MLLM support | Inputs (images/depth), prompt, schema, URDF context, recording | `control/vla_bridge/mllm_inputs.py`, `mllm_prompt.py`, `mllm_schema.py`, `mllm_urdf.py`, `mllm_record.py` |
+| Safety validator | Joint-limit clamp, NaN reject, per-step + velocity caps, stale-obs hold | `control/vla_bridge/safety_validator.py` |
+| Action contract | `JOINT_ORDER`, calibration ticks to degrees, joint limits | `control/vla_bridge/action_contract.py` |
+| Colab model servers | Resident model HTTP servers (OpenVLA, OFT, Octo, GR00T, RDT, WallX, DP, FastFS depth) | `control/vla_bridge/*_server.py`, `control/vla_bridge/policy_server.ipynb` |
+| Hardware teleop/record | Jog, keyboard control, calibration, episode recording | `control/joint_jog.py`, `control/keyboard_joint_control.py`, `control/record_episode.py` |
+| Diagnostics | Servo bring-up, stereo calibration, CoppeliaSim/MuJoCo alignment, UAT | `diagnostics/` |
+| URDF tooling | MJCF to URDF, URDF verification, notebook sync | `scripts/` |
+| LIBERO sim | BDDL tasks, MuJoCo envs, SOARM robot model, lifelong training | `LIBERO/libero/` |
+| Sim notebooks | Colab env setup, SOARM integration, OFT/pi0 inference, finetune, eval | `LIBERO/notebooks/01-*.ipynb` .. `06b-eval.ipynb` |
+| Explorations | Dataset/scene exploration scripts | `explorations/` |
 
 ## Pattern Overview
 
-**Overall:** Script-oriented research monorepo with a vendored benchmark dependency (LIBERO) and two parallel hardware/software tracks (simulation research vs. physical robot bring-up), coordinated by a GSD (Get Stuff Done) planning framework rather than a conventional application architecture.
+**Overall:** Script-oriented research monorepo. The active core is a plugin-architecture hardware harness (`control/`) where interchangeable policy backends produce actions behind one `ActionSource` protocol and every action is gated by a single safety validator.
 
 **Key Characteristics:**
-- No central application server or client — each script/notebook is an independent, CLI-invoked entry point.
-- Simulation (LIBERO/MuJoCo/Colab) and physical hardware (`control/`, `diagnostics/`) are two loosely coupled tracks that will converge once the physical SOARM gripper/embodiment work lands (see `.claude/projects` memory: gripper embodiment blocker).
-- `LIBERO/` is a vendored benchmark repo (its own `.git` history) treated as an external dependency, not modified in place except where the project has patched it (see notebooks/quick-task history for LIBERO fixes).
-- GSD tooling (`.claude/`, `.agents/`, `.codex/`, `.github/`, `.opencode/`) mirrors the same skill/agent/workflow definitions across multiple AI CLI backends — these directories are near-duplicates of each other, one per supported coding agent.
+- Strategy/plugin pattern: backends are sibling modules registered by decorator; adding one never edits the registry.
+- Three transport tiers: gRPC to Colab LeRobot PolicyServer (Tier A/B), resident HTTP adapter servers on Colab (Tier C), direct cloud provider HTTPS (Gemini, MLLM).
+- All actions are joint-space `JOINT_ORDER` targets by the time they reach `safety_validator.validate_action()`.
+- Colab-side server code lives in-repo (`control/vla_bridge/*_server.py`) and is synced into `policy_server.ipynb` by `scripts/sync_policy_notebook.py`.
+- `LIBERO/` is a vendored benchmark (own history) extended with a SOARM robot; simulation and hardware tracks are loosely coupled.
 
 ## Layers
 
-**Exploration Layer:**
-- Purpose: One-off and iterative research investigation scripts (dataset exploration, scene rendering, sanity checks)
-- Location: `explorations/`
-- Contains: Dataset loading, visualization, scene rendering, download utilities
-- Depends on: `explorations/data/` for input; numpy/matplotlib/torch/pandas/PIL for processing; `LIBERO/` for MuJoCo env access
-- Used by: Researchers running CLI tools directly
+**Harness layer:**
+- Purpose: Orchestrate one episode on real hardware
+- Location: `control/run_vla_episode.py`
+- Contains: `ActionSource` Protocol, `run_episode()`, `main()` CLI, camera/device-map helpers
+- Depends on: `vla_bridge.backends`, `safety_validator`, `io_logger`, `keyboard_joint_control`, `detect_devices`
+- Used by: Researcher CLI, `control/test_run_vla_episode.py`
 
-**Simulation Environment Layer:**
-- Purpose: MuJoCo-based robot simulation environments, task definitions via BDDL
-- Location: `LIBERO/libero/libero/envs/`
-- Contains: `OffScreenRenderEnv`, arena definitions, robot configs, object models, BDDL parser
-- Depends on: MuJoCo 2.3.7, robosuite 1.4.x, BDDL assets in `LIBERO/libero/libero/bddl_files/`
-- Used by: `explorations/create_scene.py`, notebooks, lifelong learning training
+**Backend layer:**
+- Purpose: Turn observations + instruction into raw candidate actions
+- Location: `control/vla_bridge/backends/`
+- Contains: one module per backend (`pi0.py`, `smolvla.py`, `openvla.py`, `mllm_claude.py`, ...) plus `base_*.py` tier helpers
+- Depends on: `robot_client.py`, `mllm_*.py`, `backend_configs/`, provider SDKs (imported inside `build()`)
+- Used by: Harness via `BACKEND_REGISTRY[name](args, camera_names, joint_limits_deg) -> BackendHandles`
 
-**Lifelong Learning / Training Layer:**
-- Purpose: Training and evaluation of continual learning and VLA-adjacent policies on the LIBERO benchmark
-- Location: `LIBERO/libero/lifelong/`
-- Contains: `main.py` (Hydra entrypoint), algorithm implementations (`algos/`: EWC, AGEM, ER, PackNet, multitask, single-task), `datasets.py`, `models/`, `metric.py`, `evaluate.py`
-- Depends on: Hydra config system (`LIBERO/libero/configs/`), wandb, torch, LIBERO benchmark core
-- Used by: Research training runs, invoked from notebooks or CLI
+**Safety/contract layer:**
+- Purpose: Treat every action as untrusted; clamp/hold
+- Location: `control/vla_bridge/safety_validator.py`, `control/vla_bridge/action_contract.py`
+- Used by: Harness, `robot_client.pop_validated_action()`
 
-**Notebook Orchestration Layer:**
-- Purpose: End-to-end Colab pipeline stitching environment setup, integration checks, VLA inference (OFT/π0), finetuning, and evaluation
-- Location: `LIBERO/notebooks/`
-- Contains: `01-colab-env-setup.ipynb`, `02-soarm-integration-check.ipynb`, `03a-oft-inference-eval.ipynb`, `03b-pi0-inference-smoketest.ipynb`, `06a-finetune.ipynb`, `06b-eval.ipynb`
-- Depends on: LIBERO core + lifelong layers, HuggingFace-hosted adapters/checkpoints
-- Used by: Researchers running full pipeline on Colab GPU runtimes
+**Remote model layer (Colab):**
+- Purpose: Host GPU models
+- Location: `control/vla_bridge/*_server.py`, `control/vla_bridge/policy_server.ipynb`, launch guide `control/vla_bridge/policy_server_launch.md`
 
-**Hardware Diagnostics Layer:**
-- Purpose: Bring-up, calibration, and UAT for the physical SOARM arm and its servos/cameras
-- Location: `diagnostics/`
-- Contains: Servo scan/torque/protection/ID scripts, camera test, `UAT/` (assembly/components/function checklists), `PARTS_LIST.md`
-- Depends on: Physical servo bus hardware, `diagnostics/.venv`, `diagnostics/requirements.txt`
-- Used by: Hardware bring-up sessions, run standalone against the physical arm
-
-**Hardware Control Layer:**
-- Purpose: Teleoperation and episode data capture from the physical SOARM arm
-- Location: `control/`
-- Contains: `joint_jog.py`, `keyboard_joint_control.py`, `record_episode.py`, `outputs/` (captured episode data)
-- Depends on: Physical hardware, `control/.venv`, `control/requirements.txt`
-- Used by: Data collection sessions feeding future physical-embodiment fine-tuning
-
-**Planning/GSD Layer:**
-- Purpose: Phase-based project management scaffolding — roadmap, requirements, per-phase plans, codebase docs
-- Location: `.planning/`
-- Contains: `PROJECT.md`, `ROADMAP.md`, `REQUIREMENTS.md`, `STATE.md`, `phases/`, `quick/` (ad-hoc task logs), `codebase/` (this document set), `notes/`, `seeds/`, `todos/`
-- Depends on: Nothing (pure markdown/JSON state)
-- Used by: GSD slash commands (`.claude/commands/`, mirrored skill sets in `.agents/`, `.codex/`, `.github/`, `.opencode/`)
+**Simulation layer:**
+- Location: `LIBERO/libero/libero/envs/`, `LIBERO/libero/libero/assets/robots/soarm101`, `LIBERO/notebooks/`
 
 ## Data Flow
 
-### Simulation Research Flow (Colab)
+### Primary Request Path (real-hardware episode)
 
-1. `01-colab-env-setup.ipynb` provisions the Colab runtime and installs LIBERO/robosuite/MuJoCo deps.
-2. `02-soarm-integration-check.ipynb` validates SOARM model integration against LIBERO envs (parallels `explorations/soarm_sanity.py`).
-3. `03a-oft-inference-eval.ipynb` / `03b-pi0-inference-smoketest.ipynb` run VLA inference (OFT or π0) against `OffScreenRenderEnv` (`LIBERO/libero/libero/envs/env_wrapper.py`) for a BDDL-defined task.
-4. `06a-finetune.ipynb` fine-tunes the VLA policy via the lifelong-learning training loop (`LIBERO/libero/lifelong/main.py`), Hydra-configured.
-5. `06b-eval.ipynb` evaluates the fine-tuned policy, producing episode videos under `06b_eval_videos/before/` and `06b_eval_videos/after/`.
+1. CLI parses args, loads joint limits via `action_contract.load_joint_limits_deg()` (`control/run_vla_episode.py:436`)
+2. Backend built from `BACKEND_REGISTRY[--backend]`, returns `BackendHandles(action_source, robot, stereo_camera, skip_camera_names, shutdown)` (`control/vla_bridge/backends/__init__.py:57`)
+3. Loop: read joint state, `action_source.get_action(joint_state, instruction)` (`control/run_vla_episode.py:159`)
+4. `safety_validator.validate_action()` clamps/holds (`control/vla_bridge/safety_validator.py:58`)
+5. Waypoint interpolation and `robot.send_action()`; observations/actions logged as JSON Lines by `IOLogger` (`control/vla_bridge/io_logger.py`)
+6. Termination (max steps, KeyboardInterrupt e-stop, `episode_complete_reason`) then return-to-start, `_shutdown_backend()`, `_write_termination()` (`control/run_vla_episode.py:224`, `:709`)
 
-### Local Exploration Flow
+### MLLM Chunk Path
 
-1. `explorations/lib/explore.py` or `explorations/real3dqa/explore.py` loads a local/HF dataset from `explorations/data/`.
-2. Data is rendered to `explorations/outputs/` via matplotlib (headless `Agg` backend).
-3. `explorations/create_scene.py` separately instantiates a live MuJoCo env from a BDDL file and renders multi-camera frames — this is the direct analog of the notebook `02`/`03` steps, run locally instead of on Colab.
+1. `MllmActionSourceBase` (`control/vla_bridge/backends/base_mllm.py:518`) drains a queue of joint targets
+2. On empty queue: `mllm_inputs.py` gathers images and depth (FastFS via `--depth-endpoint`), `mllm_prompt.py` builds the prompt, provider adapter calls the API
+3. `parse_chunk()` (`base_mllm.py:402`) validates against `mllm_schema.py`; failures produce holds and count toward a failure cap; `mllm_record.py` records each call
 
-### Physical Hardware Flow
+### Sim Path
 
-1. `diagnostics/servo_scan.py`, `servo_set_id.py`, `servo_set_torque_limit.py`, `servo_set_protection.py` bring up and calibrate individual servos.
-2. `diagnostics/servo_move_test.py`, `servo_drive_to_stall.py`, `camera_test.py` validate motion range and camera feeds; results/checklists tracked in `diagnostics/UAT/`.
-3. `control/joint_jog.py` / `keyboard_joint_control.py` provide manual teleoperation once servos are validated.
-4. `control/record_episode.py` captures teleop episodes to `control/outputs/` for future use as physical-embodiment training data.
+1. Colab notebook sets up LIBERO env (`LIBERO/notebooks/01-colab-env-setup.ipynb`)
+2. BDDL task to `OffScreenRenderEnv` with SOARM robot, VLA inference (`03a`, `03b`), finetune/eval (`06a`, `06b`)
 
 **State Management:**
-- No shared runtime state across scripts — each script/notebook is stateless and reads/writes disk on each invocation.
-- LIBERO lifelong training persists model checkpoints to disk; wandb tracks metrics remotely.
-- `.planning/STATE.md` and `.planning/phases/` track GSD workflow state (not application runtime state).
+- Per-episode state on disk under `control/outputs/<run>/`; robot calibration read from the LeRobot HF cache; no shared global state beyond `BACKEND_REGISTRY` and `GRPC_BRIDGE_BACKENDS`.
 
 ## Key Abstractions
 
-**OffScreenRenderEnv:**
-- Purpose: MuJoCo simulation environment initialized from a BDDL task description, supports headless multi-camera rendering
-- Location: `LIBERO/libero/libero/envs/env_wrapper.py`
-- Pattern: Wraps robosuite environment; standard gym-like `reset()` / `step(action)` interface
+**ActionSource:**
+- Purpose: `get_action(joint_state, instruction) -> (action, model_version)`; optional `episode_complete_reason`, `close()`
+- Examples: `control/vla_bridge/backends/scripted.py`, `control/vla_bridge/robot_client.py:464` (`BridgeActionSource`), `base_grpc.py:125`, `base_http_adapter.py:103`
+- Pattern: Structural Protocol (duck typing)
 
-**BDDL Task Definition:**
-- Purpose: Declarative task specification (PDDL-like DSL) defining arena, fixtures, objects, initial state, and goal conditions
-- Location: `LIBERO/libero/libero/bddl_files/libero_spatial/`, `libero_object/`, `libero_goal/`, `libero_100/`
-- Pattern: Each `.bddl` file is one task; parsed at env construction
+**BackendHandles:**
+- Purpose: Everything a backend hands the harness, including ownership of exclusive devices
+- Example: `control/vla_bridge/backends/__init__.py:57`
 
-**Lifelong Algorithm Base:**
-- Purpose: Abstract interface for continual learning algorithms
-- Location: `LIBERO/libero/lifelong/algos/base.py`
-- Pattern: Subclassed by `agem.py`, `er.py`, `ewc.py`, `multitask.py`, `packnet.py`, `single_task.py`
-
-**GSD Skill/Command Pair:**
-- Purpose: Each GSD workflow command (e.g. `/gsd-plan-phase`) has a matching skill definition surfaced to the agent
-- Location: `.claude/commands/*.md` (invocation) + `.claude/skills/gsd-*/` and mirrored `.agents/`, `.codex/`, `.github/`, `.opencode/` trees (skill content)
-- Pattern: Near-identical directory structure duplicated per supported AI CLI backend
+**MLLM backend spec:**
+- Purpose: Provider adapter + config name registered via `register_mllm_backend()`
+- Examples: `control/vla_bridge/backends/mllm_claude.py`, `mllm_gpt.py`, `mllm_hf_qwen.py`
 
 ## Entry Points
 
-**Real-3DQA Explorer:**
-- Location: `explorations/real3dqa/explore.py`
-- Triggers: `python real3dqa/explore.py` (run from `explorations/`)
-- Responsibilities: Visualize point cloud scenes and print QA annotation stats
-
-**LIBERO Data Explorer:**
-- Location: `explorations/lib/explore.py`
-- Triggers: `python lib/explore.py` (run from `explorations/`)
-- Responsibilities: Visualize HuggingFace LIBERO dataset episodes and task descriptions
-
-**Scene Creator:**
-- Location: `explorations/create_scene.py`
-- Triggers: `python create_scene.py` (run from `explorations/`, requires `libero` conda env)
-- Responsibilities: Render MuJoCo robot simulation frames from a BDDL task
-
-**Lifelong Training Loop:**
-- Location: `LIBERO/libero/lifelong/main.py`
-- Triggers: `python -m lifelong.main` with Hydra config
-- Responsibilities: Full training/evaluation loop for continual robot learning
-
-**Colab Notebook Pipeline:**
-- Location: `LIBERO/notebooks/01-colab-env-setup.ipynb` through `06b-eval.ipynb`
-- Triggers: Run sequentially in a Colab GPU runtime
-- Responsibilities: End-to-end language-to-action pipeline: setup → integration check → inference smoketest → finetune → eval
-
-**Hardware Diagnostics Scripts:**
-- Location: `diagnostics/*.py`
-- Triggers: `python diagnostics/servo_scan.py` etc., run against physical arm with `diagnostics/.venv`
-- Responsibilities: Servo/camera bring-up and validation
-
-**Hardware Control Scripts:**
-- Location: `control/*.py`
-- Triggers: `python control/keyboard_joint_control.py` etc., run against physical arm with `control/.venv`
-- Responsibilities: Teleoperation and episode recording
-
-**GSD Slash Commands:**
-- Location: `.claude/commands/*.md` (parsed by Claude Code CLI)
-- Triggers: User invokes `/gsd-*` commands
-- Responsibilities: Drive the phase-based planning/execution workflow described in `.planning/`
+**Episode harness:** `control/run_vla_episode.py` — `python run_vla_episode.py --out outputs/run --backend <name> ...` (run from `control/`)
+**Episode recording / teleop:** `control/record_episode.py`, `control/keyboard_joint_control.py`, `control/joint_jog.py`
+**Colab servers:** `control/vla_bridge/*_server.py`, launched per `control/vla_bridge/policy_server_launch.md`
+**Diagnostics:** `diagnostics/servo_*.py`, `diagnostics/stereo_calibrate.py`, `diagnostics/UAT/`
+**Sim:** `LIBERO/notebooks/*.ipynb`, `LIBERO/libero/lifelong/main.py`, `explorations/create_scene.py`, `explorations/soarm_sanity.py`
 
 ## Architectural Constraints
 
-- **Python path:** `explorations/create_scene.py` manually inserts `explorations/LIBERO` (or the vendored `LIBERO/` path) into `sys.path` before importing `libero.*`. Scripts that import LIBERO must replicate this pattern.
-- **MUJOCO_GL:** Must be set to `glfw` on macOS for headless rendering; `osmesa` is Linux-only (used in Colab).
-- **LIBERO config:** First import of LIBERO reads `~/.libero/config.yaml` (user home directory). Must exist before running any LIBERO-dependent script or the package prompts interactively, causing `EOFError`.
-- **Data location:** Exploration scripts resolve data paths relative to their own `__file__` location. `ROOT = Path(__file__).resolve().parent.parent` is the canonical pattern giving the `explorations/` directory root.
-- **Isolated venvs:** `control/` and `diagnostics/` each maintain their own `.venv` and `requirements.txt`, separate from the LIBERO/exploration Python environment — the physical-hardware track and simulation track do not share a dependency environment.
-- **Vendored subtree:** `LIBERO/` has its own `.git` history and `.pytest_cache`; treat it as an external dependency — avoid ad hoc edits outside of tracked project patches.
-- **GSD backend duplication:** `.claude/`, `.agents/`, `.codex/`, `.github/`, `.opencode/` each contain a near-complete mirror of skills/commands/workflows. Changes to workflow behavior likely need to be replicated across all five (or applied only to the canonical source — verify which is authoritative before editing, e.g. via `.claude/scripts/changeset`).
-- **Global state:** None across research/hardware scripts. LIBERO library uses module-level path resolution; GSD tooling uses `.planning/STATE.md` as its state file.
+- **Threading:** Single-threaded control loop; Colab servers use non-blocking `inference_lock` (429 on concurrent requests).
+- **Global state:** `BACKEND_REGISTRY`, `GRPC_BRIDGE_BACKENDS`, `BACKEND_CONFIG_DIR` in `control/vla_bridge/backends/__init__.py` (module-level so tests can patch).
+- **Import path:** `control/` scripts import `vla_bridge` as a top-level package; run from `control/` (tests rely on `control/conftest.py`).
+- **Discovery:** Every non-`base_`/`_` module in `backends/` is imported at startup; import failures are fatal by design. Keep heavy SDK imports inside `build()`.
+- **Depth:** Only MLLM backends use depth; depth never enters a PolicyServer observation dict.
+- **Camera ownership:** A backend that opens a camera must list it in `skip_camera_names`; the AR0144 stereo camera is opened once and shared.
 - **Circular imports:** None detected.
 
 ## Anti-Patterns
 
-### Hardcoded LIBERO path string
+### Bypassing the safety validator
 
-**What happens:** Some exploration scripts hardcode a relative or absolute path to the vendored `LIBERO/` directory when inserting into `sys.path`.
-**Why it's wrong:** Breaks when scripts are run from a different working directory or when `LIBERO/` is relocated.
-**Do this instead:** Resolve the LIBERO path relative to `Path(__file__).resolve()` as done in `explorations/create_scene.py`, and prefer installing `LIBERO` as an editable package (`pip install -e LIBERO/`) where possible.
+**What happens:** Calling `robot.send_action()` directly with backend output.
+**Why it's wrong:** Removes joint-limit/NaN/velocity/stale-obs protection on real hardware.
+**Do this instead:** Route through `run_episode()` or `robot_client.pop_validated_action()` (`control/vla_bridge/robot_client.py:354`).
 
-### Mixing hardware and simulation dependencies
+### Editing the registry to add a backend
 
-**What happens:** Physical-hardware scripts (`control/`, `diagnostics/`) risk being run against the LIBERO/simulation Python environment or vice versa.
-**Why it's wrong:** The hardware track depends on servo-bus/serial libraries that are irrelevant (and potentially conflicting) with MuJoCo/robosuite/torch pins used in simulation.
-**Do this instead:** Always activate `control/.venv` or `diagnostics/.venv` for hardware scripts; keep the LIBERO/exploration Python environment (conda `libero` env per `explorations/create_scene.py` convention) separate.
+**What happens:** Adding imports or names to `backends/__init__.py`.
+**Why it's wrong:** Discovery is automatic; manual edits create duplicate-registration errors.
+**Do this instead:** Add `backends/<name>.py` with `@register`/`@register_grpc_backend` and `backend_configs/<name>.json`.
+
+### Editing notebook server cells by hand
+
+**What happens:** Changing server source inside `policy_server.ipynb`.
+**Why it's wrong:** Drifts from `fastfs_server.py` etc.
+**Do this instead:** Edit the `.py` and run `scripts/sync_policy_notebook.py`.
 
 ## Error Handling
 
-**Strategy:** Fail-fast with descriptive Python exceptions; no centralized error handling framework.
+**Strategy:** Fail safe on hardware — hold position rather than act on bad data.
 
 **Patterns:**
-- `load_scene` raises `FileNotFoundError` with a descriptive message if a `.pth` file is absent (`explorations/real3dqa/`).
-- `episode_strip` prints a message and returns early if an episode is not found in parquet files (`explorations/lib/explore.py`).
-- No centralized error logging; errors surface as Python tracebacks.
+- Invalid/NaN actions become holds in `safety_validator.py`; servers map bad input to 400 and model failures to 500 so clients hold.
+- Config loading warns and returns `None` (`load_backend_config()`), falling back to CLI args.
+- Every exit path runs return-to-start before disconnect.
 
 ## Cross-Cutting Concerns
 
-**Logging:** Ad hoc `print()` statements with `→` arrow notation for output file paths; `wandb` used for training-run metrics in the lifelong learning layer.
-
-**Validation:** Manual UAT checklists (`diagnostics/UAT/`) rather than automated validation for hardware bring-up; Hydra config validation for training runs.
-
-**Authentication:** HuggingFace Hub tokens for dataset/model downloads (env var driven), no other auth surfaces in this codebase.
+**Logging:** JSON Lines via `control/vla_bridge/io_logger.py`; `print()` for CLI progress; `mllm_record.py` for provider calls.
+**Validation:** `safety_validator.py`, `mllm_schema.py`, `_validate_settings()` in `base_mllm.py`.
+**Authentication:** Provider API keys via environment variables; Colab endpoints via ngrok URLs passed on the CLI.
 
 ---
 
-*Architecture analysis: 2026-09-05*
+*Architecture analysis: 2026-10-03*

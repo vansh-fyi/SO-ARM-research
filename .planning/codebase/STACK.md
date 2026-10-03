@@ -1,112 +1,96 @@
 # Technology Stack
 
-**Analysis Date:** 2026-09-05
+**Analysis Date:** 2026-10-03
 
 ## Languages
 
 **Primary:**
-- Python 3.x - all research, simulation, robot-control, and data-exploration code
-  - `LIBERO/` requires Python 3.12 specifically (cp312-only wheels; see `LIBERO/requirements.txt` header comment)
-  - `control/` and `diagnostics/` use local `.venv` folders on Python 3.12 (`control/.venv/lib/python3.12/...`)
+- Python 3.12 - all simulation, robot-control, VLA-bridge, diagnostics, and exploration code
+  - `LIBERO/` Colab stack requires Python 3.12 (cp312-only wheels; see header of `LIBERO/requirements.txt`)
+  - `control/.venv/` is Python 3.12; `diagnostics/.venv/` is Python 3.14 (local, not committed)
 
 **Secondary:**
-- Jupyter Notebook (`.ipynb`) - Colab-hosted training/eval workflow, `LIBERO/notebooks/*.ipynb` (env setup, SOARM integration check, OFT inference eval, pi0 smoketest, finetune, eval)
+- Jupyter Notebook - Colab-hosted workflows: `LIBERO/notebooks/*.ipynb` (env setup, SOARM integration, OFT eval, pi0 smoketest, finetune) and `control/vla_bridge/policy_server.ipynb` (Colab policy/adapter server host)
+- URDF/MJCF XML - robot model: `So-101/So-101.urdf` plus `.stl`/`.dae` meshes; SOARM MJCF under `LIBERO/` (see `LIBERO/SOARM_MODEL.md`)
 
 ## Runtime
 
 **Environment:**
-- CPython, orchestrated primarily via Google Colab (T4/A100 GPU tiers)
-- Local execution also supported for `explorations/`, `control/`, and `diagnostics/` (macOS/Linux with a physical SOARM arm)
-- MuJoCo physics engine (via robosuite/mujoco) — powers all simulation rendering
+- CPython on Google Colab (T4/A100) for simulation, fine-tuning, and model serving
+- Local macOS/Linux for `control/` (physical SO-101 arm over USB serial + USB cameras), `diagnostics/`, `explorations/`, `scripts/`
+- MuJoCo physics (`mujoco==3.3.2` on Colab stack; robosuite `1.4.0`)
 
 **Package Manager:**
-- pip, per-subproject `requirements.txt` (four independent requirement sets: `LIBERO/requirements.txt`, `explorations/requirements.txt`, `control/requirements.txt`, `diagnostics/requirements.txt`)
-- Lockfile: not present (loose/pinned version pins in requirements files, no `pip freeze` lockfile or `uv.lock`)
-- `control/` and `diagnostics/` each have a project-local `.venv/` (not committed — see `.gitignore`)
+- pip with per-subproject requirement files: `LIBERO/requirements.txt`, `explorations/requirements.txt`, `control/requirements.txt`, `diagnostics/requirements.txt`
+- Lockfile: missing (exact pins in `control/` and `diagnostics/`; loose pins in `explorations/`)
+- Colab-side model environments are installed by notebook cells in `control/vla_bridge/policy_server.ipynb`, often into isolated venvs per backend (e.g. `fastfs_venv`); `scripts/sync_policy_notebook.py` keeps notebook cells in sync with source files
 
 ## Frameworks
 
 **Core (simulation / robot learning):**
-- robosuite `1.4.0` - MuJoCo-based robot simulation environments (Panda arm, cameras); required by LIBERO env creation (`OffScreenRenderEnv`)
-- MuJoCo `3.3.2` (Colab OpenVLA-OFT/π0 stack) / MuJoCo `2.3.7`-class via robosuite `1.4.0` for local LIBERO core — physics engine
-- bddl `1.0.1` - LIBERO task-definition DSL (PDDL-like)
-- robomimic `0.2.0` - robot-learning dataset/training utilities (`SequenceDataset`, `FileUtils`, `ObsUtils`)
-- Hydra `hydra-core==1.2.0` - config management for LIBERO lifelong-learning training runs (`LIBERO/libero/lifelong/main.py`)
-- gym `0.25.2` (core) / `gym>=0.21,<=0.26` (Colab Block A) - RL environment interface
+- robosuite `1.4.0`, bddl `1.0.1`, robomimic `0.2.0`, gym `0.25.2` - LIBERO env stack (`LIBERO/libero/libero/envs/`)
+- hydra-core `1.2.0` - LIBERO lifelong training config (`LIBERO/libero/lifelong/main.py`)
+- transformers `4.21.1` (LIBERO core) / `transformers-openvla-oft` fork (Colab OFT)
 
-**VLA / fine-tuning stack (Colab, referenced in `LIBERO/requirements.txt` "REFERENCE ONLY" section and notebooks):**
-- torch `2.2.0` + torchvision `0.17.0` + torchaudio `2.2.0` (cu121 wheels) - OpenVLA-OFT/LoRA stack
-- transformers `4.21.1` (core LIBERO) / transformers-openvla-oft fork (Colab, replaces stock transformers for OFT notebooks)
-- peft `0.11.1` - LoRA adapters
-- diffusers `0.30.3` - force-pinned for peft compatibility
-- timm `0.9.10`, tokenizers `0.19.1`, sentencepiece `0.1.99`
-- accelerate `1.14.0` - Phase 6 fine-tuning/eval
-- openpi/π0 stack - managed by openpi's own `pyproject.toml` (torch `2.7.1`, transformers `4.53.2`), not pip-installed by this repo; referenced in `notebooks/03b-pi0-inference-smoketest.ipynb`
-- dlimp, openvla-oft, transformers-openvla-oft - installed via `git+https://...` with `--no-deps`, not expressible in a plain `requirements.txt` (documented as individual pip commands in `LIBERO/requirements.txt`)
-- tensorflow `>=2.16` (non-Colab) / Colab's preinstalled tensorflow (stock `2.15.0` has no cp312 wheel) - required by `tensorflow-datasets`/`tensorflow-graphics`/dlimp (OXE dataset registration)
-- tensorflow-datasets `4.9.10`, tensorflow-graphics `2021.12.3` - installed `--no-deps`
+**VLA / fine-tuning (Colab, documented in `LIBERO/requirements.txt` REFERENCE ONLY section):**
+- torch `2.2.0` / torchvision `0.17.0` (cu121), peft `0.11.1`, diffusers `0.30.3`, timm `0.9.10`, tokenizers `0.19.1`, draccus `0.8.0`, json-numpy
+- openvla-oft, dlimp installed via `git+https` with `--no-deps`; tensorflow-datasets for OXE registration
+- openpi (pi0) managed by its own `pyproject.toml`; not pinned here
+
+**Robot control / VLA bridge (`control/requirements.txt`):**
+- lerobot `[feetech,async]==0.6.1` - SO-101 servo control, calibration, recording, and `async_inference` gRPC PolicyServer/RobotClient
+- opencv-python `5.0.0.93`, pynput `1.8.2`, requests `2.34.2`, flask `3.1.3` (test double for Colab Flask adapters)
+- ikpy `4.1.0` - URDF FK/IK for EEF-delta to joint conversion (`control/vla_bridge/backends/eef_to_joint.py`)
+- google-genai `2.25.0` - Gemini Robotics-ER backends (`control/vla_bridge/backends/base_gemini.py`)
+- anthropic `1.11.0`, openai `3.23.0` - MLLM backends (`control/vla_bridge/backends/mllm_claude.py`, `mllm_gpt.py`, `mllm_hf_*.py`)
+- ultralytics `8.4.138` - installed for planned YOLO follow; not wired in
+
+**Diagnostics (`diagnostics/requirements.txt`):**
+- feetech-servo-sdk `1.0.0`, pyserial `3.5`, opencv-python `5.0.0.93`, numpy `2.5.2`
 
 **Testing:**
-- pytest - `.pytest_cache/` present at repo root and under `LIBERO/`; no dedicated test framework config file found beyond cache artifacts
-
-**Robot control (physical hardware):**
-- lerobot `0.6.1` (`[feetech]` extra) - `control/requirements.txt`; SOARM servo control, calibration, dataset recording
-- feetech-servo-sdk `1.0.0` - `diagnostics/requirements.txt`; low-level Feetech STS/SCS servo protocol
-- pyserial `3.5` - serial port communication with servo bus
-- opencv-python `5.0.0.93` (`diagnostics/`, `control/`) / `opencv-python==4.6.0.66` (`LIBERO/`) / `opencv-python-headless>=4.7,<4.10` (Colab) - camera capture and image processing
-- pynput `1.8.2` - `control/keyboard_joint_control.py` keyboard teleoperation input
-- ultralytics `8.4.138` - `control/requirements.txt`; installed for planned YOLO object-follow feature (not yet wired into any script)
+- pytest `8.3.4` - `control/test_*.py`, `control/conftest.py`, `control/fake_providers.py`, `scripts/test_*.py`
 
 **Build/Dev:**
-- Hydra `hydra-core==1.2.0` - CLI config composition for training entry points
-- setuptools (`LIBERO/setup.py`) - installs `libero` package; exposes CLI entry points (`lifelong.main`, `lifelong.eval`, `libero.config_copy`, `libero.create_template`)
+- setuptools via `LIBERO/setup.py` (CLI entry points `lifelong.main`, `lifelong.eval`, `libero.config_copy`, `libero.create_template`)
 
 ## Key Dependencies
 
 **Critical:**
-- `torch` - core tensor/model operations throughout `LIBERO/libero/` and `explorations/`
-- `robosuite` - simulation environment; required for LIBERO env creation (`OffScreenRenderEnv`)
-- `robomimic` - dataset pipeline (`SequenceDataset`, `FileUtils`, `ObsUtils`)
-- `hydra-core` - entry-point config system for `lifelong.main` and `lifelong.eval`
-- `transformers` - language task embedding via `AutoModel`/`AutoTokenizer`
-- `lerobot[feetech]` - physical SOARM arm control, calibration GUI, teleoperation, dataset recording (`control/`)
-- `feetech-servo-sdk` + `pyserial` - direct servo diagnostics/protection tooling (`diagnostics/`)
+- `lerobot==0.6.1` - hardware driver and gRPC policy bridge (`control/vla_bridge/robot_client.py`, `control/vla_bridge/backends/base_grpc.py`)
+- `robosuite` / `mujoco` - simulation (`OffScreenRenderEnv`)
+- `torch` - model inference/training on Colab
+- Vendor SDKs `anthropic`, `openai`, `google-genai` - imported lazily inside backend adapter factories only
 
 **Infrastructure:**
-- `huggingface_hub>=0.12.0` - dataset download (`snapshot_download`) for Real-3DQA from HF Hub (`explorations/download_real3dqa.py`); also used by `lerobot` internals for adapter/checkpoint downloads
-- `pyarrow` / `pandas` - reading LIBERO Parquet episode chunks from `explorations/data/libero/data/chunk-000/`
-- `wandb==0.13.1` - training run logging; required by `LIBERO/libero/lifelong/main.py` (`wandb.init(project="libero", config=cfg)` at `LIBERO/libero/lifelong/main.py:135`)
-- `datasets>=2.0.0` - HuggingFace datasets API for LIBERO parquet dataset exploration
+- `flask` - Colab-hosted Tier C HTTP adapters (`control/vla_bridge/*_server.py`, `fastfs_server.py`)
+- `pyngrok==8.1.2` (Colab only) - tunnels exposing Colab servers to the local control loop
+- `huggingface_hub` - checkpoints/datasets; `wandb` - LIBERO training logging
+- `pandas`/`pyarrow`/`datasets` - LIBERO parquet exploration (`explorations/lib/explore.py`)
 
 ## Configuration
 
 **Environment:**
-- `MUJOCO_GL=glfw` - set inline in `explorations/create_scene.py` and `explorations/soarm_sanity.py` for macOS headless rendering (osmesa is Linux-only per project constraints)
-- `TOKENIZERS_PARALLELISM=false` - set in `LIBERO/libero/lifelong/main.py` to suppress HuggingFace warnings
-- `LIBERO/.env` - present (contents not read; treated as secret/config file, existence noted only)
-- `control/.envrc`, `diagnostics/.envrc` - direnv-style local environment files (present, not read)
-- No repo-root `.env` file; per-subproject env files instead (`LIBERO/.env`, `control/.envrc`, `diagnostics/.envrc`)
-- `~/.libero/config.yaml` (user home directory) - first import of LIBERO reads this; must exist before running any LIBERO-dependent script or the package prompts interactively, causing `EOFError`
+- API keys from env vars only (never hard-coded/logged): `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `HF_TOKEN` (named per backend in `control/vla_bridge/backend_configs/*.json` via `api_key_env`)
+- Test-only env vars: `SOARM_TEST_GEMINI_API_KEY`, `SOARM_TEST_MLLM_SMOKE_KEY`, etc.
+- `MUJOCO_GL=glfw` (macOS) set inline in `explorations/create_scene.py`; `XLA_PYTHON_CLIENT_PREALLOCATE` for JAX backends; `TOKENIZERS_PARALLELISM=false` in `LIBERO/libero/lifelong/main.py`
+- Files present, not read: `LIBERO/.env`, `control/.envrc`, `diagnostics/.envrc`
+- `~/.libero/config.yaml` must exist before importing LIBERO
+- Per-backend JSON configs: `control/vla_bridge/backend_configs/` (model ids, endpoints, action space); hardware map `control/device_map.json`
 
 **Build:**
-- `LIBERO/setup.py` - package install + CLI entry points
-- `LIBERO/requirements.txt` - pinned deps for LIBERO benchmark core, plus an extensive "REFERENCE ONLY" section documenting exact Colab notebook pip pins (kept manually in sync — the file's own comments warn these WILL drift if notebook cells change without updating this file)
-- `explorations/requirements.txt` - loose deps for exploration scripts
-- `control/requirements.txt`, `diagnostics/requirements.txt` - pinned deps for physical-hardware scripts
+- `LIBERO/setup.py`, `LIBERO/requirements.txt`, `control/requirements.txt`, `diagnostics/requirements.txt`, `explorations/requirements.txt`
 
 ## Platform Requirements
 
 **Development:**
-- macOS or Linux with MuJoCo-compatible display (GLFW or EGL)
-- Python 3.12 specifically for the LIBERO/Colab stack (cp312-only wheels for several pins)
-- System packages (apt, Debian/Ubuntu) required for MuJoCo headless rendering on non-Colab machines: `libglfw3 libglew-dev libosmesa6-dev libgles2 libglvnd0 libegl-dev libegl1 libgl1-mesa-glx`
-- GPU recommended/required for model training and VLA inference (PyTorch CUDA, cu121 wheels pinned for Colab Block A)
+- Python 3.12; macOS/Linux with GLFW/EGL for MuJoCo
+- Physical SO-101 arm (Feetech STS3215 servos) over USB serial; USB/stereo/depth cameras for `control/`
+- apt packages for headless MuJoCo on Linux: `libglfw3 libglew-dev libosmesa6-dev libegl1` etc.
 
 **Production:**
-- No production deployment target; this is a research-only codebase
-- Primary compute platform: Google Colab (T4/A100 GPU tiers), with notebook-driven cell-by-cell installs for the VLA fine-tuning stack
-- Physical SOARM robot arm hardware (via `control/` and `diagnostics/` scripts) as a parallel, non-Colab track — serial/USB connection to servos, USB cameras for observation capture
+- No production target; research codebase. Compute on Google Colab, control loop on a local machine connected to Colab via ngrok tunnels
 
 ---
 
-*Stack analysis: 2026-09-05*
+*Stack analysis: 2026-10-03*

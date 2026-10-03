@@ -1,193 +1,108 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-09-05
+**Analysis Date:** 2026-10-03
 
 ## Directory Layout
 
 ```
 SoARM-Research/
-├── explorations/            # Research scripts: dataset exploration, MuJoCo scene rendering
-│   ├── lib/                 # LIBERO HF-dataset exploration (explore.py)
-│   ├── real3dqa/             # Real-3DQA point-cloud exploration (explore.py)
-│   ├── Real-3DQA/             # Real-3DQA raw data/assets (gitignored-style)
-│   ├── dreamzero/manipulation/ # DreamZero exploration scripts
-│   ├── data/                 # Local datasets consumed by exploration scripts (gitignored)
-│   ├── outputs/               # Rendered PNGs from exploration scripts (gitignored)
-│   ├── perspective_images/    # Perspective render outputs
-│   ├── create_scene.py        # Instantiate MuJoCo LIBERO env, render multi-camera frames
-│   ├── render_scenes.py       # Software-rasterize point clouds to PNG
-│   ├── download_real3dqa.py   # Download Real-3DQA dataset
-│   └── soarm_sanity.py        # SOARM model/env sanity check
-├── LIBERO/                   # Vendored LIBERO benchmark (own .git history, treat as dependency)
-│   ├── libero/
-│   │   ├── libero/            # Core sim library: envs/, bddl_files/, assets/, benchmark/, perception/, vla/, utils/
-│   │   ├── lifelong/          # Continual learning training loop, algos/, models/, main.py, evaluate.py
-│   │   ├── configs/            # Hydra configs for training runs
-│   │   └── datasets/           # LIBERO dataset definitions
-│   ├── notebooks/              # Colab pipeline notebooks (01 through 06b)
-│   ├── benchmark_scripts/      # Dataset download / integrity / rendering CLI scripts
-│   ├── scripts/                 # Misc LIBERO utility scripts
-│   ├── templates/               # BDDL/task templates
-│   └── images/                  # Static assets for docs
-├── control/                  # Physical SOARM teleoperation and data capture
-│   ├── joint_jog.py
-│   ├── keyboard_joint_control.py
-│   ├── record_episode.py
-│   ├── requirements.txt / .venv/
-│   └── outputs/               # Captured teleop episodes
-├── diagnostics/               # Physical SOARM bring-up, calibration, UAT
-│   ├── servo_scan.py, servo_set_id.py, servo_set_torque_limit.py,
-│   │   servo_set_protection.py, servo_move_test.py, servo_drive_to_stall.py,
-│   │   servo_torque.py, camera_test.py
-│   ├── UAT/                   # assembly/, components/, function/ checklists
-│   ├── PARTS_LIST.md
-│   ├── requirements.txt / .venv/
-│   └── outputs/                # Camera test images
-├── progress-documentation/    # Physical build docs and 3D print STLs
-│   └── hardware/arm/, ar0144_mount/, gripper_sim_meshes/, gripper_upstream_full/
-├── 06b_eval_videos/           # Generated eval videos: before/ and after/ per episode
-├── docs/                      # Project-level markdown docs (PHASES-1-3-EXPLAINER.md)
-├── .planning/                 # GSD planning state
-│   ├── PROJECT.md, ROADMAP.md, REQUIREMENTS.md, STATE.md, config.json
-│   ├── phases/                 # Per-phase plan directories
-│   ├── quick/                  # Ad-hoc quick-task logs (dated, slug-named)
-│   ├── codebase/                # Generated codebase maps (this document set)
-│   ├── notes/, seeds/, todos/, research/
-├── .claude/                   # Claude Code CLI: commands/, skills/gsd-*/, agents/, hooks/, gsd-core/
-├── .agents/                   # Mirrored GSD skill/agent set (generic agent backend)
-├── .codex/                    # Mirrored GSD skill/agent set (Codex backend)
-├── .github/                   # Mirrored GSD skill/agent set (GitHub Copilot backend)
-├── .opencode/                 # Mirrored GSD skill/agent set (OpenCode backend)
-└── .pytest_cache/             # Pytest cache (root-level; LIBERO/ has its own)
+├── control/                 # Real-hardware harness, teleop, recording, tests (active core)
+│   ├── run_vla_episode.py   # Episode harness entry point (--backend)
+│   ├── vla_bridge/          # Bridge package: safety, contract, cameras, MLLM support, Colab servers
+│   │   ├── backends/        # One module per backend + base_*.py tier helpers
+│   │   ├── backend_configs/ # <backend>.json per backend
+│   │   ├── *_server.py      # Colab-resident model HTTP servers
+│   │   └── policy_server.ipynb
+│   ├── test_*.py            # pytest suite (flat, next to sources)
+│   ├── conftest.py          # MockRobot and shared fixtures
+│   └── outputs/, logs/      # Run artifacts
+├── diagnostics/             # Servo bring-up, stereo calibration, Coppelia/MuJoCo alignment, UAT/
+├── scripts/                 # URDF conversion/verification, notebook sync, calibration utils
+├── So-101/                  # SO-101 URDF + meshes (.dae/.stl)
+├── LIBERO/                  # Vendored LIBERO benchmark with SOARM robot + Colab notebooks
+├── explorations/            # Dataset/scene exploration scripts (data/ gitignored)
+├── orientation/             # Joint/link orientation reference images
+├── docs/, research_notes/, reports/, experiment-design/  # Prose docs and research
+├── progress-documentation/  # Media (images, videos, episodes)
+├── 06b_eval_videos/         # Before/after sim eval videos
+├── .planning/               # GSD state: ROADMAP, STATE, phases/, codebase/
+└── .claude/ .agents/ .codex/ .opencode/ .github/  # GSD tooling per AI CLI
 ```
 
 ## Directory Purposes
 
-**`explorations/`:**
-- Purpose: Self-contained CLI research scripts for dataset visualization and MuJoCo scene inspection
-- Contains: `*.py` scripts, per-topic subdirectories (`lib/`, `real3dqa/`, `dreamzero/`), `data/` and `outputs/` for I/O
-- Key files: `explorations/create_scene.py`, `explorations/lib/explore.py`, `explorations/real3dqa/explore.py`
-
-**`LIBERO/`:**
-- Purpose: Vendored LIBERO benchmark (MuJoCo/robosuite simulation, BDDL tasks, lifelong learning training)
-- Contains: Core sim library (`libero/libero/`), training loop (`libero/lifelong/`), Colab notebooks, benchmark CLI scripts
-- Key files: `LIBERO/libero/lifelong/main.py`, `LIBERO/libero/libero/envs/env_wrapper.py`, `LIBERO/notebooks/*.ipynb`
-
 **`control/`:**
-- Purpose: Teleoperation and data-capture scripts for the physical SOARM arm
-- Contains: Joint control scripts, episode recorder, isolated `.venv`/`requirements.txt`
-- Key files: `control/keyboard_joint_control.py`, `control/record_episode.py`
+- Purpose: Everything that drives the physical SO-ARM101
+- Key files: `run_vla_episode.py`, `record_episode.py`, `keyboard_joint_control.py`, `joint_jog.py`, `detect_devices.py`, `device_map.json`, `stereo_calibration.json`, `COMMANDS.md`
+
+**`control/vla_bridge/`:**
+- Purpose: Policy bridge package
+- Key files: `safety_validator.py`, `action_contract.py`, `robot_client.py`, `io_logger.py`, `stereo_camera.py`, `depth_camera.py`, `depth_recorder.py`, `mllm_*.py`, `check_checkpoint.py`, `FINDINGS.md`, `checkpoint_candidates.md`, `policy_server_launch.md`
+
+**`control/vla_bridge/backends/`:**
+- Purpose: Registered backends (`act`, `diffusion_policy`, `gemini_robotics[_2]`, `groot_n15/n17`, `mllm_claude/gpt/hf_*`, `octo`, `openvla[_oft]`, `pi0` (+pi05), `rdt1b`, `scripted`, `smolvla`, `wallx`)
+- Shared helpers: `base_grpc.py`, `base_http_adapter.py`, `base_gemini.py`, `base_mllm.py`, `base_mllm_build.py`, `base_mllm_chat.py`, conversions `eef_to_joint.py`, `relative_ee_conversion.py`, `er_conversion.py`
 
 **`diagnostics/`:**
-- Purpose: Hardware bring-up, servo calibration, camera checks, and manual UAT tracking
-- Contains: Per-servo diagnostic scripts, `UAT/` checklists, `PARTS_LIST.md`, isolated `.venv`
-- Key files: `diagnostics/servo_scan.py`, `diagnostics/README.md`, `diagnostics/UAT/`
+- Purpose: Hardware bring-up and calibration tooling; `UAT/` holds acceptance scripts (`assembly`, `components`, `function`)
 
-**`progress-documentation/`:**
-- Purpose: Physical build reference material — 3D-printable STL files for arm and gripper
-- Contains: STL mesh files organized by part category
-- Generated: No (source CAD-derived assets)
-- Committed: Yes
-
-**`06b_eval_videos/`:**
-- Purpose: Generated evaluation videos from `LIBERO/notebooks/06b-eval.ipynb`, before/after fine-tuning comparison
-- Contains: Per-episode video directories under `before/` and `after/`
-- Generated: Yes
-- Committed: Appears tracked (present in repo tree; verify `.gitignore` before adding more)
-
-**`.planning/`:**
-- Purpose: GSD workflow state — roadmap, requirements, phase plans, codebase maps, quick-task logs
-- Contains: Markdown/JSON state files, `phases/`, `quick/`, `codebase/`, `notes/`, `seeds/`, `todos/`
-- Key files: `.planning/PROJECT.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`
-
-**`.claude/`, `.agents/`, `.codex/`, `.github/`, `.opencode/`:**
-- Purpose: GSD command/skill/agent definitions, mirrored per supported AI CLI backend
-- Contains: `commands/` (or `command/`), `skills/gsd-*/`, `agents/`, `hooks/`, `gsd-core/` (bin/contexts/references/templates/workflows), `scripts/changeset/`
-- Key files: `.claude/commands/*.md`, `.claude/skills/gsd-*/SKILL.md`
+**`LIBERO/`:**
+- Purpose: Simulation benchmark; SOARM model in `LIBERO/libero/libero/assets/robots/soarm101`, notes in `LIBERO/SOARM_MODEL.md`, notebooks in `LIBERO/notebooks/`
 
 ## Key File Locations
 
 **Entry Points:**
-- `explorations/create_scene.py`: Local MuJoCo scene rendering CLI
-- `explorations/lib/explore.py`, `explorations/real3dqa/explore.py`: Dataset exploration CLIs
-- `LIBERO/libero/lifelong/main.py`: Hydra-driven training entrypoint
-- `LIBERO/notebooks/01-colab-env-setup.ipynb` … `06b-eval.ipynb`: Colab pipeline, run sequentially
-- `control/*.py`, `diagnostics/*.py`: Physical hardware CLIs
+- `control/run_vla_episode.py`: Real-hardware episode
+- `control/record_episode.py`: Demonstration recording
+- `LIBERO/notebooks/01-colab-env-setup.ipynb` .. `06b-eval.ipynb`: Sim pipeline
+- `control/vla_bridge/policy_server.ipynb`: Colab server host
 
 **Configuration:**
-- `LIBERO/libero/configs/`: Hydra training configs
-- `~/.libero/config.yaml`: LIBERO runtime config (created on first import, home directory)
-- `control/requirements.txt`, `control/.envrc`; `diagnostics/requirements.txt`, `diagnostics/.envrc`
-- `explorations/requirements.txt`
-- `LIBERO/requirements.txt`
-- `.planning/config.json`: GSD workflow configuration
+- `control/vla_bridge/backend_configs/*.json`, `control/device_map.json`, `control/stereo_calibration.json`, `control/requirements.txt`, `diagnostics/requirements.txt`, `LIBERO/requirements.txt`, `.planning/config.json`
 
 **Core Logic:**
-- `LIBERO/libero/libero/envs/env_wrapper.py`: `OffScreenRenderEnv`
-- `LIBERO/libero/lifelong/algos/`: Continual learning algorithm implementations
-- `LIBERO/libero/lifelong/datasets.py`, `models/`: Training data pipeline and model definitions
+- `control/vla_bridge/safety_validator.py`, `control/vla_bridge/backends/__init__.py`, `control/vla_bridge/backends/base_mllm.py`
 
 **Testing:**
-- `LIBERO/.pytest_cache/`, root `.pytest_cache/`: pytest cache directories (test suite location not confirmed under `LIBERO/` — see TESTING.md if generated)
-- `diagnostics/UAT/`: manual hardware UAT checklists (assembly/components/function), not automated tests
+- `control/test_*.py`, `control/conftest.py`, `scripts/test_*.py`, `diagnostics/test_coppelia_alignment.py`
 
 ## Naming Conventions
 
 **Files:**
-- `snake_case.py` throughout: `create_scene.py`, `record_episode.py`, `servo_set_torque_limit.py`
-- Verb-noun / action-prefixed names: `download_*`, `render_*`, `create_*`, `explore*`, `servo_*`
-- Notebooks are numerically prefixed to indicate pipeline order: `01-colab-env-setup.ipynb`, `02-soarm-integration-check.ipynb`, `03a-`/`03b-`, `06a-`/`06b-`
+- `snake_case.py`; tests `test_<module>.py`; backend tests `test_backend_<name>.py`
+- Backends: `backends/<name>.py`, shared helpers `base_<tier>.py`, private helpers `_<name>.py`
+- Colab servers: `<model>_server.py`; configs `backend_configs/<name>.json` matching `^[A-Za-z0-9][A-Za-z0-9_-]*$`
+- Diagnostics: verb-prefixed `servo_*.py`, `tune_*.py`, `capture_*.py`, `verify_*.py`
 
 **Directories:**
-- Topic-scoped subdirectories under `explorations/` (`lib/`, `real3dqa/`, `dreamzero/`)
-- Isolated per-track dependency directories: `control/.venv`, `diagnostics/.venv`, each with sibling `requirements.txt`
-- GSD backend directories are dot-prefixed and named after the CLI they target (`.claude/`, `.codex/`, `.opencode/`, `.github/`, `.agents/`)
-- `.planning/quick/` entries use `YYMMDD-<hash>-<slug>` naming for ad-hoc task logs
+- lowercase / snake_case; GSD phases `.planning/phases/NN-slug/`
 
 ## Where to Add New Code
 
-**New exploration/research script:**
-- Primary code: `explorations/<topic>/explore.py` or a new top-level `explorations/*.py` following the `verb_noun.py` pattern
-- Data: `explorations/data/<topic>/`
-- Outputs: `explorations/outputs/`
+**New policy backend:**
+- Primary code: `control/vla_bridge/backends/<name>.py` with `@register("<name>")` or `@register_grpc_backend("<name>")`; for MLLM providers use `register_mllm_backend()` and `base_mllm_build.build_mllm_backend`
+- Config: `control/vla_bridge/backend_configs/<name>.json`
+- Colab server (Tier C): `control/vla_bridge/<name>_server.py` + section in `policy_server_launch.md`
+- Tests: `control/test_backend_<name>.py`
 
-**New LIBERO lifelong-learning algorithm:**
-- Implementation: `LIBERO/libero/lifelong/algos/<algo>.py`, subclassing `LIBERO/libero/lifelong/algos/base.py`
-- Config: `LIBERO/libero/configs/`
+**New bridge utility:**
+- Implementation: `control/vla_bridge/<name>.py`; tests `control/test_<name>.py`
 
-**New Colab pipeline step:**
-- Notebook: `LIBERO/notebooks/<NN><letter>-<name>.ipynb`, following the existing numeric-prefix ordering convention
+**Hardware diagnostic:** `diagnostics/<verb>_<thing>.py`
 
-**New hardware diagnostic/control script:**
-- Diagnostics (bring-up/calibration/UAT): `diagnostics/<verb>_<component>.py`
-- Teleop/data capture: `control/<verb>_<noun>.py`
-- Both tracks: install into the track's own `.venv` via its `requirements.txt`, do not mix with the LIBERO/exploration environment
+**URDF/MJCF tooling:** `scripts/`
 
-**New GSD skill/command:**
-- Add to the canonical backend directory (verify authoritative source via `.claude/scripts/changeset` before editing) and mirror across `.agents/`, `.codex/`, `.github/`, `.opencode/` as needed
+**Sim/exploration work:** `explorations/` or `LIBERO/notebooks/`
 
 ## Special Directories
 
-**`explorations/data/`, `explorations/outputs/`, `control/outputs/`, `diagnostics/outputs/`:**
-- Purpose: Local input datasets and generated output artifacts
-- Generated: Outputs yes; data yes (downloaded)
-- Committed: No (gitignored research/output data)
-
-**`06b_eval_videos/`:**
-- Purpose: Before/after fine-tuning evaluation video output from the eval notebook
-- Generated: Yes
-- Committed: Present in working tree — verify with `git status`/`.gitignore` before assuming tracked
-
-**`LIBERO/`:**
-- Purpose: Vendored external benchmark with its own `.git` history
-- Generated: No (cloned/vendored)
-- Committed: Yes, as a subtree within the parent repo (not a git submodule based on structure observed)
-
-**`.planning/`:**
-- Purpose: GSD workflow state, not application code
-- Generated: Partially (phase artifacts generated by GSD commands)
-- Committed: Yes
+**`control/outputs/`, `control/logs/`, `diagnostics/outputs/`:** Run artifacts. Generated: Yes.
+**`explorations/data/`:** Downloaded datasets. Generated: Yes. Committed: No.
+**`control/.venv/`, `diagnostics/.venv/`, `__pycache__/`, `.pytest_cache/`:** Environments/caches. Committed: No.
+**`control/vla_bridge/weights/`:** Model weights. Generated: Yes.
+**`LIBERO/`:** Vendored upstream with local SOARM additions. Committed: Yes.
+**`.claude/`, `.agents/`, `.codex/`, `.opencode/`, `.github/`:** GSD tooling mirrors. Committed: Yes.
 
 ---
 
-*Structure analysis: 2026-09-05*
+*Structure analysis: 2026-10-03*

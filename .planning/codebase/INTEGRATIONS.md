@@ -1,92 +1,100 @@
 # External Integrations
 
-**Analysis Date:** 2026-09-05
+**Analysis Date:** 2026-10-03
 
 ## APIs & External Services
 
-**Experiment Tracking:**
-- Weights & Biases (wandb) - training/eval run logging for LIBERO lifelong learning
-  - SDK/Client: `wandb==0.13.1`
-  - Invocation: `wandb.init(project="libero", config=cfg)` in `LIBERO/libero/lifelong/main.py:135`
-  - Auth: wandb API key expected via standard wandb login/env var (not found hardcoded in repo)
+**MLLM planners (direct HTTPS via official SDKs, Phase 15):**
+- Anthropic Claude (`claude-opus-5-5`, Messages streaming API, structured output)
+  - SDK/Client: `anthropic==1.11.0` in `control/vla_bridge/backends/mllm_claude.py`
+  - Auth: `ANTHROPIC_API_KEY`; config `control/vla_bridge/backend_configs/mllm_claude.json`
+- OpenAI GPT (`gpt-6-astra`, Responses API)
+  - SDK/Client: `openai==3.23.0` in `control/vla_bridge/backends/mllm_gpt.py`
+  - Auth: `OPENAI_API_KEY`; config `backend_configs/mllm_gpt.json`
+- Hugging Face Inference Providers router (`https://router.huggingface.co/v1`, OpenAI-compatible) for `Qwen/Qwen3.8-27B`, `deepseek-ai/DeepSeek-V4.1-Flash`, `moonshotai/Kimi-K3`
+  - SDK/Client: `openai` client in `control/vla_bridge/backends/base_mllm_chat.py`, `mllm_hf_qwen.py`, `mllm_hf_deepseek.py`, `mllm_hf_kimi.py`
+  - Auth: `HF_TOKEN`
+- Shared MLLM plumbing: `backends/base_mllm.py`, `base_mllm_build.py`, `vla_bridge/mllm_prompt.py`, `mllm_schema.py`, `mllm_inputs.py`, `mllm_urdf.py`, `mllm_record.py`; defaults in `backend_configs/mllm_defaults.json`
 
-**Model/Dataset Hub:**
-- HuggingFace Hub - dataset and model/adapter distribution
-  - SDK/Client: `huggingface_hub` (`snapshot_download`, `hf_hub_download`, `HfApi`)
-  - Used directly in `explorations/download_real3dqa.py` (`snapshot_download` to pull the Real-3DQA dataset)
-  - Used transitively by `lerobot` (installed in `control/.venv`) for policy checkpoint/adapter download and dataset reward-model weight fetches (`control/.venv/lib/python3.12/site-packages/lerobot/rewards/pretrained.py`, `lerobot/processor/pipeline.py`)
-  - Referenced in memory notes as `HF_ADAPTER_REPO_ID` for the Phase 6 fine-tuned adapter (Colab notebooks `LIBERO/notebooks/06a-finetune.ipynb`, `06b-eval.ipynb`) — used to push/pull the fine-tuned OpenVLA-OFT adapter to/from a HF model repo
-  - Auth: HF token expected via `huggingface-cli login` / `HF_TOKEN` env var (no token committed in repo)
+**Google Gemini Robotics-ER:**
+- `gemini-robotics-er-2-preview` (Interactions API)
+  - SDK/Client: `google-genai==2.25.0` in `control/vla_bridge/backends/base_gemini.py`, `gemini_robotics.py`, `gemini_robotics_2.py`, `er_conversion.py`
+  - Auth: `GEMINI_API_KEY`
 
-**Google Colab:**
-- Colab MCP server configured for this project — `.mcp.json` registers `colab-mcp` (`git+https://github.com/googlecolab/colab-mcp`, stdio transport via `uvx`) enabling programmatic Colab notebook interaction from the coding agent
-- Notebooks in `LIBERO/notebooks/` are the actual execution surface for GPU-dependent training/inference (env setup, SOARM integration check, OFT inference eval, π0 inference smoketest, finetune, eval)
+**Colab-hosted VLA policies (self-hosted, reached over tunnels):**
+- gRPC lane (Tier A/B): LeRobot `async_inference.PolicyServer` on Colab; SmolVLA, pi0, pi05, ACT, Diffusion Policy, GR00T N1.7, Wall-X
+  - Client: `control/vla_bridge/robot_client.py`, `control/vla_bridge/backends/base_grpc.py`
+- HTTP lane (Tier C): per-model Flask adapters, `POST {endpoint_url}/action` with base64 PNG images + joint state + instruction
+  - Servers: `control/vla_bridge/openvla_server.py`, `openvla_oft_server.py`, `octo_server.py`, `rdt1b_server.py`, `groot_n15_server.py`, `groot_n17_server.py`, `wallx_server.py`, `diffusion_policy_server.py`
+  - Client: `control/vla_bridge/backends/base_http_adapter.py`
+- Depth service: `control/vla_bridge/fastfs_server.py` (Flask) consumed by `control/vla_bridge/depth_camera.py` via `requests`
+- Hosted by `control/vla_bridge/policy_server.ipynb`; launch notes in `control/vla_bridge/policy_server_launch.md`
 
-**OpenVLA-OFT / π0 (Physical Intelligence) inference stacks:**
-- Not a network API — these are model weights/code pulled via `git+https://github.com/moojink/openvla-oft.git` and `git+https://github.com/moojink/transformers-openvla-oft.git` (installed `--no-deps`, documented as manual pip commands in `LIBERO/requirements.txt` since git-source + `--no-deps` isn't expressible in a plain `requirements.txt` line)
-- π0/openpi stack managed by its own `pyproject.toml`, referenced (not vendored) from `LIBERO/notebooks/03b-pi0-inference-smoketest.ipynb`
+**Tunneling:**
+- ngrok via `pyngrok==8.1.2` (installed in Colab notebook) - separate tunnels for gRPC PolicyServer and HTTP adapters
+  - Auth: ngrok token supplied in Colab (not in repo)
+
+**Hugging Face Hub:**
+- Model checkpoints (e.g. `nvidia/GR00T-N1.5-3B`, `x-square-robot/wall-oss-flow`), fine-tuned adapters, LIBERO parquet datasets, Real-3DQA (`explorations/download_real3dqa.py` via `snapshot_download`)
+  - Auth: `HF_TOKEN` where required
 
 ## Data Storage
 
 **Databases:**
-- None. No SQL/NoSQL database detected anywhere in the codebase.
+- None
 
 **File Storage:**
-- Local filesystem only.
-  - `explorations/data/` - downloaded datasets (Real-3DQA `.pth` point clouds, LIBERO HuggingFace parquet chunks), gitignored
-  - `explorations/outputs/` - rendered PNG visualizations
-  - `control/outputs/` - recorded robot episode data
-  - `diagnostics/outputs/` - camera test capture images
-  - `06b_eval_videos/before/`, `06b_eval_videos/after/` - eval video artifacts
+- Local filesystem: `explorations/data/` (gitignored), `control/outputs/`, `control/logs/`, `logs/`, `06b_eval_videos/`
+- Google Drive / Colab disk for checkpoints during fine-tuning (notebook-managed; `gdown` installed in notebook)
 
 **Caching:**
-- None detected (no Redis/Memcached or similar).
+- None (HF cache defaults)
 
 ## Authentication & Identity
 
 **Auth Provider:**
-- None — this is a local research/CLI tool with no user-facing authentication system.
-- Third-party auth only in the sense of API tokens for external services (HuggingFace, wandb), managed via standard CLI login / env vars, not custom-implemented in this repo.
+- None for users; only vendor API keys from env vars. Header secrets are redacted in logs (`SECRET_HEADER_KEYS` in `control/vla_bridge/io_logger.py`-adjacent code)
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None (no Sentry/Bugsnag or similar). Errors surface as Python tracebacks.
+- None
 
 **Logs:**
-- `print()`-based logging throughout exploration scripts (consistent `→` arrow notation for output paths, e.g. `print(f"Saved → {out_path}")`)
-- Weights & Biases used as the structured metrics/logging system specifically for LIBERO lifelong-learning training runs (`LIBERO/libero/lifelong/main.py`)
+- `print()` plus structured I/O logging in `control/vla_bridge/io_logger.py`; MLLM call records via `control/vla_bridge/mllm_record.py`
+- wandb (`wandb.init(project="libero")`) in `LIBERO/libero/lifelong/main.py`
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- None — research-only codebase, no deployed service.
+- Google Colab (GPU) for models; local workstation for robot control loop (`control/run_vla_episode.py`)
 
 **CI Pipeline:**
-- `.github/` contains only GSD (Get Shit Done) workflow tooling/agents/skills (`.github/gsd-core/`, `.github/agents/`, `.github/skills/`) — this is developer-workflow automation for the Claude Code agent, not a CI/CD pipeline for the research code itself.
-- No GitHub Actions workflow files (`.github/workflows/`) detected for build/test/deploy automation.
+- None detected
 
 ## Environment Configuration
 
 **Required env vars:**
-- `MUJOCO_GL` - rendering backend selector (`glfw` for macOS headless), set inline in scripts, not via `.env`
-- `TOKENIZERS_PARALLELISM` - set inline in `LIBERO/libero/lifelong/main.py`
-- HuggingFace token (implicit, for `snapshot_download`/`hf_hub_download`/dataset & adapter push-pull) - not found hardcoded; expected via standard HF CLI auth
-- wandb API key (implicit, for `wandb.init`) - not found hardcoded; expected via standard wandb CLI auth
+- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `HF_TOKEN` (only for the backend in use)
+- `MUJOCO_GL` for simulation rendering
 
 **Secrets location:**
-- `LIBERO/.env` (present, contents not inspected per security policy)
-- `control/.envrc`, `diagnostics/.envrc` (present, direnv-style, contents not inspected)
-- No secrets committed directly in tracked `.py`/`.ipynb` source (based on grep of API_KEY/api_key/os.environ patterns — none found hardcoded in project source, only in vendored `.venv` site-packages)
+- Shell environment / `.envrc` (`control/.envrc`, `diagnostics/.envrc`, `LIBERO/.env` present, not read); Colab secrets for notebook-side tokens
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None.
+- None (Colab servers expose `/action` endpoints and gRPC, consumed only by this project's client)
 
 **Outgoing:**
-- None — no webhook dispatch code detected. All external communication is either pull-based dataset/model downloads (HuggingFace Hub) or push-based experiment logging (wandb) via their respective SDKs, not raw HTTP webhook calls.
+- None
+
+## Hardware Integrations
+
+- SO-101 arm, Feetech STS3215 servos over USB serial: `lerobot[feetech]` (`control/`), `feetech-servo-sdk` + `pyserial` (`diagnostics/`); device mapping `control/device_map.json`, detection `control/detect_devices.py`
+- Cameras (wrist, stereo overhead left/right) via OpenCV: `control/vla_bridge/stereo_camera.py`, `stereo_calibration.py`, `depth_recorder.py`
+- Safety gate for every action: `control/vla_bridge/safety_validator.py`
 
 ---
 
-*Integration audit: 2026-09-05*
+*Integration audit: 2026-10-03*

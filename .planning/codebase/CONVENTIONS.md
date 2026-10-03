@@ -1,92 +1,98 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-09-05
+**Analysis Date:** 2026-10-03
+
+Scope: first-party Python in `control/`, `control/vla_bridge/`, `scripts/`, `diagnostics/`, `explorations/`. `LIBERO/` is vendored and follows its own upstream style; do not apply these rules there.
 
 ## Naming Patterns
 
 **Files:**
-- `snake_case` for every Python file: `explore.py`, `render_scenes.py`, `download_real3dqa.py`, `create_scene.py`, `soarm_sanity.py`, `record_episode.py`, `servo_scan.py`
-- Descriptive verb-first names reflecting the action performed: `download_*`, `render_*`, `create_*`, `explore*`, `servo_*`, `record_*`
+- `snake_case.py` everywhere: `control/run_vla_episode.py`, `control/vla_bridge/safety_validator.py`
+- Backends: one module per model under `control/vla_bridge/backends/` named after the model (`pi0.py`, `groot_n15.py`, `mllm_claude.py`)
+- Shared backend bases use a `base_` prefix: `base_grpc.py`, `base_http_adapter.py`, `base_mllm.py`, `base_gemini.py`
+- Policy servers (Colab side) use `<model>_server.py`: `control/vla_bridge/openvla_server.py`, `rdt1b_server.py`
+- Tests: `test_<module>.py` beside the code (`control/test_safety_validator.py`), backend tests as `test_backend_<name>.py`
+- Non-collected test helpers: no `test_` prefix (`control/fake_providers.py`)
 
 **Functions:**
-- `snake_case` throughout, verb-noun pattern: `load_scene()`, `bird_eye_grid()`, `render_point_cloud()`, `collect_first_frames()`, `episode_grid()`, `episode_strip()`, `open_cameras()`, `record_still()`
-- Private/internal helper functions prefixed with underscore: `_report()` in `explorations/soarm_sanity.py`
+- `snake_case`, verb-first: `build_pi0`, `build_grpc_action_source`, `load_backend_config`, `get_backend_names`
+- Backend factories are `build_<backend>` and registered via decorator
+- Module-private helpers prefixed `_`: `_add`, `_discover_backends`
 
 **Variables:**
-- `snake_case` for all locals and module-level variables
-- Short, established abbreviations for common data: `xyz`, `rgb`, `pts_cam`, `idx`, `sid`, `ep`, `df`, `fpath`
-- Loop/index variables kept terse (`i`, `j`, `row_i`) inside small scopes only
+- `snake_case`; unit suffixes for physical quantities: `joint_limits_deg`
+- Module constants `UPPER_SNAKE_CASE`: `JOINT_ORDER`, `ACTION_UNITS`, `ACTION_MODE`, `CALIBRATION_PATH`, `BACKEND_REGISTRY`, `GRPC_BRIDGE_BACKENDS`
 
-**Types/Constants:**
-- Module-level path and config constants in `UPPER_SNAKE_CASE`: `ROOT`, `DATA`, `OUT`, `OUT_DIR`, `BDDL`, `LIBERO_PATH`, `REPO_ROOT`, `ARM_XML`, `GRIPPER_XML`, `TASKS`, `DEFAULT_BAUD`, `COMMON_BAUDS`, `STS_PROTOCOL_END`, `ADDR_PRESENT_POSITION`, `BROADCAST_ID`
-- No classes defined in project-owned code (`explorations/`, `diagnostics/`, `control/`) outside vendored `LIBERO/` — all scripts are function + `main()` based
+**Types:**
+- `PascalCase` classes: `BackendHandles`, `MockRobot`, `ScriptedAdapter`
+- Modern type hints (`list[str]`, `dict | None`, `Callable`) on public functions; Python 3.12 (`control/.venv`)
+- Immutable sequences as tuples (`JOINT_ORDER = (...)`)
 
 ## Code Style
 
 **Formatting:**
-- No formatter config present (no `.prettierrc`, `black` config, `pyproject.toml` `[tool.black]`, or `.editorconfig`) — style is manually consistent, not tool-enforced
-- 4-space indentation throughout every `.py` file
-- Single blank line between top-level function definitions; no blank line padding inside short functions
-- Line length not enforced by tooling but stays under ~100 chars in practice; the LIBERO task list comment block in `explorations/soarm_sanity.py:57-64` is a rare example of a longer wrapped comment block
+- No formatter config (no `pyproject.toml`, `.flake8`, `ruff.toml`); 4-space indent, double quotes, f-strings
+- Lines up to ~110 chars are tolerated
 
 **Linting:**
-- No linter config detected (no `.flake8`, `.pylintrc`, `ruff.toml`, `setup.cfg` at repo root)
-- `explorations/requirements.txt`, `diagnostics/requirements.txt`, `control/requirements.txt` are separate per-tool dependency lists — no shared root `requirements.txt`
+- None enforced. Keep imports sorted isort-style (stdlib / third-party / local) as existing files do
 
 ## Import Organization
 
 **Order:**
-1. Standard library (`argparse`, `csv`, `io`, `json`, `os`, `sys`, `time`, `pathlib.Path`)
-2. Third-party (`numpy`, `pandas`, `matplotlib`, `cv2`, `PIL`)
-3. Local/vendored packages (`lerobot.*`, `libero.*`, `scservo_sdk`)
+1. Standard library (`json`, `math`, `time`, `pathlib.Path`, `types.SimpleNamespace`)
+2. Third-party (`pytest`, `numpy`, `cv2`)
+3. Local package (`from vla_bridge import ...`, `from vla_bridge.action_contract import JOINT_ORDER`)
 
-**Special pattern — matplotlib backend:**
-- `matplotlib.use("Agg")` is called immediately after `import matplotlib` and before `import matplotlib.pyplot as plt` in every visualization script (`explorations/lib/explore.py:30-32`, `explorations/real3dqa/explore.py`, `explorations/soarm_sanity.py:45-46`). Always replicate this order when adding new rendering scripts — importing `pyplot` first before setting the backend breaks headless rendering.
+**Lazy imports:** Heavy or optional deps (vendor SDKs `anthropic`, `openai`, `google-genai`; `numpy`, `cv2` in `control/vla_bridge/io_logger.py`) are imported inside the function that needs them, with a comment explaining why, so backend discovery and pure-logic tests stay importable.
 
-**Path style:**
-- `pathlib.Path` is preferred in newer scripts (`explorations/lib/explore.py`, `control/record_episode.py`): `ROOT = Path(__file__).resolve().parent.parent`
-- Older scripts (`render_scenes.py`, `download_real3dqa.py`, `explorations/soarm_sanity.py`) use `os.path` + `os.path.join`/`os.path.abspath` instead — both styles coexist; match whichever style the file you're editing already uses rather than mixing them in one file
-
-**No path aliases** — no `tsconfig`/import-alias mechanism exists (pure Python project).
+**Path Aliases:**
+- None. `control/` is the import root: run code and tests from `control/` so `vla_bridge` resolves.
 
 ## Error Handling
 
-- Explicit typed exceptions raised with descriptive messages for missing data: `raise FileNotFoundError(f"Point cloud not found: {path}")` (`explorations/real3dqa/explore.py:33`)
-- Silent-fallback `try/except FileNotFoundError` used in grid-rendering functions so a missing scene doesn't kill the whole render loop (`explorations/real3dqa/explore.py:66`)
-- `for/else` used to detect "not found" after exhausting an iterable (`explorations/lib/explore.py:120-127`, episode search across parquet files) — falls into `else:` branch to print a message and `return` early
-- Broad `except Exception as exc:` used deliberately in the sanity/soak-test harness (`explorations/soarm_sanity.py:134,161,177,215,236,253`) to convert any failure into a PASS/FAIL report line rather than crash the check runner — this is intentional for a validation harness, not a general pattern to copy into normal exploration scripts
-- Hardware scripts (`diagnostics/servo_scan.py`, `control/record_episode.py`) check return codes/booleans from SDK calls (`port.openPort()`, `cap.isOpened()`) and `print()` + `sys.exit(1)` or skip-and-continue rather than raising — matches the interactive/CLI nature of hardware diagnostics
-- No centralized exception handling, error middleware, or logging framework — errors either propagate as raw Python tracebacks or are converted to printed PASS/FAIL/WARNING lines
+**Patterns:**
+- Fail loudly with `ValueError` for bad input/config, `RuntimeError` for unexpected environment state; messages include the offending value via `!r`:
+  ```python
+  raise ValueError(f"camera_map must be a non-empty dict, got {camera_map!r}")
+  ```
+- Refuse silent overwrites (see `_add` in `control/vla_bridge/backends/__init__.py`)
+- Safety-critical action validation is centralized in `control/vla_bridge/safety_validator.py`; never send actions to hardware that bypass it
+- Secrets (API keys) come from env vars named in backend configs (`api_key_env`); never hard-code or log them
 
 ## Logging
 
-- No logging framework (`logging` module not used) — all output via `print()`
-- Progress and status messages use descriptive `print()` text, not structured logs
-- Saved output paths always printed with a consistent arrow notation: `print(f"Saved → {out_path}")` (`explorations/lib/explore.py:115,157`)
-- Hardware/diagnostic scripts print `WARNING:`, `FAIL —`, `PASS —` prefixes for scannable status (`control/record_episode.py:35`, `explorations/soarm_sanity.py:72-78`)
+**Framework:** `print()` for CLI progress; structured JSON Lines via `control/vla_bridge/io_logger.py` for episode I/O
+
+**Patterns:**
+- Per-episode logs and outputs go under `control/logs/` and `control/outputs/`
+- Exploration scripts print saved paths as `print(f"Saved → {path}")`
 
 ## Comments
 
-- Module-level docstrings (triple-quoted) at the top of every script documenting purpose, data layout, and CLI usage — see `explorations/lib/explore.py:1-21`, `explorations/soarm_sanity.py:1-21`, `control/record_episode.py:1-18`, `diagnostics/servo_scan.py`
-- Function docstrings used selectively, only for non-obvious behavior: `collect_first_frames()`, `episode_strip()`, `_report()`
-- Numbered step comments for complex geometry/math logic (see `explorations/render_scenes.py` steps 1-7)
-- Inline comments explain non-obvious hardware/domain facts and carry-forward context, e.g. the LIBERO reach-margin math block in `explorations/soarm_sanity.py:57-64` and the sys.path rationale comments at `explorations/soarm_sanity.py:29-41`
-- Comments frequently reference plan/phase IDs from the planning system (e.g. "Phase 2, D-09", "SC-1") — when adding code tied to a GSD phase/decision, follow this pattern and cite the ID inline
+**When to Comment:**
+- Explain *why* and cite the verified source (e.g. which installed `lerobot` 0.6.1 file a constant was checked against)
+- Reference plan/requirement IDs in docstrings and requirement comments (`VLAHW-01`, `Plan 14-03`, `PIPE-02`)
+- Annotate pinned dependencies in `control/requirements.txt` with purpose, source repo, license
+
+**Docstrings:**
+- Every module has a substantive triple-quoted docstring describing contract and rationale (`control/vla_bridge/action_contract.py`)
+- Public functions get short docstrings with backticked identifiers
 
 ## Function Design
 
-- Scripts are structured as a flat list of top-level functions plus a single `main()` that parses `argparse` args and dispatches — no classes, no OOP abstraction layers in project-owned code
-- Functions generally do one I/O-adjacent thing (load data, render one figure, run one check) and return early on failure conditions
-- `argparse` is the standard CLI pattern: every entry-point script defines a `parser = argparse.ArgumentParser()` in `main()`, adds `--flag` options with `type=`, `default=`, `help=`, and dispatches based on parsed args (`explorations/lib/explore.py:170-183`, `control/record_episode.py:108-138`, `diagnostics/servo_scan.py`)
-- Repeatable CLI args use `action="append"`: `parser.add_argument("--camera", type=int, action="append", ...)` (`control/record_episode.py:112`)
+**Size:** Small, single-purpose helpers; large orchestration lives in CLI entry scripts (`control/run_vla_episode.py`)
+
+**Parameters:** Pass parsed CLI `args` namespaces into backend builders; optional params default to `None`
+
+**Return Values:** Backends return a `BackendHandles` dataclass (action source + optional `shutdown`)
 
 ## Module Design
 
-- No shared library/common module across exploration, diagnostics, or control scripts — each script is self-contained and resolves its own paths via `Path(__file__).resolve()` or `os.path.dirname(__file__)`
-- Each subproject directory (`explorations/`, `diagnostics/`, `control/`) has its own `requirements.txt` and its own `.venv` — dependencies are not shared or centralized
-- `if __name__ == "__main__": main()` guard used at the bottom of every entry-point script
-- `LIBERO/` is a vendored/embedded benchmark repo with its own git history — treat it as read-only third-party code, do not apply project conventions retroactively to it
+**Exports:** Registry pattern: decorate builders with `@register("name")` or `@register_grpc_backend("name")`; `_discover_backends()` imports all modules in `backends/`. Per-backend config lives in `control/vla_bridge/backend_configs/`.
+
+**Barrel Files:** `control/vla_bridge/backends/__init__.py` holds the registry; no other re-export barrels.
 
 ---
 
-*Convention analysis: 2026-09-05*
+*Convention analysis: 2026-10-03*
