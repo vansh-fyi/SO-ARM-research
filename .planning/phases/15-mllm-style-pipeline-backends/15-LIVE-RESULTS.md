@@ -63,12 +63,12 @@ Phase 16 analysis note, not a code change. A gripper-direction mismatch is a blo
 
 | joint | date | command | URDF axis | expected direction | observed direction | match / mismatch | notes |
 |-------|------|---------|-----------|--------------------|--------------------|------------------|-------|
-| shoulder_pan | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| shoulder_lift | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| elbow_flex | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| wrist_flex | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| wrist_roll | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
-| gripper | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING |
+| shoulder_pan | 2026-10-03 | joint_jog +10 (0.35 -> 9.32) | 0 0 1 in shoulder frame = -z (down) in base | clockwise viewed from above; eef swings to the robot's right (operator's left), FK eef dx -56 mm | clockwise from above, gripper to operator's left / robot's right | match | from folded rest pose |
+| shoulder_lift | 2026-10-03 | joint_jog +10 (-100.88 -> -92.88) | 0 0 1 in link frame = +x (robot's left) in base | CCW viewed from the robot's left: a forward-pointing link pitches down/forward, a backward-folded link swings up toward the front (FK eef -54 mm z at zero pose) | upper arm moved up out of the fold, toward the bowl side | match | rest pose is folded back near -101 deg |
+| elbow_flex | 2026-10-03 | joint_jog +10 (92.31 -> 95.21, near the +97.23 limit, not visible), then -10 (94.33 -> 87.30) | +x (robot's left) in base, parallel to shoulder_lift | +10 folds forearm further in (CCW from robot's left); -10 unfolds | -10 run: forearm opened up / unfolded | match (inferred from the -10 run) | +10 from rest is limit-bound (only +2.9 deg travel) |
+| wrist_flex | 2026-10-03 | joint_jog +10 (66.77 -> 74.42, not clearly seen), repeat +10 (18.86 -> 28.70) | +x (robot's left) in base, parallel to shoulder_lift | CCW viewed from the robot's left (same sense as shoulder_lift +); gripper tip dips down when pointing forward (FK -24 mm) | CCW; wrist-gripper moved downward | match | between runs the wrist sagged 74.42 -> 18.86 under gravity: joint_jog.py disconnects with disable_torque_on_disconnect=True (lerobot default), so the arm goes limp after each jog. Tool behaviour, not a fault |
+| wrist_roll | 2026-10-03 | joint_jog +10 (-7.43 -> 2.15) | 0 0 1 in wrist frame = along the gripper, pointing from the jaw tips back toward the wrist | CCW viewed from the wrist end looking toward the jaw tips | CCW (operator first said clockwise, then corrected to CCW after the viewpoint was clarified) | match | the viewpoint convention matters: CW from the tip end = CCW from the wrist end |
+| gripper | 2026-10-03 | absolute targets 0 then 100 (lerobot send_action, max_relative_target 100.0); first try joint_jog -100 from 87.57 stopped at 45.81 (out-of-range target, 1 s readback) | gripper_left/right prismatic 0 to 0.036 m | prompt: 0 = fully closed, 100 = fully open | target 0: 41.24 -> 0.25 in ~1.5 s, jaws almost fully closed; target 100: 0.22 -> 99.69 in ~2.5 s, jaws fully open | match (no blocking finding) | prompt text in mllm_prompt.py is correct as is |
 
 ## 5. Hardware episodes
 
