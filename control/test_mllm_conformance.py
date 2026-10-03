@@ -657,6 +657,14 @@ def _line_starting(text: str, prefix: str) -> str:
     return lines[0]
 
 
+def _checklist_line(text: str, item: str) -> str:
+    """The `- [ ] item` / `- [x] item` line, whichever checkbox state it is in."""
+    lines = [line for line in text.splitlines()
+             if line.startswith(("- [ ] " + item, "- [x] " + item))]
+    assert len(lines) == 1, (item, lines)
+    return lines[0]
+
+
 def _section(text: str, heading: str) -> str:
     start = text.index(heading)
     following = text.find("\n## ", start + len(heading))
@@ -679,7 +687,7 @@ def test_backends_package_docstring_records_the_mllm_depth_exception():
 
 def test_requirements_md_describes_the_hf_variants_depth_note_and_eval_count():
     text = REQUIREMENTS_MD.read_text()
-    mllm_01 = _line_starting(text, "- [ ] **MLLM-01**")
+    mllm_01 = _checklist_line(text, "**MLLM-01**")
     assert "One or more HuggingFace-hosted open reasoning models" in mllm_01
     for model in ("Qwen3.8-27B", "DeepSeek-V4.1-Flash", "Kimi-K3"):
         assert model in mllm_01, model
@@ -690,7 +698,7 @@ def test_requirements_md_describes_the_hf_variants_depth_note_and_eval_count():
     assert "Phase 15 note" in depth and "MLLM" in depth
     assert "never added to the PolicyServer observation dict" in depth
 
-    eval_01 = _line_starting(text, "- [ ] **EVAL-01**")
+    eval_01 = _checklist_line(text, "**EVAL-01**")
     assert "HF reasoning model variant(s) + Claude + GPT" in eval_01
     assert "up to 18" in eval_01
 
@@ -724,7 +732,7 @@ def test_roadmap_md_says_five_registered_mllm_backends():
     assert "all 5 registered backends" in criteria["5."]
     assert "all 3 backends" not in phase_15
 
-    phase_list = _line_starting(text, "- [ ] **Phase 15: MLLM-Style Pipeline & Backends**")
+    phase_list = _checklist_line(text, "**Phase 15: MLLM-Style Pipeline & Backends**")
     assert "onboard 5 raw-JSON MLLM backends (3 HF open-model variants, Claude, GPT)" in phase_list
     assert "onboard 3 raw-JSON MLLM backends" not in text
 
