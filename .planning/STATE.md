@@ -148,9 +148,9 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 
 ## Session Continuity
 
-Last session: 2026-10-02T16:35:10.258Z
-Stopped at: Completed 15-09-PLAN.md (next: 15-10 live verification, human-action)
-Resume file: .planning/phases/15-mllm-style-pipeline-backends/15-CONTEXT.md
+Last session: 2026-10-03
+Stopped at: Session resumed, proceeding to 15-10 Task 3 step A (FastFS depth service setup); chunk_len decision recorded (keep 20)
+Resume file: .planning/phases/15-mllm-style-pipeline-backends/.continue-here.md
 
 Phase 12 closed 2026-09-30 with 15/15 UAT tests passing (12-UAT.md has full
 per-test evidence). Summary of the day's work, across a long multi-session
