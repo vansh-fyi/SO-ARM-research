@@ -305,6 +305,45 @@ def test_keyboard_interrupt_triggers_return_to_start_before_disconnect(
     assert termination["reason"] == "keyboard_interrupt"
 
 
+def test_keyboard_interrupt_reason_survives_broken_stdout_pipe(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch
+):
+    # Ctrl-C also kills a piped reader (`... | grep -v objc`), so the handler's
+    # print raises BrokenPipeError (Plan 15-10 Task 3 step D, 2026-10-03). The
+    # reason and the return-to-start must not depend on that print.
+    moved = []
+    monkeypatch.setattr(run_vla_episode, "move_to_positions",
+                        lambda robot, targets, kp, control_freq, max_seconds, **kw: moved.append(True))
+
+    def broken_print(*args, **kwargs):
+        if args and "Interrupted" in str(args[0]):
+            raise BrokenPipeError(32, "Broken pipe")
+
+    monkeypatch.setattr("builtins.print", broken_print)
+
+    class InterruptingActionSource:
+        def get_action(self, joint_state, instruction):
+            raise KeyboardInterrupt
+
+    joint_limits_deg = action_contract.load_joint_limits_deg(mock_calibration_file)
+    with IOLogger(tmp_path, CAMERA_NAMES) as io_logger:
+        run_episode(
+            mock_robot,
+            _fake_caps(),
+            CAMERA_NAMES,
+            io_logger,
+            InterruptingActionSource(),
+            instruction="Pick up the red cube",
+            max_steps=10,
+            control_hz=100.0,
+            joint_limits_deg=joint_limits_deg,
+        )
+
+    assert moved
+    termination = json.loads((tmp_path / "termination.json").read_text())
+    assert termination["reason"] == "keyboard_interrupt"
+
+
 # --- _build_camera_names (Plan 11-05, Task 1/2 prep -- positional relabeling) ---
 
 

@@ -406,8 +406,13 @@ def run_episode(
                 break
             time.sleep(final_sleep)
     except KeyboardInterrupt:
-        print("Interrupted -- returning to start position...")
+        # Reason first: Ctrl-C also kills a piped reader (`| grep`), so this
+        # print can raise BrokenPipeError and would otherwise lose the reason.
         reason = "keyboard_interrupt"
+        try:
+            print("Interrupted -- returning to start position...")
+        except BrokenPipeError:
+            pass
     except Exception:
         reason = "exception"
         raise
