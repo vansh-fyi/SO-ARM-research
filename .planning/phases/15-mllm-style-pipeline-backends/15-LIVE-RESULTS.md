@@ -52,8 +52,8 @@ marked "user decision" record explicit user decisions (2026-10-02) driven by sec
 
 | date | endpoint session (no secrets) | left image source | depth time (s) | heatmap legible (legend, black where invalid) | 24x32 grid plausible (n/a cells) | HTTP 429 observed | notes |
 |------|-------------------------------|-------------------|----------------|-----------------------------------------------|----------------------------------|-------------------|-------|
-| PENDING | PENDING | raw | PENDING | PENDING | PENDING | PENDING | PENDING |
-| PENDING | PENDING | aligned | PENDING | PENDING | PENDING | PENDING | PENDING |
+| 2026-10-03 | Colab resident FastFS (ngrok HTTP tunnel, 23-36-37 checkpoint sha256 af0658f2...), /health ready, protocol_version 1 | raw | 7.1 (fetch 7116 ms, server inference 196 ms, 1 attempt) | yes: legend 0.20-1.50 m and n/a swatch legible; no invalid pixels in this scene (valid_fraction 1.0), so no black regions to show | yes: 24x32, min 0.50 / median 0.82 / max 1.41 m; bowl ~0.52-0.60 m (bottom rows), gripper/arm ~0.66-0.80 m, back wall ~1.1-1.4 m; no n/a cells (100% valid) | no | out: control/outputs/mllm_inputs_preview; wrist camera is cv2 index 1 ('USB Camera'; index 0 is the built-in FaceTime camera), stereo 'CCB Camera'; status ok |
+| 2026-10-03 | same session | aligned | 6.3 (fetch 6349 ms, 1 attempt) | yes (same legend) | yes, same ranges, 100% valid | no | out: control/outputs/mllm_inputs_preview_aligned; left image sent was the rectified aligned frame (slightly zoomed and cropped compared with raw, same scene); only one depth caller, so no 429 |
 
 ## 4. Human URDF sign and gripper-direction check
 
