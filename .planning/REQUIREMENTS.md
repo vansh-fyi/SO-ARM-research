@@ -170,7 +170,7 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 ### Pipeline Architecture
 
 - [ ] **PIPE-01**: A consistent VLA-style `ActionSource` pattern (native trained action-output, one adapter per backend) exists, that the already-working SmolVLA integration fits and new VLA backends plug into without changing the shared control loop/safety/logging path
-- [ ] **PIPE-02**: A consistent MLLM-style `ActionSource` pattern exists (shared prompt construction, output JSON schema, and reasoning-trace capture) that all MLLM backends plug into without changing the shared control loop/safety/logging path
+- [x] **PIPE-02**: A consistent MLLM-style `ActionSource` pattern exists (shared prompt construction, output JSON schema, and reasoning-trace capture) that all MLLM backends plug into without changing the shared control loop/safety/logging path
 
 ### VLA Backends (native action-output, paper-matched)
 
@@ -191,13 +191,13 @@ Raised directly in conversation, not from the original 3-item bridge-latency UAT
 
 ### MLLM Backends (raw-JSON reasoning prompt, no movement primitives)
 
-- [ ] **MLLM-01**: One or more HuggingFace-hosted open reasoning models (Qwen3.8-27B, DeepSeek-V4.1-Flash, Kimi-K3, registered as variants on one shared adapter) are integrated as MLLM-style backends via HF Inference Providers; Phase 16 decides which variants run
-- [ ] **MLLM-02**: Claude (paid tier) is integrated as an MLLM-style backend
-- [ ] **MLLM-03**: GPT is integrated as an MLLM-style backend
+- [x] **MLLM-01**: One or more HuggingFace-hosted open reasoning models (Qwen3.8-27B, DeepSeek-V4.1-Flash, Kimi-K3, registered as variants on one shared adapter) are integrated as MLLM-style backends via HF Inference Providers; Phase 16 decides which variants run
+- [x] **MLLM-02**: Claude (paid tier) is integrated as an MLLM-style backend
+- [x] **MLLM-03**: GPT is integrated as an MLLM-style backend
 - [ ] **MLLM-04**: Each MLLM backend's action-chunk JSON schema is generated programmatically from `action_contract.py`'s constants (`JOINT_ORDER`, units) and validated through the unmodified `safety_validator.py`
-- [ ] **MLLM-05**: Action-chunk size for MLLM backends is derived from Phase 1's real measured latency/timing data, not guessed
-- [ ] **MLLM-06**: Each MLLM backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured alongside its action chunk, per step
-- [ ] **MLLM-07**: A malformed/parse-failing action within a chunk holds the robot's current position rather than zero-filling or crashing the episode
+- [x] **MLLM-05**: Action-chunk size for MLLM backends is derived from Phase 1's real measured latency/timing data, not guessed
+- [x] **MLLM-06**: Each MLLM backend's staged reasoning trace (restate task → plan → grounded scene claims → action) is captured alongside its action chunk, per step
+- [x] **MLLM-07**: A malformed/parse-failing action within a chunk holds the robot's current position rather than zero-filling or crashing the episode
 
 ### Cross-Backend Benchmark
 
@@ -310,14 +310,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VLAB-10 | Phase 14 | Pending |
 | VLAB-11 | Phase 14 | Pending |
 | VLAB-12 | Phase 14 | Pending |
-| PIPE-02 | Phase 15 | Pending |
-| MLLM-01 | Phase 15 | Pending |
-| MLLM-02 | Phase 15 | Pending |
-| MLLM-03 | Phase 15 | Pending |
+| PIPE-02 | Phase 15 | Complete |
+| MLLM-01 | Phase 15 | Complete |
+| MLLM-02 | Phase 15 | Complete |
+| MLLM-03 | Phase 15 | Complete |
 | MLLM-04 | Phase 15 | Pending |
-| MLLM-05 | Phase 15 | Pending |
-| MLLM-06 | Phase 15 | Pending |
-| MLLM-07 | Phase 15 | Pending |
+| MLLM-05 | Phase 15 | Complete |
+| MLLM-06 | Phase 15 | Complete |
+| MLLM-07 | Phase 15 | Complete |
 | EVAL-01 | Phase 16 | Pending |
 | EVAL-02 | Phase 16 | Pending |
 

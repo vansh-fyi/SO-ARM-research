@@ -4,17 +4,17 @@ milestone: v2.1
 milestone_name: MLLM Raw-Autonomy Benchmark
 current_phase: 15
 current_phase_name: mllm-style-pipeline-backends
-status: executing
-stopped_at: Completed 15-09-PLAN.md
-last_updated: "2026-10-02T17:54:24.370Z"
-last_activity: 2026-10-02
-last_activity_desc: Completed 15-09 (conformance suite, five-backend docs, mllm_smoke CLI)
+status: verifying
+stopped_at: Completed 15-10-PLAN.md
+last_updated: "2026-10-03T06:57:30.356Z"
+last_activity: 2026-10-03
+last_activity_desc: Completed 15-10 (live smoke, depth live, URDF check, real-arm episodes for all five MLLM backends)
 progress:
   total_phases: 17
-  completed_phases: 12
+  completed_phases: 13
   total_plans: 73
-  completed_plans: 72
-  percent: 71
+  completed_plans: 73
+  percent: 76
 ---
 
 # Project State
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 Phase: 15 (mllm-style-pipeline-backends) — EXECUTING
 Plan: 10 of 10
-Status: Ready to execute
-Last activity: 2026-10-02 — Completed 15-09 (conformance suite, five-backend docs, mllm_smoke CLI)
+Status: Phase complete — ready for verification
+Last activity: 2026-10-03 — Completed 15-10 (live smoke, depth live, URDF check, real-arm episodes for all five MLLM backends); phase verification pending
 
 Plan execution: [██████████] 100% — phase acceptance pending
 
@@ -65,6 +65,7 @@ Plan execution: [██████████] 100% — phase acceptance pendi
 | Phase 13 P03 | 8min | 2 tasks | 2 files |
 | Phase 13 P04 | 3min | 3 tasks | 2 files |
 | Phase 15 P09 | 9 min | 3 tasks | 7 files |
+| Phase 15 P10 | 14h 18m | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,8 @@ Recent decisions affecting current work:
 - [Phase 15]: 15-10 (user decision 2026-10-02): mllm-hf-deepseek model switched from deepseek-ai/DeepSeek-V4-Flash-Vision-Exp to deepseek-ai/DeepSeek-V4.1-Flash pinned :deepinfra ($0.20/$0.60 per M, context 1048576); this SUPERSEDES the locked D-23 model id (and D-27). Backend name and effort max unchanged. Evidence: DeepSeek retired V4-Flash-Vision-Exp upstream (aliases route to V4.1-Flash) and both live attempts got HTTP 504 from the HF router at ~121 s
 - [Phase 15]: 15-10 (user decision 2026-10-02, Rule 1 bug fix): base_mllm_chat.py now streams (chat.completions.create stream=True, stream_options include_usage) because the non-streaming call sent no bytes until done and the HF router edge proxy cut idle connections at ~120 s (HTTP 504). The raw sidecar payload is now a JSON-safe reconstruction of the stream. Re-smoke of mllm-hf-qwen and mllm-hf-deepseek pending
 - [Phase 15]: [2026-10-02] Plan 15-10 (user decision): mllm-claude switched from claude-fable-5-1 to claude-opus-5-5 (backend name unchanged). Prices 4/20/0.20 per MTok (platform.claude.com/docs/en/models/opus-5-5/overview); effort kept xhigh explicitly (Opus 5.5 default is medium), max_tokens 64000, adaptive thinking summarized. Omitted sampling reasons now say 'not sent' (the Opus 5.5 docs do not state a sampling-param 400). The Fable smoke (51.5 s, 0.2734 USD) is historical only; Opus 5.5 re-smoke pending (15-LIVE-RESULTS.md sections 1, 2, 6).
+- [Phase 15]: 15-10 (user decision 2026-10-03, re-confirmed against the Task 3 episode table): chunk_len stays 20 for all five MLLM backends. Episode duty cycles at N=20: qwen 5.1%, deepseek 7.1%, claude 7.8%, gpt 8.9%, kimi 16.2%; no call exceeded timeout_s 900. mllm_defaults.json keeps the smoke-based values; N or effort changes are Phase 16 ablations — Shared fixed N (D-17) and the open-loop bound N <= 20; low duty cycle recorded as a property of long-thinking models (15-LIVE-RESULTS.md section 6)
+- [Phase 15]: 15-10 (Rule 1 fix 9ac4472): run_vla_episode.py sets termination reason keyboard_interrupt before a guarded print, because Ctrl-C also kills a piped reader (| grep -v objc) and the print raised BrokenPipeError first, recording max_steps_reached. Live re-test: keyboard_interrupt. Separately 3f4d5e1 scoped the section-6 test parser to the smoke table — Found in Task 3 step D run 1 on mllm-hf-deepseek; regression test test_keyboard_interrupt_reason_survives_broken_stdout_pipe; full suite 1604 passed
 
 ### Pending Todos
 
@@ -148,9 +151,9 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 
 ## Session Continuity
 
-Last session: 2026-10-03
-Stopped at: Session resumed, proceeding to 15-10 Task 3 step A (FastFS depth service setup); chunk_len decision recorded (keep 20)
-Resume file: .planning/phases/15-mllm-style-pipeline-backends/.continue-here.md
+Last session: 2026-10-03T06:57:25.372Z
+Stopped at: Completed 15-10-PLAN.md
+Resume file: None
 
 Phase 12 closed 2026-09-30 with 15/15 UAT tests passing (12-UAT.md has full
 per-test evidence). Summary of the day's work, across a long multi-session
