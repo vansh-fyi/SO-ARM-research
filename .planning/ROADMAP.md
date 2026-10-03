@@ -613,6 +613,6 @@ Plans:
 | 12. Bridge Tick-Latency Fix | 6/6 | Complete    | 2026-09-25 |
 | 13. Camera Device Resolution Unification | 4/4 | Human verification pending | - |
 | 14. VLA-Style Pipeline & Backends | 15/15 | Complete   | 2026-10-01 |
-| 15. MLLM-Style Pipeline & Backends | 10/10 | Complete   | 2026-10-03 |
+| 15. MLLM-Style Pipeline & Backends | 10/10 | Complete    | 2026-10-03 |
 | 16. Cross-Backend Pen Transfer Benchmark | 0/TBD | Not started | - |
 | 17. Safety-Validator Cap Re-Tightening | 0/TBD | Not started | - |

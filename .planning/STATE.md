@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: MLLM Raw-Autonomy Benchmark
-current_phase: 15
-current_phase_name: mllm-style-pipeline-backends
+current_phase: 16
+current_phase_name: Cross-Backend Pen Transfer Benchmark
 status: verifying
 stopped_at: Completed 15-10-PLAN.md
-last_updated: "2026-10-03T06:57:30.356Z"
+last_updated: "2026-10-03T07:07:41.525Z"
 last_activity: 2026-10-03
-last_activity_desc: Completed 15-10 (live smoke, depth live, URDF check, real-arm episodes for all five MLLM backends)
+last_activity_desc: Phase 15 complete, transitioned to Phase 16
 progress:
   total_phases: 17
   completed_phases: 13
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 ## Current Position
 
-Phase: 15 (mllm-style-pipeline-backends) — EXECUTING
-Plan: 10 of 10
+Phase: 16 — Cross-Backend Pen Transfer Benchmark
+Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-10-03 — Completed 15-10 (live smoke, depth live, URDF check, real-arm episodes for all five MLLM backends); phase verification pending
+Last activity: 2026-10-03 — Phase 15 complete, transitioned to Phase 16
 
 Plan execution: [██████████] 100% — phase acceptance pending
 
@@ -39,7 +39,7 @@ Plan execution: [██████████] 100% — phase acceptance pendi
 
 **Velocity:**
 
-- Total plans completed: 30
+- Total plans completed: 40
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -53,6 +53,7 @@ Plan execution: [██████████] 100% — phase acceptance pendi
 | 10 | 5 | - | - |
 | 11 | 5 | - | - |
 | 12 | 6 | - | - |
+| 15 | 10 | - | - |
 
 **Recent Trend:**
 
