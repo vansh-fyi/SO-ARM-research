@@ -6,18 +6,25 @@ google-genai client are all replaced by in-process fakes, and every hardware
 construction seam runs inside `backend_smoke.synthetic_hardware()`.
 """
 
+import contextlib
+import queue
 import re
+import socket
+import threading
+import time
+import types
 from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
+import requests
 
 import lerobot.async_inference.robot_client as lerobot_robot_client
 from lerobot.robots.so_follower.config_so_follower import SOFollowerRobotConfig
 from lerobot.robots.so_follower.so_follower import SO101Follower as RealSO101Follower
 
-from vla_bridge import backend_smoke, robot_client, safety_validator, stereo_camera
+from vla_bridge import action_contract, backend_smoke, backends, robot_client, safety_validator, stereo_camera
 from vla_bridge.action_contract import JOINT_ORDER
 from vla_bridge.backends import GRPC_BRIDGE_BACKENDS, base_gemini, base_http_adapter, base_mllm, get_backend_names
 
@@ -313,3 +320,349 @@ def test_format_check():
     check = backend_smoke.Check("PASS", "not held", "moved")
     assert backend_smoke.format_check(check) == "PASS not held: moved"
     assert re.match(r"^(PASS|WARN|FAIL) ", backend_smoke.format_check(check))
+
+
+# --- CLI end to end (offline) --------------------------------------------------------------------
+
+WALLX_VERSION = "Zekai-Chen/wallx_pick_place_3cam_200ep@ef8ce55f9772"
+GEMINI_SENTINEL = "AIzaSENTINEL-not-a-real-key-0123456789"
+
+
+class FakeResponse:
+    def __init__(self, body, status_code=200):
+        self._body = body
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"{self.status_code} error")
+
+    def json(self):
+        return self._body
+
+
+@pytest.fixture
+def hw_logs(monkeypatch):
+    """Record every HardwareLog the CLI's synthetic_hardware() context yields."""
+    logs = []
+    real = backend_smoke.synthetic_hardware
+
+    @contextlib.contextmanager
+    def recording(joint_state):
+        with real(joint_state) as log:
+            logs.append(log)
+            yield log
+
+    monkeypatch.setattr(backend_smoke, "synthetic_hardware", recording)
+    return logs
+
+
+@pytest.fixture
+def synthetic_state(mock_calibration_file):
+    limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    return limits, {joint: (float(lo) + float(hi)) / 2 for joint, (lo, hi) in limits.items()}
+
+
+def _health_ok():
+    return FakeResponse({"status": "ready", "protocol_version": 1,
+                         "model": {"checkpoint": "Zekai-Chen/wallx_pick_place_3cam_200ep",
+                                   "revision": "ef8ce55f9772", "action_space": "absolute_joint"}})
+
+
+def _install_http(monkeypatch, get=None, post=None):
+    calls = {"get": [], "post": []}
+
+    def fake_get(url, timeout=None, **kwargs):
+        calls["get"].append(url)
+        return get(url) if callable(get) else get
+
+    def fake_post(url, json=None, timeout=None, **kwargs):
+        calls["post"].append({"url": url, "json": json, "timeout": timeout})
+        return post(url) if callable(post) else post
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "post", fake_post)
+    return calls
+
+
+def _wallx_argv(calibration, *extra):
+    return ["--backend", "wallx", "--server-address", "http://smoke.test",
+            "--joint-calibration", str(calibration), *extra]
+
+
+def test_http_pass_path(monkeypatch, capsys, hw_logs, mock_calibration_file, synthetic_state):
+    _limits, state = synthetic_state
+    action = _offset(state, 3.0)
+    calls = _install_http(monkeypatch, get=_health_ok(),
+                          post=FakeResponse({"action": action, "model_version": WALLX_VERSION}))
+    code = backend_smoke.main(_wallx_argv(mock_calibration_file))
+    out = capsys.readouterr().out
+    assert code == 0, out
+    for line in ("PASS server reachable", "PASS health ready", "PASS not held", "PASS not saturated",
+                 "RESULT: PASS"):
+        assert line in out
+    assert "health model.revision" in out and "health model.action_space" in out
+    assert calls["get"] == ["http://smoke.test/health"]
+    payload = calls["post"][0]["json"]
+    assert calls["post"][0]["url"] == "http://smoke.test/action"
+    assert set(payload["images"]) == {"wrist", "overhead_left", "overhead_right"}
+    assert payload["joint_state"] == pytest.approx(state)
+    assert len(hw_logs) == 1
+    assert hw_logs[0].send_action_attempts == [] and hw_logs[0].tripwire_hits == []
+    assert hw_logs[0].robots_built
+
+
+def test_http_health_not_ready_stops_before_action(monkeypatch, capsys, mock_calibration_file):
+    calls = _install_http(monkeypatch, get=FakeResponse({"status": "loading"}), post=None)
+    code = backend_smoke.main(_wallx_argv(mock_calibration_file))
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL health ready" in out and "RESULT: FAIL" in out
+    assert calls["post"] == []
+
+
+def test_http_unreachable_server(monkeypatch, capsys, mock_calibration_file):
+    def refuse(url):
+        raise requests.ConnectionError("connection refused")
+
+    calls = _install_http(monkeypatch, get=refuse, post=None)
+    code = backend_smoke.main(_wallx_argv(mock_calibration_file))
+    out = capsys.readouterr().out
+    assert code == 1 and "FAIL server reachable" in out
+    assert calls["post"] == []
+
+
+@pytest.mark.parametrize("post", ["timeout", "http500"])
+def test_http_held_action_fails(monkeypatch, capsys, mock_calibration_file, post):
+    def timeout(url):
+        raise requests.Timeout("read timed out")
+
+    response = timeout if post == "timeout" else FakeResponse({"error": "boom"}, status_code=500)
+    _install_http(monkeypatch, get=_health_ok(), post=response)
+    code = backend_smoke.main(_wallx_argv(mock_calibration_file))
+    out = capsys.readouterr().out
+    assert code == 1
+    assert re.search(r"FAIL not held: .*http-error-holding-position", out)
+    assert "RESULT: FAIL" in out
+
+
+def test_http_saturated_action_fails(monkeypatch, capsys, mock_calibration_file, synthetic_state):
+    limits, state = synthetic_state
+    action = dict(state)
+    for joint in ARM_JOINTS:
+        action[joint] = limits[joint][1] + 50.0
+    _install_http(monkeypatch, get=_health_ok(),
+                  post=FakeResponse({"action": action, "model_version": WALLX_VERSION}))
+    code = backend_smoke.main(_wallx_argv(mock_calibration_file))
+    out = capsys.readouterr().out
+    assert code == 1 and "FAIL saturated" in out
+
+
+def test_missing_calibration_warns_and_uses_neutral_limits(monkeypatch, capsys, tmp_path):
+    state = {joint: (lo + hi) / 2 for joint, (lo, hi) in backend_smoke.NEUTRAL_JOINT_LIMITS_DEG.items()}
+    _install_http(monkeypatch, get=_health_ok(),
+                  post=FakeResponse({"action": _offset(state, 3.0), "model_version": WALLX_VERSION}))
+    code = backend_smoke.main(_wallx_argv(tmp_path / "missing.json"))
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "WARNING: no usable follower calibration" in out
+
+
+# gRPC lane fakes: modelled on test_robot_client.py's FakeTimedAction / FakeBridgeClient.
+
+
+class FakeTimedAction:
+    def __init__(self, action, timestamp: float, timestep: int = 0):
+        self._action = action
+        self._timestamp = timestamp
+        self._timestep = timestep
+
+    def get_action(self):
+        return self._action
+
+    def get_timestamp(self) -> float:
+        return self._timestamp
+
+    def get_timestep(self) -> int:
+        return self._timestep
+
+
+class FakeRobotClient:
+    """`RobotClient` surface `connect_bridge()` and `BridgeActionSource` touch. Its
+    robot comes from lerobot's `make_robot_from_config`, so the smoke's seam runs."""
+
+    instances: list = []
+    actions_to_send: list = []
+
+    def __init__(self, config):
+        self.config = config
+        self.robot = lerobot_robot_client.make_robot_from_config(config.robot)
+        self.robot.connect()
+        self.policy_config = types.SimpleNamespace(lerobot_features={})
+        self.action_queue = queue.Queue()
+        self.action_queue_lock = threading.Lock()
+        self.latest_action_lock = threading.Lock()
+        self.latest_action = -1
+        self.action_chunk_size = -1
+        self.must_go = threading.Event()
+        self.must_go.set()
+        self.observations = []
+        self.stopped = False
+        FakeRobotClient.instances.append(self)
+
+    def start(self):
+        return True
+
+    def receive_actions(self):
+        for i, action in enumerate(FakeRobotClient.actions_to_send):
+            self.action_queue.put(FakeTimedAction(action, time.time(), i))
+
+    def _ready_to_send_observation(self):
+        return True
+
+    def control_loop_observation(self, task):
+        obs = self.robot.get_observation()
+        self.observations.append(obs)
+        return obs
+
+    def _action_tensor_to_action_dict(self, action_tensor):
+        return {key: action_tensor[i] for i, key in enumerate(self.robot.action_features)}
+
+    def stop(self):
+        self.stopped = True
+        self.robot.disconnect()
+
+
+@pytest.fixture
+def listening_port():
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen()
+    yield server.getsockname()[1]
+    server.close()
+
+
+@pytest.fixture
+def closed_port():
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
+@pytest.fixture
+def fake_robot_client(monkeypatch):
+    FakeRobotClient.instances = []
+    FakeRobotClient.actions_to_send = []
+    monkeypatch.setattr(robot_client, "RobotClient", FakeRobotClient)
+    return FakeRobotClient
+
+
+def _grpc_argv(port, calibration, *extra):
+    return ["--backend", "smolvla", "--server-address", f"127.0.0.1:{port}", "--checkpoint", "x/y",
+            "--joint-calibration", str(calibration), *extra]
+
+
+def test_grpc_unreachable_server_never_builds(monkeypatch, capsys, closed_port, mock_calibration_file):
+    built = []
+    monkeypatch.setitem(backends.BACKEND_REGISTRY, "smolvla", lambda *a, **k: built.append(a))
+    code = backend_smoke.main(_grpc_argv(closed_port, mock_calibration_file))
+    out = capsys.readouterr().out
+    assert code == 1 and "FAIL server reachable" in out
+    assert built == []
+
+
+def test_grpc_pass_path(capsys, hw_logs, listening_port, fake_robot_client, mock_calibration_file,
+                        synthetic_state):
+    _limits, state = synthetic_state
+    fake_robot_client.actions_to_send = [[state[joint] + 2.0 for joint in JOINT_ORDER]]
+    code = backend_smoke.main(_grpc_argv(listening_port, mock_calibration_file, "--wait-s", "5",
+                                         "--poll-interval-s", "0.05"))
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "PASS server reachable" in out and "PASS not held" in out and "RESULT: PASS" in out
+    client = fake_robot_client.instances[0]
+    assert isinstance(client.robot, backend_smoke.SyntheticRobot)
+    assert "camera1" in client.robot.observation_features
+    assert client.observations and client.observations[0]["camera2"].shape[1] == 640
+    assert client.stopped
+    assert hw_logs[0].send_action_attempts == [] and hw_logs[0].tripwire_hits == []
+
+
+def test_grpc_no_action_within_wait_fails_and_tears_down(capsys, listening_port, fake_robot_client,
+                                                         mock_calibration_file):
+    code = backend_smoke.main(_grpc_argv(listening_port, mock_calibration_file, "--wait-s", "1",
+                                         "--poll-interval-s", "0.1"))
+    out = capsys.readouterr().out
+    assert code == 1
+    assert re.search(r"FAIL not held: no action chunk within 1(\.0)? s", out)
+    assert fake_robot_client.instances[0].stopped
+
+
+# Gemini lane.
+
+
+def test_gemini_without_confirm_spend_refuses(monkeypatch, capsys, mock_calibration_file):
+    monkeypatch.setenv("GEMINI_API_KEY", GEMINI_SENTINEL)
+    clients, built = [], []
+    monkeypatch.setattr(base_gemini, "_make_genai_client", lambda *a, **k: clients.append(a))
+    monkeypatch.setitem(backends.BACKEND_REGISTRY, "gemini-robotics", lambda *a, **k: built.append(a))
+    code = backend_smoke.main(["--backend", "gemini-robotics", "--joint-calibration",
+                               str(mock_calibration_file)])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "gemini-robotics-er-2-preview" in captured.out
+    assert "--confirm-spend" in captured.out and "paid" in captured.out
+    assert clients == [] and built == []
+    assert GEMINI_SENTINEL not in captured.out + captured.err
+
+
+def test_gemini_confirmed_path(monkeypatch, capsys, hw_logs, mock_calibration_file):
+    _model, api_key_env, _kwargs = base_gemini.load_er_backend_config("gemini_robotics", "gemini-robotics")
+    monkeypatch.setenv(api_key_env, GEMINI_SENTINEL)
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return types.SimpleNamespace(output_text='[{"point": [250, 750], "label": "cube"}]')
+
+    fake_client = types.SimpleNamespace(interactions=types.SimpleNamespace(create=create))
+    monkeypatch.setattr(base_gemini, "_make_genai_client", lambda api_key, timeout_s, **k: fake_client)
+    code = backend_smoke.main(["--backend", "gemini-robotics", "--steps", "2", "--instruction", "cube",
+                               "--joint-calibration", str(mock_calibration_file), "--confirm-spend"])
+    captured = capsys.readouterr()
+    assert len(calls) == 2
+    assert re.search(r"model_version: gemini-robotics@", captured.out)
+    assert GEMINI_SENTINEL not in captured.out + captured.err
+    # At the synthetic midpoint state the ER conversion produces a real (bounded) move.
+    assert code == 0, captured.out
+    assert "PASS not held" in captured.out and "RESULT: PASS" in captured.out
+    assert hw_logs[0].send_action_attempts == [] and hw_logs[0].tripwire_hits == []
+
+
+# Argument handling.
+
+
+def test_unknown_backend_exits_listing_smokeable_names():
+    with pytest.raises(SystemExit) as exc:
+        backend_smoke.main(["--backend", "no-such-backend"])
+    assert "smolvla" in str(exc.value) and "wallx" in str(exc.value)
+
+
+def test_mllm_backend_points_to_mllm_smoke():
+    with pytest.raises(SystemExit) as exc:
+        backend_smoke.main(["--backend", "mllm-claude"])
+    assert "vla_bridge.mllm_smoke" in str(exc.value)
+
+
+@pytest.mark.parametrize("argv", [
+    ["--backend", "smolvla", "--server-address", "127.0.0.1:5173"],
+    ["--backend", "wallx", "--server-address", "127.0.0.1:5000"],
+    ["--backend", "wallx", "--server-address", "https://x.test", "--camera-map", "camera1=wrist"],
+    ["--backend", "wallx", "--server-address", "https://x.test", "--steps", "6"],
+])
+def test_argument_errors_exit_2(argv):
+    with pytest.raises(SystemExit) as exc:
+        backend_smoke.main(argv)
+    assert exc.value.code == 2
