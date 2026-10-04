@@ -9,42 +9,156 @@
   "total_tasks": 14,
   "status": "paused",
   "completed_tasks": [
-    {"id": 0, "name": "Quick task 261004-dz7: backend_smoke.py + tests + 14-LIVE-RESULTS.md template", "status": "done", "commit": "b5ec8d9"},
-    {"id": 1, "name": "Smoke gemini-robotics", "status": "done", "result": "PASS (latency 8.45 s WARN; after suspended-key 403 and one 10 s timeout)"},
-    {"id": 2, "name": "Smoke gemini-robotics-2", "status": "done", "result": "PASS (latency 8.67 s WARN)"},
-    {"id": 3, "name": "Smoke smolvla", "status": "done", "result": "PASS (first-action age 8.39 s WARN, cold)"},
-    {"id": 4, "name": "Smoke pi0", "status": "in_progress", "progress": "FAIL x2: gated paligemma licence (fixed by user), then create_causal_mask() cache_position TypeError from Colab transformers>=5.9 vs lerobot 0.6.1 (needs transformers==5.5.4 + server restart)"}
+    {
+      "id": 0,
+      "name": "Quick task 261004-dz7: backend_smoke.py + tests + 14-LIVE-RESULTS.md template",
+      "status": "done",
+      "commit": "b5ec8d9"
+    },
+    {
+      "id": 1,
+      "name": "Smoke gemini-robotics",
+      "status": "done",
+      "result": "PASS (latency 8.45 s WARN; after suspended-key 403 and one 10 s timeout)"
+    },
+    {
+      "id": 2,
+      "name": "Smoke gemini-robotics-2",
+      "status": "done",
+      "result": "PASS (latency 8.67 s WARN)"
+    },
+    {
+      "id": 3,
+      "name": "Smoke smolvla",
+      "status": "done",
+      "result": "PASS (first-action age 8.39 s WARN, cold)"
+    },
+    {
+      "id": 4,
+      "name": "Smoke pi0",
+      "status": "in_progress",
+      "progress": "FAIL x2: gated paligemma licence (fixed by user), then create_causal_mask() cache_position TypeError from Colab transformers>=5.9 vs lerobot 0.6.1 (needs transformers==5.5.4 + server restart)"
+    }
   ],
   "remaining_tasks": [
-    {"id": 5, "name": "Smoke pi05 (needs same transformers fix)", "status": "not_started"},
-    {"id": 6, "name": "Smoke act", "status": "not_started"},
-    {"id": 7, "name": "Re-smoke smolvla after transformers downgrade", "status": "not_started"},
-    {"id": 8, "name": "Smoke diffusion (own install/launch cells)", "status": "not_started"},
-    {"id": 9, "name": "Smoke groot-n17 (own cells, Cosmos-Reason2-2B licence, --wait-s 300)", "status": "not_started"},
-    {"id": 10, "name": "Smoke HTTP lane: openvla-oft, wallx, openvla, octo, rdt1b, groot-n15", "status": "not_started"},
-    {"id": 11, "name": "Record all results into 14-LIVE-RESULTS.md (one GSD commit)", "status": "not_started"},
-    {"id": 12, "name": "Pin transformers in notebook cell b9d8ba70 (+ sync policy_server_launch.md)", "status": "not_started"},
-    {"id": 13, "name": "Gemini thinking_level medium->low in both configs (pending approval)", "status": "not_started"},
-    {"id": 14, "name": "Resume /gsd-verify-work 14 at Test 1", "status": "not_started"}
+    {
+      "id": 5,
+      "name": "Smoke pi05 (needs same transformers fix)",
+      "status": "not_started"
+    },
+    {
+      "id": 6,
+      "name": "Smoke act",
+      "status": "not_started"
+    },
+    {
+      "id": 7,
+      "name": "Re-smoke smolvla after transformers downgrade",
+      "status": "not_started"
+    },
+    {
+      "id": 8,
+      "name": "Smoke diffusion (own install/launch cells)",
+      "status": "not_started"
+    },
+    {
+      "id": 9,
+      "name": "Smoke groot-n17 (own cells, Cosmos-Reason2-2B licence, --wait-s 300)",
+      "status": "not_started"
+    },
+    {
+      "id": 10,
+      "name": "Smoke HTTP lane: openvla-oft, wallx, openvla, octo, rdt1b, groot-n15",
+      "status": "not_started"
+    },
+    {
+      "id": 11,
+      "name": "Record all results into 14-LIVE-RESULTS.md (one GSD commit)",
+      "status": "not_started"
+    },
+    {
+      "id": 12,
+      "name": "Pin transformers in notebook cell b9d8ba70 (+ sync policy_server_launch.md)",
+      "status": "not_started"
+    },
+    {
+      "id": 13,
+      "name": "Gemini thinking_level medium->low in both configs (pending approval)",
+      "status": "not_started"
+    },
+    {
+      "id": 14,
+      "name": "Resume /gsd-verify-work 14 at Test 1",
+      "status": "not_started"
+    }
   ],
   "blockers": [
-    {"description": "pi0/pi05 inference fails: Colab transformers>=5.9.0 removed cache_position from create_causal_mask; lerobot 0.6.1 pi_gemma.py:264 passes it; lerobot declares transformers>=5.4,<5.6 but cell b9d8ba70 installs lerobot[async] without the pi extra", "type": "technical", "workaround": "On Colab: pip install 'transformers==5.5.4', confirm torch unchanged, re-run d821252e"},
-    {"description": "policy_server.ipynb has an uncommitted user edit", "type": "human_action", "workaround": "Ask user how to handle before editing/committing the notebook"}
+    {
+      "description": "Colab PolicyServer/session was removed by the user after pause; tunnel 4.tcp.ngrok.io:17093 is dead; transformers fix never applied",
+      "type": "human_action",
+      "workaround": "Fresh L4 session: base cells to cbaf7af4, pip show + pip install transformers==5.5.4 (torch unchanged), then d821252e and fc7fd0ee; use new HOST:PORT"
+    },
+    {
+      "description": "pi0/pi05 inference fails: Colab transformers>=5.9.0 removed cache_position from create_causal_mask; lerobot 0.6.1 pi_gemma.py:264 passes it; lerobot declares transformers>=5.4,<5.6 but cell b9d8ba70 installs lerobot[async] without the pi extra",
+      "type": "technical",
+      "workaround": "On Colab: pip install 'transformers==5.5.4', confirm torch unchanged, re-run d821252e"
+    },
+    {
+      "description": "policy_server.ipynb has an uncommitted user edit",
+      "type": "human_action",
+      "workaround": "Ask user how to handle before editing/committing the notebook"
+    }
   ],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "On Colab: !pip show torch transformers lerobot; !pip install 'transformers==5.5.4'; re-run cell d821252e (and fc7fd0ee if session recycled)", "context": "Fix pi0/pi05 cache_position failure", "blocking": true},
-    {"action": "Decide on Gemini thinking_level low", "context": "8.5 s latency vs 10 s timeout; one timeout seen", "blocking": false},
-    {"action": "Decide how to handle uncommitted policy_server.ipynb edit before notebook transformers pin", "context": "Permanent fix lives in that notebook", "blocking": false}
+    {
+      "action": "Start a fresh L4 Colab gRPC session: run 9a4bc6ec, b9d8ba70, 208524cb, 0bOMKSqN5aMt, u33d6k5o1lL5, 22702a39, cbaf7af4; then !pip show torch transformers lerobot (paste); !pip install 'transformers==5.5.4' (torch unchanged); then d821252e and fc7fd0ee",
+      "context": "Server was removed; also applies the pi0/pi05 cache_position fix before launch",
+      "blocking": true
+    },
+    {
+      "action": "Decide on Gemini thinking_level low",
+      "context": "8.5 s latency vs 10 s timeout; one timeout seen",
+      "blocking": false
+    },
+    {
+      "action": "Decide how to handle uncommitted policy_server.ipynb edit before notebook transformers pin",
+      "context": "Permanent fix lives in that notebook",
+      "blocking": false
+    }
   ],
   "decisions": [
-    {"decision": "Smoke all backends before hardware UAT", "rationale": "Isolate server/backend faults from IK/hardware faults", "phase": "14"},
-    {"decision": "Instruction 'pick up the pen' for every smoke", "rationale": "User request", "phase": "14"},
-    {"decision": "L4 GPU for gRPC session", "rationale": "Covers smolvla, act, pi0, pi05, groot-n17", "phase": "14"},
-    {"decision": "transformers==5.5.4 as pi0 fix", "rationale": "Verified by PyPI wheel diff: cache_position kept through 5.8.1, removed in 5.9.0; 5.5.4 is inside lerobot 0.6.1's declared <5.6", "phase": "14"},
-    {"decision": "requirements: [] on quick task", "rationale": "Do not mark VLAB-* complete before hardware UAT", "phase": "14"}
+    {
+      "decision": "Smoke all backends before hardware UAT",
+      "rationale": "Isolate server/backend faults from IK/hardware faults",
+      "phase": "14"
+    },
+    {
+      "decision": "Instruction 'pick up the pen' for every smoke",
+      "rationale": "User request",
+      "phase": "14"
+    },
+    {
+      "decision": "L4 GPU for gRPC session",
+      "rationale": "Covers smolvla, act, pi0, pi05, groot-n17",
+      "phase": "14"
+    },
+    {
+      "decision": "transformers==5.5.4 as pi0 fix",
+      "rationale": "Verified by PyPI wheel diff: cache_position kept through 5.8.1, removed in 5.9.0; 5.5.4 is inside lerobot 0.6.1's declared <5.6",
+      "phase": "14"
+    },
+    {
+      "decision": "requirements: [] on quick task",
+      "rationale": "Do not mark VLAB-* complete before hardware UAT",
+      "phase": "14"
+    }
   ],
-  "uncommitted_files": ["control/vla_bridge/policy_server.ipynb (user's, not ours)", "reports/ (untracked, user's)", "research_notes/ (untracked, user's)"],
-  "next_action": "Ask user for Colab `pip show torch transformers lerobot`, apply transformers==5.5.4, restart PolicyServer (d821252e), retry pi0 smoke with the current HOST:PORT.",
+  "uncommitted_files": [
+    "control/vla_bridge/policy_server.ipynb (user's, not ours)",
+    "reports/ (untracked, user's)",
+    "research_notes/ (untracked, user's)"
+  ],
+  "next_action": "Colab server was removed: guide user through a fresh L4 gRPC session with transformers==5.5.4 installed BEFORE d821252e, then retry pi0 with the new HOST:PORT.",
   "context_notes": "Handoff detail in .planning/phases/14-vla-style-pipeline-backends/.continue-here.md. UAT 14 still paused at Test 1 (unanswered). Every failure so far was environmental, none a code bug."
 }
