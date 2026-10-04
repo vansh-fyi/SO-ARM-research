@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 Phase: 16 — Cross-Backend Pen Transfer Benchmark
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-10-03 — Phase 15 complete, transitioned to Phase 16
+Last activity: 2026-10-04 - Completed quick task 261004-dz7: Phase-14 live backend smoke CLI (backend_smoke.py)
 
 Plan execution: [██████████] 100% — phase acceptance pending
 
@@ -139,6 +139,7 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 | 260927-i3s | Upgrade AR0144 stereo camera resolution from 1280x360 to 1600x600 (800x600/eye) -- best available resolution after macOS's legacy-camera-plugins system override + reboot still failed to unstick the native 2560x720 mode | 2026-09-27 | 0545951 | [260927-i3s-upgrade-ar0144-stereo-camera-resolution-](./quick/260927-i3s-upgrade-ar0144-stereo-camera-resolution-/) |
 | 260927-ndz | Fix Phase 12 UAT test-5 gaps in the Colab depth-endpoint setup: wire real Fast-FoundationStereo run_demo.py CLI into the Flask depth cell, fix stale port-8080 refs, sync notebook camera-mapping + drop duplicate tunnel cell | 2026-09-27 | a9ab896 | [260927-ndz-fix-phase-12-uat-test-5-gaps-in-the-cola](./quick/260927-ndz-fix-phase-12-uat-test-5-gaps-in-the-cola/) |
 | fast-260927 | Add Colab checkpoint-upload helper cell (google.colab.files.upload) for Fast-FoundationStereo's model_best_bp2_serialize.pth, in both policy_server_launch.md and policy_server.ipynb | 2026-09-27 | f3ec70c | — |
+| 261004-dz7 | Phase-14 live backend smoke CLI (backend_smoke.py) modelled on mllm_smoke.py: synthetic obs, gRPC/HTTP/Gemini lanes, no hardware; plus 14-LIVE-RESULTS.md template (live smokes still PENDING) | 2026-10-04 | 2e19968 | [261004-dz7-phase-14-live-backend-smoke-cli-backend-](./quick/261004-dz7-phase-14-live-backend-smoke-cli-backend-/) |
 
 ## Deferred Items
 
