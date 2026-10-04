@@ -65,18 +65,47 @@ Usage::
 Add `2>&1 | grep -v objc` to hide the harmless cv2/av duplicate-class warnings.
 """
 
+import argparse
 import contextlib
+import json
 import math
+import socket
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from unittest import mock
 
 import cv2
 import numpy as np
+import requests
 
-from vla_bridge import robot_client, safety_validator
+from vla_bridge import action_contract, robot_client, safety_validator
 from vla_bridge.action_contract import JOINT_ORDER
-from vla_bridge.backends import base_gemini, base_http_adapter, base_mllm, get_backend_names
-from vla_bridge.mllm_smoke import STEREO_SHAPE, WRIST_SHAPE, synthetic_frame
+from vla_bridge.backends import (
+    BACKEND_REGISTRY,
+    base_gemini,
+    base_http_adapter,
+    base_mllm,
+    get_backend_names,
+    load_backend_config,
+)
+from vla_bridge.mllm_smoke import NEUTRAL_JOINT_LIMITS_DEG, STEREO_SHAPE, WRIST_SHAPE, synthetic_frame
+
+# --- CLI defaults ------------------------------------------------------------------------------
+
+DEFAULT_INSTRUCTION = "Pick up the red cube"  # run_vla_episode's default
+MAX_STEPS = 5
+DEFAULT_WAIT_S = 60.0
+DEFAULT_POLL_INTERVAL_S = 0.5
+TCP_TIMEOUT_S = 5.0
+HEALTH_TIMEOUT_S = 10.0
+HEALTH_PROTOCOL_VERSION = 1
+MAX_PRINTED_ER_TEXT_CHARS = 200
+
+GEMINI_SPEND_WARNING = (
+    "WARNING: --confirm-spend makes {steps} paid Gemini Robotics-ER API call(s), one per --steps, "
+    "billed to the key's Google AI project. The key must be a RESTRICTED key (unrestricted keys get 403)."
+)
 
 # --- Lanes -------------------------------------------------------------------------------------
 
@@ -430,6 +459,371 @@ def evaluate_step(lane, action, model_version, details, joint_state, joint_limit
     checks.append(check_latency(lane, latency_s, client_timeout_s))
     checks.append(check_model_version(lane, model_version, checkpoint))
     return checks
+
+
+# --- Pre-flight --------------------------------------------------------------------------------
+
+
+class _Report:
+    """Prints checks and remembers whether any FAIL was printed."""
+
+    def __init__(self):
+        self.failed = False
+
+    def emit(self, check: Check) -> None:
+        print(format_check(check))
+        if check.level == "FAIL":
+            self.failed = True
+
+
+def _json(value) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _load_limits(path: Path) -> dict:
+    try:
+        return action_contract.load_joint_limits_deg(Path(path))
+    except (FileNotFoundError, OSError, KeyError, TypeError, ValueError) as exc:
+        print(f"WARNING: no usable follower calibration at {path} ({type(exc).__name__}); using neutral "
+              "joint limits (-90 to 90 degrees for the arm joints, 0 to 100 for the gripper). The "
+              "saturation check is then only indicative; no robot is driven.")
+        return dict(NEUTRAL_JOINT_LIMITS_DEG)
+
+
+def _parse_host_port(address: str) -> tuple[str, int]:
+    host, sep, port = str(address).rpartition(":")
+    if "://" in str(address) or not sep or not host or not port.isdigit():
+        raise ValueError(f"{address!r} is not host:port")
+    return host, int(port)
+
+
+def check_tcp(host: str, port: int, timeout_s: float = TCP_TIMEOUT_S) -> Check:
+    try:
+        with socket.create_connection((host, port), timeout=timeout_s):
+            pass
+    except OSError as exc:
+        return Check("FAIL", "server reachable", f"TCP {host}:{port}: {type(exc).__name__}: {exc}")
+    return Check("PASS", "server reachable", f"TCP {host}:{port} accepted a connection")
+
+
+def check_health(endpoint: str, report: _Report) -> bool:
+    """`GET <endpoint>/health`: emit reachability + readiness, print every field. True when ready."""
+    url = f"{endpoint.rstrip('/')}/health"
+    try:
+        response = requests.get(url, timeout=HEALTH_TIMEOUT_S)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        report.emit(Check("FAIL", "server reachable", f"GET {url}: {type(exc).__name__}: {exc}"))
+        return False
+    report.emit(Check("PASS", "server reachable", f"GET {url} -> {response.status_code}"))
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        report.emit(Check("FAIL", "health ready", f"/health body is not a JSON object: {body!r}"[:300]))
+        return False
+    for key in sorted(body):
+        value = body[key]
+        if key == "model" and isinstance(value, dict):
+            for model_key in sorted(value):
+                print(f"health model.{model_key}: {_json(value[model_key])}")
+        else:
+            print(f"health {key}: {_json(value)}")
+    status, protocol = body.get("status"), body.get("protocol_version")
+    if status == "ready" and protocol == HEALTH_PROTOCOL_VERSION:
+        report.emit(Check("PASS", "health ready", f"status ready, protocol_version {protocol}"))
+        return True
+    report.emit(Check("FAIL", "health ready", f"status {status!r}, protocol_version {protocol!r} "
+                      f"(expected 'ready' and {HEALTH_PROTOCOL_VERSION}); not POSTing /action"))
+    return False
+
+
+# --- Lane runners ------------------------------------------------------------------------------
+
+
+@dataclass
+class StepResult:
+    index: int
+    action: object
+    model_version: str
+    details: dict
+    latency_s: float
+
+
+def _details_of(source) -> dict:
+    details = getattr(source, "last_details", None)
+    return dict(details) if isinstance(details, dict) else {}
+
+
+def run_direct_steps(source, joint_state: dict, instruction: str, steps: int) -> list[StepResult]:
+    """HTTP / Gemini lanes: `steps` timed `get_action()` calls (each one real inference)."""
+    results = []
+    for index in range(1, steps + 1):
+        start = time.perf_counter()
+        action, model_version = source.get_action(dict(joint_state), instruction)
+        latency = time.perf_counter() - start
+        results.append(StepResult(index, action, model_version, _details_of(source), latency))
+    return results
+
+
+def run_grpc_steps(source, joint_state: dict, instruction: str, steps: int, wait_s: float,
+                   poll_interval_s: float) -> tuple[list[StepResult], list[str]]:
+    """gRPC lane: poll until `steps` non-held actions arrive or `wait_s` elapses.
+
+    Latency is the time from the first poll (or the previous collected action)
+    to the action. Returns the collected steps and the last held step's flags.
+    """
+    results, last_flags = [], []
+    start = previous = time.perf_counter()
+    deadline = start + wait_s
+    while len(results) < steps:
+        action, model_version = source.get_action(dict(joint_state), instruction)
+        details = _details_of(source)
+        now = time.perf_counter()
+        if not _is_finite_joint_action(action) or hold_reason(action, model_version, details, joint_state) is None:
+            results.append(StepResult(len(results) + 1, action, model_version, details, now - previous))
+            previous = now
+            continue
+        last_flags = _bridge_flags(details) or [str(model_version)]
+        if now >= deadline:
+            break
+        time.sleep(poll_interval_s)
+    return results, last_flags
+
+
+def _rounded(value):
+    if isinstance(value, dict):
+        return {key: (round(float(v), 2) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)
+                for key, v in value.items()}
+    return value
+
+
+def _print_gemini_details(details: dict) -> None:
+    print(f"  er_model: {details.get('er_model')}")
+    print(f"  action_path: {details.get('action_path')}")
+    raw = details.get("raw_model_output")
+    er_text = raw.get("er_text") if isinstance(raw, dict) else None
+    if er_text is not None:
+        print(f"  er_text: {str(er_text)[:MAX_PRINTED_ER_TEXT_CHARS]}")
+    if details.get("error_type") or details.get("error"):
+        # Already key-redacted by base_gemini._hold().
+        print(f"  error: {details.get('error_type')}: {details.get('error')}")
+
+
+def report_steps(lane, results, joint_state, joint_limits_deg, client_timeout_s, checkpoint,
+                 report: _Report) -> None:
+    held = [
+        _is_finite_joint_action(r.action) and hold_reason(r.action, r.model_version, r.details, joint_state)
+        for r in results
+    ]
+    any_moving = any(not h for h in held)
+    for result in results:
+        print(f"step {result.index}: action {_rounded(result.action)}")
+        print(f"  joint_state {_rounded(joint_state)}")
+        print(f"  bridge flags: {_bridge_flags(result.details)}")
+        print(f"  model_version: {result.model_version}")
+        if lane == "gemini":
+            _print_gemini_details(result.details)
+        for check in evaluate_step(lane, result.action, result.model_version, result.details, joint_state,
+                                   joint_limits_deg, result.latency_s, client_timeout_s, checkpoint):
+            if check.name == "not held" and check.level == "FAIL" and any_moving:
+                # The UAT criterion is at least one validated non-held action.
+                check = Check("WARN", check.name, check.detail + " (another step moved)")
+            report.emit(check)
+
+
+def _shutdown(handles) -> None:
+    """Mirror of run_vla_episode._shutdown_backend: each step runs even if one raises."""
+    if handles is None:
+        return
+    try:
+        if handles.shutdown is not None:
+            handles.shutdown()
+        elif handles.robot is not None:
+            handles.robot.disconnect()
+    finally:
+        try:
+            close = getattr(handles.action_source, "close", None)
+            if callable(close):
+                close()
+        finally:
+            stereo = handles.stereo_camera
+            if stereo is not None and hasattr(stereo, "release"):
+                stereo.release()
+
+
+# --- CLI ---------------------------------------------------------------------------------------
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Smoke one Phase 14 VLA backend against its live server with synthetic inputs "
+        "(no robot, serial port or camera is opened; no action is sent)."
+    )
+    parser.add_argument("--backend", required=True, help="A gRPC, HTTP or Gemini backend, e.g. smolvla")
+    parser.add_argument("--server-address", default=None,
+                        help="gRPC: host:port of the PolicyServer tunnel. HTTP: the adapter's http(s):// "
+                        "URL (default: the backend config's endpoint_url). Ignored for Gemini.")
+    parser.add_argument("--checkpoint", default=None,
+                        help="HF checkpoint id (required for gRPC; HTTP defaults to the backend config's)")
+    parser.add_argument("--instruction", default=DEFAULT_INSTRUCTION,
+                        help=f"Task prompt (default {DEFAULT_INSTRUCTION!r}, run_vla_episode's default)")
+    parser.add_argument("--steps", type=int, default=1,
+                        help=f"1..{MAX_STEPS}. HTTP/Gemini: get_action calls (each a real inference; on "
+                        "Gemini each is a PAID call). gRPC: non-held actions to collect.")
+    parser.add_argument("--wait-s", type=float, default=DEFAULT_WAIT_S,
+                        help=f"gRPC: seconds to wait for the first action chunk (default {DEFAULT_WAIT_S:g})")
+    parser.add_argument("--poll-interval-s", type=float, default=DEFAULT_POLL_INTERVAL_S,
+                        help=f"gRPC: poll period in seconds (default {DEFAULT_POLL_INTERVAL_S:g})")
+    parser.add_argument("--camera-map", default=None,
+                        help="gRPC only: name=source,... exactly as run_vla_episode --camera-map")
+    parser.add_argument("--joint-calibration", type=Path, default=action_contract.CALIBRATION_PATH,
+                        help="Follower calibration JSON for the joint limits (default: "
+                        "action_contract.CALIBRATION_PATH; neutral limits if missing)")
+    parser.add_argument("--confirm-spend", action="store_true",
+                        help="Gemini only: actually make the paid calls (otherwise print the plan, exit 2)")
+    return parser
+
+
+def main(argv=None) -> int:
+    """Smoke one backend; see the module docstring. 0 = PASS, 1 = FAIL, 2 = Gemini spend refused."""
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    name = args.backend
+    lane = lane_of(name)  # unknown / mllm-* / scripted exit here, before anything else
+
+    if not 1 <= args.steps <= MAX_STEPS:
+        parser.error(f"--steps must be between 1 and {MAX_STEPS}")
+    if args.wait_s <= 0 or args.poll_interval_s <= 0:
+        parser.error("--wait-s and --poll-interval-s must be positive")
+    camera_map = None
+    if args.camera_map is not None:
+        if lane != "grpc":
+            parser.error("--camera-map applies to gRPC-bridge backends only")
+        try:
+            camera_map = robot_client.parse_camera_map(args.camera_map)
+        except ValueError as exc:
+            parser.error(str(exc))
+
+    config = load_backend_config(CONFIG_NAMES[name]) or {}
+    server_address, checkpoint, endpoint = None, None, None
+    if lane == "grpc":
+        if not args.server_address or not args.checkpoint:
+            parser.error(f"--backend {name} (gRPC bridge) needs both --server-address and --checkpoint")
+        try:
+            host, port = _parse_host_port(args.server_address)
+        except ValueError as exc:
+            parser.error(f"--server-address for a gRPC backend must be host:port without a scheme ({exc})")
+        server_address, checkpoint = args.server_address, args.checkpoint
+    elif lane == "http":
+        endpoint = args.server_address or config.get("endpoint_url")
+        if not endpoint or not str(endpoint).startswith(("http://", "https://")):
+            parser.error(f"--backend {name} needs an http(s):// --server-address (the {name} server's "
+                         f"tunnel URL); got {endpoint!r}")
+        server_address, checkpoint = endpoint, args.checkpoint or config.get("checkpoint")
+
+    joint_limits_deg = _load_limits(args.joint_calibration)
+    joint_state = {joint: (float(lo) + float(hi)) / 2 for joint, (lo, hi) in joint_limits_deg.items()}
+
+    print(f"Backend smoke: backend {name}, lane {lane}")
+    if lane == "grpc":
+        source = "--camera-map" if camera_map else ("backend config" if config.get("camera_map") else "default")
+        resolved = camera_map or config.get("camera_map") or robot_client.DEFAULT_CAMERA_MAP
+        print(f"  server: {server_address}  checkpoint: {checkpoint}")
+        print(f"  camera_map ({source}): {_json(resolved)}")
+    elif lane == "http":
+        print(f"  endpoint: {endpoint}  checkpoint: {checkpoint}")
+    else:
+        model, api_key_env, source_kwargs = base_gemini.load_er_backend_config(CONFIG_NAMES[name], name)
+        print(f"  model: {model}  api_key_env: {api_key_env} (name only; the value is never printed)  "
+              f"settings: {_json(source_kwargs)}")
+        if args.server_address or args.checkpoint:
+            print("  note: --server-address/--checkpoint are ignored on the Gemini lane")
+    print(f"  steps: {args.steps}  instruction: {args.instruction!r}")
+    print("  inputs: synthetic wrist/overhead_left/overhead_right images and a synthetic joint state; "
+          "no robot, serial port or camera is opened and no action is sent")
+    if lane != "gemini" and args.confirm_spend:
+        print("  note: --confirm-spend only applies to the Gemini lane; ignored")
+
+    report = _Report()
+    # Pre-flight, before building anything.
+    if lane == "grpc":
+        check = check_tcp(host, port)
+        report.emit(check)
+        if check.level == "FAIL":
+            print("RESULT: FAIL")
+            return 1
+    elif lane == "http":
+        if not check_health(endpoint, report):
+            print("RESULT: FAIL")
+            return 1
+    else:
+        print(GEMINI_SPEND_WARNING.format(steps=args.steps))
+        if not args.confirm_spend:
+            print("Not calling: re-run with --confirm-spend to make the paid call(s).")
+            return 2
+
+    factory_args = argparse.Namespace(
+        port="synthetic-no-serial",
+        robot_id="backend_smoke",
+        stereo_camera_index="synthetic",
+        server_address=server_address,
+        checkpoint=checkpoint if lane != "gemini" else None,
+        instruction=args.instruction,
+        camera_map=camera_map,
+    )
+    camera_names = {0: "wrist"}  # a synthetic index: the wrist double never opens anything
+
+    with synthetic_hardware(joint_state) as hw:
+        handles = None
+        try:
+            built = False
+            try:
+                handles = BACKEND_REGISTRY[name](factory_args, camera_names, joint_limits_deg)
+                built = True
+            except SystemExit as exc:
+                report.emit(Check("FAIL", "build", str(exc)))
+            except Exception as exc:  # noqa: BLE001 -- report, then tear down
+                detail = type(exc).__name__ if lane == "gemini" else f"{type(exc).__name__}: {exc}"
+                report.emit(Check("FAIL", "build", detail))
+            if built and handles is None:
+                report.emit(Check("FAIL", "bridge handshake", "PolicyServer refused or unreachable "
+                                  "(check the Colab log for 'Policy type: ...')"))
+            elif handles is not None:
+                source = handles.action_source
+                if lane == "grpc":
+                    results, last_flags = run_grpc_steps(source, joint_state, args.instruction, args.steps,
+                                                         args.wait_s, args.poll_interval_s)
+                    client_timeout_s = None
+                else:
+                    results = run_direct_steps(source, joint_state, args.instruction, args.steps)
+                    client_timeout_s = getattr(source, "timeout_s", None)
+                report_steps(lane, results, joint_state, joint_limits_deg, client_timeout_s,
+                             checkpoint if lane == "grpc" else None, report)
+                if lane == "grpc" and not results:
+                    report.emit(Check("FAIL", "not held", f"no action chunk within {args.wait_s:g} s "
+                                      f"(bridge flags: {last_flags})"))
+                elif lane == "grpc" and len(results) < args.steps:
+                    report.emit(Check("WARN", "steps", f"only {len(results)} of {args.steps} actions "
+                                      f"arrived within {args.wait_s:g} s"))
+        finally:
+            _shutdown(handles)
+        if hw.send_action_attempts or hw.tripwire_hits:
+            report.emit(Check("FAIL", "hardware isolation",
+                              f"send_action attempts {len(hw.send_action_attempts)}, "
+                              f"tripwires {hw.tripwire_hits}"))
+        else:
+            report.emit(Check("PASS", "hardware isolation",
+                              f"no send_action and no real device construction "
+                              f"({len(hw.robots_built)} synthetic robot(s))"))
+
+    print(f"RESULT: {'FAIL' if report.failed else 'PASS'}")
+    return 1 if report.failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 
 
 __all__ = [

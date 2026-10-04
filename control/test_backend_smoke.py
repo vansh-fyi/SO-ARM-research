@@ -573,6 +573,23 @@ def test_grpc_unreachable_server_never_builds(monkeypatch, capsys, closed_port, 
     assert built == []
 
 
+def test_real_robot_client_runs_on_the_synthetic_robot(closed_port):
+    """The REAL lerobot RobotClient (not a fake) builds on SyntheticRobot via the
+    make_robot_from_config seam; a refused loopback handshake returns None."""
+    limits = dict(backend_smoke.NEUTRAL_JOINT_LIMITS_DEG)
+    state = {joint: (lo + hi) / 2 for joint, (lo, hi) in limits.items()}
+    args = types.SimpleNamespace(port="synthetic-no-serial", robot_id="backend_smoke",
+                                 stereo_camera_index="synthetic", server_address=f"127.0.0.1:{closed_port}",
+                                 checkpoint="x/y", instruction="smoke", camera_map=None)
+    with backend_smoke.synthetic_hardware(state) as hw:
+        handles = backends.BACKEND_REGISTRY["smolvla"](args, {0: "wrist"}, limits)
+    assert handles is None
+    assert len(hw.robots_built) == 1
+    assert "camera1" in hw.robots_built[0].observation_features
+    assert not hw.robots_built[0].is_connected  # connect_bridge's cleanup stop() disconnected it
+    assert hw.send_action_attempts == [] and hw.tripwire_hits == []
+
+
 def test_grpc_pass_path(capsys, hw_logs, listening_port, fake_robot_client, mock_calibration_file,
                         synthetic_state):
     _limits, state = synthetic_state
