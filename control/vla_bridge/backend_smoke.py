@@ -549,6 +549,7 @@ class StepResult:
     model_version: str
     details: dict
     latency_s: float
+    waited_s: float | None = None  # gRPC: time since the first poll (or the previous action)
 
 
 def _details_of(source) -> dict:
@@ -571,8 +572,11 @@ def run_grpc_steps(source, joint_state: dict, instruction: str, steps: int, wait
                    poll_interval_s: float) -> tuple[list[StepResult], list[str]]:
     """gRPC lane: poll until `steps` non-held actions arrive or `wait_s` elapses.
 
-    Latency is the time from the first poll (or the previous collected action)
-    to the action. Returns the collected steps and the last held step's flags.
+    Latency is the action's observation-to-action age (`last_details["action_age_s"]`,
+    the same number the validator compares with STALE_ACTION_S), so a cold
+    server's warm-up wait does not count against it; `waited_s` (time from
+    the first poll, or the previous collected action) is reported alongside.
+    Returns the collected steps and the last held step's flags.
     """
     results, last_flags = [], []
     start = previous = time.perf_counter()
@@ -582,7 +586,11 @@ def run_grpc_steps(source, joint_state: dict, instruction: str, steps: int, wait
         details = _details_of(source)
         now = time.perf_counter()
         if not _is_finite_joint_action(action) or hold_reason(action, model_version, details, joint_state) is None:
-            results.append(StepResult(len(results) + 1, action, model_version, details, now - previous))
+            waited = now - previous
+            age = details.get("action_age_s")
+            usable_age = isinstance(age, (int, float)) and not isinstance(age, bool) and math.isfinite(age) and age >= 0
+            latency = float(age) if usable_age else waited
+            results.append(StepResult(len(results) + 1, action, model_version, details, latency, waited))
             previous = now
             continue
         last_flags = _bridge_flags(details) or [str(model_version)]
@@ -623,6 +631,9 @@ def report_steps(lane, results, joint_state, joint_limits_deg, client_timeout_s,
         print(f"  joint_state {_rounded(joint_state)}")
         print(f"  bridge flags: {_bridge_flags(result.details)}")
         print(f"  model_version: {result.model_version}")
+        if result.waited_s is not None:
+            print(f"  waited {result.waited_s:.2f} s for this action; observation-to-action age "
+                  f"{result.latency_s:.2f} s")
         if lane == "gemini":
             _print_gemini_details(result.details)
         for check in evaluate_step(lane, result.action, result.model_version, result.details, joint_state,

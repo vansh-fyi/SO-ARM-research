@@ -493,6 +493,7 @@ class FakeRobotClient:
 
     instances: list = []
     actions_to_send: list = []
+    action_age_s: float = 0.0
 
     def __init__(self, config):
         self.config = config
@@ -515,7 +516,7 @@ class FakeRobotClient:
 
     def receive_actions(self):
         for i, action in enumerate(FakeRobotClient.actions_to_send):
-            self.action_queue.put(FakeTimedAction(action, time.time(), i))
+            self.action_queue.put(FakeTimedAction(action, time.time() - FakeRobotClient.action_age_s, i))
 
     def _ready_to_send_observation(self):
         return True
@@ -555,6 +556,7 @@ def closed_port():
 def fake_robot_client(monkeypatch):
     FakeRobotClient.instances = []
     FakeRobotClient.actions_to_send = []
+    FakeRobotClient.action_age_s = 0.0
     monkeypatch.setattr(robot_client, "RobotClient", FakeRobotClient)
     return FakeRobotClient
 
@@ -605,6 +607,18 @@ def test_grpc_pass_path(capsys, hw_logs, listening_port, fake_robot_client, mock
     assert client.observations and client.observations[0]["camera2"].shape[1] == 640
     assert client.stopped
     assert hw_logs[0].send_action_attempts == [] and hw_logs[0].tripwire_hits == []
+
+
+def test_grpc_latency_is_the_observation_to_action_age(capsys, listening_port, fake_robot_client,
+                                                        mock_calibration_file, synthetic_state):
+    _limits, state = synthetic_state
+    fake_robot_client.actions_to_send = [[state[joint] + 2.0 for joint in JOINT_ORDER]]
+    fake_robot_client.action_age_s = 12.0  # slow round trip, but under STALE_ACTION_S
+    code = backend_smoke.main(_grpc_argv(listening_port, mock_calibration_file, "--poll-interval-s", "0.05"))
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert re.search(r"WARN latency: 12\.\d\d s over the 5\.0 s budget", out)
+    assert "observation-to-action age 12." in out
 
 
 def test_grpc_no_action_within_wait_fails_and_tears_down(capsys, listening_port, fake_robot_client,
