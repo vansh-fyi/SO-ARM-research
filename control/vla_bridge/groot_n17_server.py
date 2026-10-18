@@ -13,7 +13,8 @@ Why it exists (verified against the installed `lerobot==0.6.1`, 2026-10-01):
 - For GR00T N1.7 the postprocessor is `GrootN17ActionDecodeStep`
   (`policies/groot/processor_groot.py`). For checkpoints trained with native
   relative actions (`use_relative_action: true`, i.e. most SO-101 N1.7
-  fine-tunes, e.g. `tsangb34/groot-n17-so101-cube-drawer-40k`) it raises
+  fine-tunes, e.g. `tsangb34/groot-n17-so101-soccer-red_bowl-40episodes`)
+  it raises
   `NotImplementedError("GrootN17ActionDecodeStep cannot decode native relative
   actions one step at a time ...")` on a 2-D action. Every inference fails, the
   server logs `Error in StreamActions`, and the robot only holds position.

@@ -7,7 +7,7 @@ pytest==8.3.4
 requests==2.34.2
 # Local test double for vla_bridge/fastfs_server.py's resident depth service
 # (test_depth_pipeline.py). The real Colab deployment installs Flask into its
-# own isolated fastfs_venv (see policy_server.ipynb Step 7); this pin is for
+# own isolated fastfs_venv (see vla_bridge/notebooks/fastfs_depth.ipynb); this pin is for
 # running the test suite here, not for driving the Colab service.
 flask==3.1.3
 

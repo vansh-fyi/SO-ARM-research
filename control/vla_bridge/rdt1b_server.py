@@ -1,5 +1,5 @@
 """Resident RDT-1B HTTP adapter (Tier C, Plan 14-11, VLAB-09). Run on Colab inside
-the isolated RDT venv (see policy_server_launch.md, "Tier C: RDT-1B").
+the isolated RDT venv (see vla_bridge/notebooks/http_rdt1b.ipynb).
 
 Same shape as `octo_server.py` / `openvla_server.py` / `fastfs_server.py`:
 - the model loads ONCE
@@ -89,7 +89,7 @@ Known limitations (documented, not hidden)
 - bfloat16 only (the wrapper's dtype): `main()` refuses GPUs without native bf16
   (T4). T5-XXL alone is ~9.5 GB in bf16, plus a 44.5 GB fp32 download.
 
-Colab launch: see policy_server_launch.md, section "Tier C: RDT-1B resident adapter".
+Colab launch: see vla_bridge/notebooks/http_rdt1b.ipynb.
 """
 import argparse
 import base64

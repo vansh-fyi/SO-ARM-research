@@ -1,6 +1,7 @@
 """Splits the AR0144 stereo camera's single 1600x600 physical frame into two
 independent real camera feeds (`camera2`=left half, `camera3`=right half),
-per Plan 11-03's split-stereo camera mapping (`policy_server_launch.md`).
+per Plan 11-03's split-stereo camera mapping (`vla_bridge/notebooks/README.md`,
+"Camera mapping").
 
 Capture resolution: 1600x600 total (800x600 per half), NOT the AR0144's
 higher-resolution 2560x720 mode. 2560x720 was found persistently
@@ -77,7 +78,7 @@ from datetime import datetime, timezone
 import numpy as np
 
 # AR0144 stereo capture resolution and the column split point, per
-# policy_server_launch.md's Camera mapping table. Upgraded from 1280x360 to
+# vla_bridge/notebooks/README.md's Camera mapping table. Upgraded from 1280x360 to
 # 1600x600 -- see this module's docstring above for the full rationale.
 STEREO_WIDTH = 1600
 STEREO_HEIGHT = 600

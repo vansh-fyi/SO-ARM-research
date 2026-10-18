@@ -7,7 +7,8 @@ Rectifies a live AR0144 stereo pair (captured via the existing, unmodified
 Fast-FoundationStereo's required input constraints (<1000px width, dimensions
 divisible by 32, scaling intrinsics proportionally), POSTs the rectified pair
 plus reduced calibration to the Colab-hosted FastFS endpoint documented in
-`policy_server_launch.md` (Plan 12-06 Task 2), and returns the resulting
+`vla_bridge/notebooks/fastfs_depth.ipynb` (Plan 12-06 Task 2), and returns the
+resulting
 per-pixel depth map (float32, meters).
 
 Depth is RECORDING-ONLY this phase (D-08): this module is never imported by

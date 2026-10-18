@@ -527,7 +527,8 @@ def main():
         type=str,
         default=None,
         help="Colab-hosted Fast-FoundationStereo HTTP endpoint URL documented in "
-        "policy_server_launch.md, e.g. https://xxxx.ngrok-free.app/depth. Requires "
+        "vla_bridge/notebooks/fastfs_depth.ipynb, e.g. https://xxxx.ngrok-free.app/depth. "
+        "Requires "
         "--depth-calibration and --server-address (the --server-address requirement does "
         "not apply to --backend mllm-* backends, which own their depth call).",
     )

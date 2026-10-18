@@ -1,5 +1,5 @@
 """Resident OpenVLA HTTP adapter (Tier C, Plan 14-09). Run on Colab inside the
-isolated OpenVLA venv (see policy_server_launch.md, "Tier C: OpenVLA").
+isolated OpenVLA venv (see vla_bridge/notebooks/http_openvla.ipynb).
 
 Same shape as `openvla_oft_server.py` and `fastfs_server.py`:
 - the model loads ONCE
@@ -87,7 +87,7 @@ Known limitations (documented, not hidden)
   on SO-101 hardware.
 - Each request is stateless. OpenVLA predicts one action per call, with no chunk.
 
-Colab launch: see policy_server_launch.md, section "Tier C: OpenVLA resident adapter".
+Colab launch: see vla_bridge/notebooks/http_openvla.ipynb.
 """
 import argparse
 import base64

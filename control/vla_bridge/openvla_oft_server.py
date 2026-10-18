@@ -52,7 +52,7 @@ Known limitations (documented, not hidden)
 - Only the FIRST action of each 8-step chunk is returned (receding horizon).
   The control loop re-queries every tick.
 
-Colab launch: see policy_server_launch.md, section "Tier C: OpenVLA-OFT resident adapter".
+Colab launch: see vla_bridge/notebooks/http_openvla_oft.ipynb.
 """
 import argparse
 import base64

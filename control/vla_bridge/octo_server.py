@@ -1,5 +1,5 @@
 """Resident Octo HTTP adapter (Tier C, Plan 14-10, VLAB-08). Run on Colab inside
-the isolated Octo venv (see policy_server_launch.md, "Tier C: Octo").
+the isolated Octo venv (see vla_bridge/notebooks/http_octo.ipynb).
 
 Same shape as `openvla_server.py` / `openvla_oft_server.py` / `fastfs_server.py`:
 - the model loads ONCE
@@ -88,7 +88,7 @@ Known limitations (documented, not hidden)
 - It returns only the first step of each chunk (receding horizon, execute 1),
   not `examples/04`'s temporal ensembling.
 
-Colab launch: see policy_server_launch.md, section "Tier C: Octo resident adapter".
+Colab launch: see vla_bridge/notebooks/http_octo.ipynb.
 """
 import argparse
 import base64

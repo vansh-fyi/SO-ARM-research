@@ -106,7 +106,8 @@ def _downsize_for_transport(image, max_side: int = OBSERVATION_MAX_SIDE):
 CAMERA_SOURCES = ("wrist", "overhead_left", "overhead_right")
 
 # Checkpoint camera name -> physical source. This is the SmolVLA wiring from
-# `policy_server_launch.md` (camera1 = wrist, camera2/camera3 = stereo halves),
+# `vla_bridge/notebooks/README.md`'s "Camera mapping" section (camera1 = wrist,
+# camera2/camera3 = stereo halves),
 # and the default when a backend declares no `camera_map`.
 DEFAULT_CAMERA_MAP = {"camera1": "wrist", "camera2": "overhead_left", "camera3": "overhead_right"}
 
@@ -190,7 +191,8 @@ def connect_bridge(
     `SO101Follower` for this path.
 
     Also wires the AR0144 split-stereo camera feeds (Plan 11-03's camera
-    mapping, `policy_server_launch.md`) into the returned client's
+    mapping, `vla_bridge/notebooks/README.md` "Camera mapping") into the returned
+    client's
     observation-building step -- see `_wire_stereo_split_cameras()`.
 
     `wrist_camera_index`, when given, wires a real `camera1` (wrist) entry
@@ -298,7 +300,8 @@ def _wire_stereo_split_cameras(
     `control_loop_observation()` calls internally, per
     `lerobot/async_inference/robot_client.py`) is the simpler,
     directly-testable mechanism that's actually scriptable here, per
-    `policy_server_launch.md`'s "observation-dict patch" option.
+    `vla_bridge/notebooks/README.md`'s "observation-dict patch" option (Camera
+    mapping section).
 
     Patching the raw observation is not enough on its own: the server keeps
     only the keys in the handshake's `lerobot_features`, which `RobotClient`

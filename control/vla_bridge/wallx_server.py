@@ -78,7 +78,7 @@ for this phase's "one validated live action" bar.
 Only the FIRST action of each 32-step chunk is returned (receding horizon,
 same as openvla_oft_server.py). The control loop re-queries every tick.
 
-Colab launch: see policy_server_launch.md, section "Tier C: Wall-X / WALL-OSS".
+Colab launch: see vla_bridge/notebooks/http_wallx.ipynb.
 """
 import argparse
 import base64

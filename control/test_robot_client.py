@@ -22,8 +22,8 @@ from vla_bridge.action_contract import JOINT_ORDER
 
 
 def test_downsize_for_transport_shrinks_long_edge_preserving_aspect_ratio():
-    # 1920x1080 wrist frame -- real shape from policy_server_launch.md's
-    # camera mapping. Long edge (1920) must land at exactly OBSERVATION_MAX_SIDE.
+    # 1920x1080 wrist frame -- real shape from vla_bridge/notebooks/README.md's
+    # Camera mapping section. Long edge (1920) must land at exactly OBSERVATION_MAX_SIDE.
     image = np.zeros((1080, 1920, 3), dtype=np.uint8)
     result = robot_client._downsize_for_transport(image, max_side=640)
     assert result.shape[1] == 640
