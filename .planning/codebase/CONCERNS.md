@@ -60,11 +60,6 @@
 - Files: `control/vla_bridge/notebooks/grpc_pi0.ipynb`, `scripts/colab_notebook_specs.py`
 - Workaround: The notebook snapshots the checkpoint revision to `/content/ckpt/pi0_so101_nocompile` with `compile_model` set to false. A checkpoint revision change requires redoing the snapshot.
 
-**Episode command in diffusion/groot-n17 tunnel cells contains literal placeholders:**
-- Symptoms: The printed command is `.venv/bin/python run_vla_episode.py <port> <robot_id> --backend ...`; pasting it as-is passes `<port>` as the serial port.
-- Files: `scripts/colab_notebook_specs.py` (lines ~374, 390, 486, 506), `control/vla_bridge/notebooks/grpc_diffusion.ipynb`, `control/vla_bridge/notebooks/grpc_groot_n17.ipynb`
-- Workaround: Replace the placeholders manually. Fix: print a command that resolves the port through `control/detect_devices.py` defaults, as the other notebooks do, or mark the placeholders clearly.
-
 **Hugging Face checkpoints can disappear:**
 - Symptoms: `tsangb34/groot-n17-so101-cube-drawer-40k` returned HTTP 401 (removed) on 2026-10-18.
 - Files: `control/vla_bridge/backend_configs/groot_n17.json` (now `tsangb34/groot-n17-so101-soccer-red_bowl-40episodes` at a pinned `verified_revision`)

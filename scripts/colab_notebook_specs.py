@@ -371,7 +371,7 @@ address filled in. The smoke run uses synthetic hardware (the arm cannot move):
 Then the episode:
 
 ```bash
-.venv/bin/python run_vla_episode.py <port> <robot_id> --backend diffusion \
+.venv/bin/python run_vla_episode.py --backend diffusion \
   --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint hrl7/so101-touch-diffusion-l4 \
   --out outputs/diffusion_UNIQUE_NAME --max-steps 20
 ```
@@ -387,7 +387,7 @@ failures look different:
 Tear down with the teardown cell at the end of this notebook.""",
     "smoke_command": f"{SMOKE} --backend diffusion --server-address <ngrok_tcp_host:port> "
                      "--checkpoint hrl7/so101-touch-diffusion-l4",
-    "episode_command": r""".venv/bin/python run_vla_episode.py <port> <robot_id> --backend diffusion \
+    "episode_command": r""".venv/bin/python run_vla_episode.py --backend diffusion \
   --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint hrl7/so101-touch-diffusion-l4 \
   --out outputs/diffusion_UNIQUE_NAME --max-steps 20""",
     "placeholders": list(GRPC_PLACEHOLDERS),
@@ -483,7 +483,7 @@ takes minutes, so it waits up to 300 s:
 Then the episode:
 
 ```bash
-.venv/bin/python run_vla_episode.py <port> <robot_id> --backend groot-n17 \\
+.venv/bin/python run_vla_episode.py --backend groot-n17 \\
   --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint {GROOT_N17_CHECKPOINT} \\
   --out outputs/groot_n17_UNIQUE_NAME --max-steps 20
 ```
@@ -503,7 +503,7 @@ units are not degrees (check its normalizer stats) or something is converting th
 Tear down with the teardown cell at the end of this notebook.""",
     "smoke_command": f"{SMOKE} --backend groot-n17 --server-address <ngrok_tcp_host:port> "
                      f"--checkpoint {GROOT_N17_CHECKPOINT} --wait-s 300",
-    "episode_command": f""".venv/bin/python run_vla_episode.py <port> <robot_id> --backend groot-n17 \\
+    "episode_command": f""".venv/bin/python run_vla_episode.py --backend groot-n17 \\
   --server-address <ngrok_tcp_host>:<ngrok_tcp_port> --checkpoint {GROOT_N17_CHECKPOINT} \\
   --out outputs/groot_n17_UNIQUE_NAME --max-steps 20""",
     "placeholders": list(GRPC_PLACEHOLDERS),
