@@ -348,10 +348,10 @@ def test_converted_source_holds_position_when_convert_fn_raises(monkeypatch, moc
 
 # --- groot_n17_server.py: Colab PolicyServer launcher -----------------------------------
 #
-# Real installed lerobot steps, configured exactly like the shipped candidate
-# checkpoint's serialized pipelines (tsangb34/groot-n17-so101-cube-drawer-40k):
-# state/action groups single_arm[5] + gripper[1]; single_arm is RELATIVE NON_EEF with
-# per-chunk-step relative stats, gripper ABSOLUTE; use_percentiles=True.
+# Real installed lerobot steps, configured like the shipped default checkpoint's
+# serialized pipelines (see backend_configs/groot_n17.json): state/action groups
+# single_arm[5] + gripper[1]; single_arm is RELATIVE NON_EEF with per-chunk-step
+# relative stats, gripper ABSOLUTE; use_percentiles=True.
 
 HORIZON = 4
 STATE = [1.0, 2.0, 3.0, 60.0, 4.0, 20.0]
@@ -568,8 +568,8 @@ def test_shipped_config_ships_the_candidate_with_its_own_camera_names():
     camera_map sends exactly those names."""
     config = backends.load_backend_config(CONFIG_NAME)
 
-    assert config["checkpoint"] == "tsangb34/groot-n17-so101-cube-drawer-40k"
-    assert config["verified_revision"] == "12e001ccd3f6146c50819b20384714c4903b1faa"
+    assert config["checkpoint"] == "tsangb34/groot-n17-so101-soccer-red_bowl-40episodes"
+    assert config["verified_revision"] == "643fa0a3e37620850096cd4bf4b37509b763d173"
     assert config["camera_map"] == {"wrist": "wrist", "front": "overhead_left"}
     assert "nvidia/GR00T-N1.7-3B" in config["notes"]
 
@@ -580,7 +580,7 @@ def test_shipped_config_build_passes_its_checkpoint_and_camera_map(monkeypatch):
     result = backends.BACKEND_REGISTRY[BACKEND](_args(checkpoint=None), {0: "wrist"}, {})
 
     assert result is sentinel
-    assert calls["checkpoint"] == "tsangb34/groot-n17-so101-cube-drawer-40k"
+    assert calls["checkpoint"] == "tsangb34/groot-n17-so101-soccer-red_bowl-40episodes"
     assert calls["camera_map"] == {"wrist": "wrist", "front": "overhead_left"}
 
 

@@ -249,8 +249,8 @@ Not verified:
 Server-side prerequisite (new in this plan): the stock 0.6.1 `PolicyServer` cannot run any
 Diffusion checkpoint. Every inference fails the `n_obs_steps` assertion; this is upstream
 huggingface/lerobot#3861, and its fix PR #3886 is unmerged. Launch the server with
-`vla_bridge/diffusion_policy_server.py` instead. See `policy_server.ipynb`'s Diffusion Policy
-section, which also installs `diffusers==0.39.0`.
+`vla_bridge/diffusion_policy_server.py` instead. See `vla_bridge/notebooks/grpc_diffusion.ipynb`,
+which also installs `diffusers==0.39.0`.
 <!-- backend:diffusion-selection:end -->
 
 <!-- backend:openvla:start -->

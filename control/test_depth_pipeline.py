@@ -179,12 +179,17 @@ def test_send_failure_is_not_recorded_as_execution(tmp_path, mock_robot, mock_ca
 
 def test_notebook_embeds_current_server_and_guide_matches():
     root = Path(__file__).resolve().parents[1]
-    notebook = json.loads((root / 'control/vla_bridge/policy_server.ipynb').read_text())
+    notebook_dir = root / 'control/vla_bridge/notebooks'
+    notebook = json.loads((notebook_dir / 'fastfs_depth.ipynb').read_text())
     cell = next(c for c in notebook['cells'] if c.get('id') == 'resident-fastfs-source')
     assert ''.join(cell['source']) == '%%writefile /content/fastfs_server.py\n' + (root / 'control/vla_bridge/fastfs_server.py').read_text()
-    code = '\n'.join(''.join(c['source']) for c in notebook['cells'] if c['cell_type'] == 'code')
-    assert 'threading.Thread(' not in code
-    assert '"scripts/run_demo.py"' not in code
+    paths = sorted(notebook_dir.glob('*.ipynb'))
+    assert len(paths) == 13
+    for path in paths:
+        cells = json.loads(path.read_text())['cells']
+        code = '\n'.join(''.join(c['source']) for c in cells if c['cell_type'] == 'code')
+        assert 'threading.Thread(' not in code, path.name
+        assert '"scripts/run_demo.py"' not in code, path.name
 
 
 def test_bridge_raw_output_survives_validation_and_is_written(tmp_path, mock_robot, mock_calibration_file):

@@ -23,7 +23,7 @@ source, 2026-10-01):
   upstream issue huggingface/lerobot#3861, with an open, unmerged fix PR
   #3886. The Colab side therefore runs `vla_bridge/diffusion_policy_server.py`,
   which applies PR #3886's fix before starting the same `PolicyServer`. See
-  `policy_server.ipynb`'s Diffusion Policy section.
+  `vla_bridge/notebooks/grpc_diffusion.ipynb`.
 - **Diffusion Policy does not mask missing cameras.** `predict_action_chunk()`
   stacks `[batch[key] for key in self.config.image_features]`, like ACT. So the
   bridge must send exactly the declared cameras: the shipped SO-101 checkpoint

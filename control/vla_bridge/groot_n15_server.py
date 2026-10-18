@@ -1,5 +1,5 @@
 """Resident GR00T N1.5 HTTP adapter (Tier C, Plan 14-12, VLAB-11). Run on Colab inside
-the isolated Isaac-GR00T venv (see policy_server_launch.md, "Tier C: GR00T N1.5").
+the isolated Isaac-GR00T venv (see vla_bridge/notebooks/http_groot_n15.ipynb).
 
 Same shape as `rdt1b_server.py` / `octo_server.py` / `fastfs_server.py`:
 - the model loads ONCE
@@ -105,7 +105,7 @@ Known limitations (documented, not hidden)
   at 50 Hz" client loop. Every step is an absolute target, so the per-step
   safety clamp bounds the jump.
 
-Colab launch: see policy_server_launch.md, section "Tier C: GR00T N1.5 resident adapter".
+Colab launch: see vla_bridge/notebooks/http_groot_n15.ipynb.
 """
 import argparse
 import base64

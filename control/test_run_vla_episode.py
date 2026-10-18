@@ -564,7 +564,8 @@ def _run_main_capturing_camera_map(monkeypatch, tmp_path, extra_argv):
 def test_backend_config_camera_map_reaches_connect_bridge(monkeypatch, tmp_path):
     calls = _run_main_capturing_camera_map(
         monkeypatch, tmp_path,
-        ["--backend", "groot-n17", "--checkpoint", "tsangb34/groot-n17-so101-cube-drawer-40k"],
+        ["--backend", "groot-n17", "--checkpoint",
+         "tsangb34/groot-n17-so101-soccer-red_bowl-40episodes"],
     )
 
     assert calls["policy_type"] == "groot"
