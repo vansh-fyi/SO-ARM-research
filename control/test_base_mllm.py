@@ -70,6 +70,7 @@ def _run(tmp_path, mock_robot, source, limits, max_steps):
             max_steps,
             100.0,
             limits,
+            home_pose={joint: mock_robot._positions[joint] for joint in JOINT_ORDER},
         )
     lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
     return [json.loads(line) for line in lines]

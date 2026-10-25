@@ -14,20 +14,26 @@ proving the e-stop/comms plumbing, useless for judging motion smoothness),
 sine waves every single tick, giving the interpolation code a real,
 constantly-changing target to smooth between.
 
+Like every real episode (quick 261025-wbw), the arm first moves to the
+committed home pose in `control/start_pose.json` (capture it with
+`python start_pose.py`), and the sweep oscillates around that home pose. A
+missing or invalid pose file refuses to run before the arm is touched.
+
 Usage (from control/, with .venv active):
     python tune_execution_hz.py --execution-hz 100 --max-steps 40
 
-Ctrl+C at any time triggers the same e-stop return-to-start path as the real
-episode script.
+Ctrl+C at any time triggers the same e-stop path as the real episode script:
+the arm returns to the home pose before disconnect.
 """
 
 import argparse
 import math
 from pathlib import Path
 
-from keyboard_joint_control import read_positions
 from lerobot.robots.so_follower.config_so_follower import SOFollowerRobotConfig
 from lerobot.robots.so_follower.so_follower import SO101Follower
+
+import start_pose
 from run_vla_episode import _load_device_map, run_episode
 from vla_bridge import action_contract, safety_validator
 from vla_bridge.io_logger import IOLogger
@@ -88,17 +94,14 @@ def main():
 
     port = device_map["follower"]["port"]
     robot_id = device_map["follower"]["id"]
-    print(f"Connecting to {robot_id} on {port}...")
 
-    robot_config = SOFollowerRobotConfig(
-        port=port, id=robot_id, max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG
-    )
-    robot = SO101Follower(robot_config)
-    robot.connect()
-
+    # Load and validate the home pose before the arm is touched.
     joint_limits_deg = action_contract.load_joint_limits_deg()
-    start_positions = read_positions(robot)
-    print(f"Start positions: {start_positions}")
+    try:
+        home_pose = start_pose.load_start_pose(joint_limits_deg)
+    except start_pose.StartPoseError as e:
+        raise SystemExit(str(e)) from e
+    print(f"Home pose (sweep centre): {home_pose}")
 
     if args.single_joint:
         joints = [(args.single_joint, args.amplitude_deg, 0.0)]
@@ -107,13 +110,20 @@ def main():
         joints = DEFAULT_JOINTS
         joint_desc = f"multi-joint coordinated sweep ({', '.join(j for j, _, _ in joints)})"
 
-    action_source = SweepActionSource(start_positions, joints=joints, period_ticks=args.period_ticks)
+    action_source = SweepActionSource(home_pose, joints=joints, period_ticks=args.period_ticks)
 
     out_dir = Path(f"/tmp/motion_tune_hz{int(args.execution_hz)}")
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Tuning run: execution_hz={args.execution_hz}, control_hz={args.control_hz}, "
           f"{joint_desc}, {args.max_steps} steps")
     print(f"(No cameras recorded -- pure motion tuning. Logs -> {out_dir})")
+
+    print(f"Connecting to {robot_id} on {port}...")
+    robot_config = SOFollowerRobotConfig(
+        port=port, id=robot_id, max_relative_target=safety_validator.MAX_RELATIVE_TARGET_DEG
+    )
+    robot = SO101Follower(robot_config)
+    robot.connect()
 
     try:
         with IOLogger(out_dir, {}) as io_logger:
@@ -129,7 +139,10 @@ def main():
                 joint_limits_deg=joint_limits_deg,
                 stereo_camera=None,
                 execution_hz=args.execution_hz,
+                home_pose=home_pose,
             )
+    except start_pose.StartPoseNotReachedError as e:
+        raise SystemExit(f"REFUSED TO START EPISODE: {e}") from e
     finally:
         robot.disconnect()
         print("Disconnected.")

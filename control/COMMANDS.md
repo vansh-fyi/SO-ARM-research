@@ -92,6 +92,41 @@ Args order: `FOLLOWER_PORT FOLLOWER_ID LEADER_PORT LEADER_ID`
 
 ---
 
+## Start (home) pose — captured once, used by every episode
+
+One fixed pose in `control/start_pose.json`, committed to git: calibrated degrees
+for the arm joints (gripper 0–100%), keyed by joint, plus `captured_at`.
+
+Put the arm in the home pose (by hand, or with `keyboard_joint_control.py` /
+`joint_jog.py`), then capture it and commit the file:
+
+```bash
+python start_pose.py                      # PORT ROBOT_ID default to device_map.json's follower
+python start_pose.py /dev/cu.usbmodem5B8E1139151 soarm_follower_02 --force   # overwrite
+```
+
+- Overwriting an existing `start_pose.json` needs `--force`.
+- Capture only reads the arm, never moves it, and refuses a pose outside the safety
+  limits (e.g. a fully closed gripper reading slightly below 0%).
+- Capture needs the serial port, so exit the jog tool first.
+- `keyboard_joint_control.py`'s `X` returns to its own start pose before exiting, so
+  the arm leaves the pose you jogged it to.
+- Disconnecting releases torque, so choose a self-supporting pose or hold the arm
+  while capturing.
+
+`run_vla_episode.py` and `tune_execution_hz.py` always use it:
+
+- Missing or invalid file → refuses to run, before touching the robot or backend.
+- Moves home before the first model request; if any joint is more than ±5 (deg / %)
+  off, refuses to start, naming the joints (termination reason
+  `start_pose_not_reached`).
+- Records target and reached joints in `<out>/start_pose.json`.
+- Returns home before disconnect on max steps, task complete, Ctrl-C or error.
+- No return move if home was never reached.
+- Tolerance and move timeout are constants in `start_pose.py`.
+
+---
+
 ## Episode recording (cameras + joint log)
 
 ```bash

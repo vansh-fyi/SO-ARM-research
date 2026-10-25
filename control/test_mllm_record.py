@@ -379,7 +379,8 @@ def _source(adapter, mock_calibration_file, recorder, collector=None, chunk_len=
 def _run(tmp_path, mock_robot, source, limits, max_steps):
     with IOLogger(tmp_path, {0: "wrist"}) as io_logger:
         run_episode(mock_robot, {0: FakeCaptureCamera()}, {0: "wrist"}, io_logger, source,
-                    INSTRUCTION, max_steps, 100.0, limits)
+                    INSTRUCTION, max_steps, 100.0, limits,
+                    home_pose={joint: mock_robot._positions[joint] for joint in JOINT_ORDER})
     lines = (tmp_path / "episode.jsonl").read_text().strip().splitlines()
     return [json.loads(line) for line in lines]
 

@@ -14,7 +14,9 @@ e-stop) works against real hardware before adding network complexity. The
 
 Reuses (does not reimplement):
   - `keyboard_joint_control.read_positions` / `move_to_positions` (comms
-    retry/backoff, return-to-start P-control)
+    retry/backoff, move-home / return-home P-control)
+  - `start_pose` (the one committed home pose every episode starts from and
+    returns to -- quick 261025-wbw)
   - `vla_bridge.action_contract.load_joint_limits_deg`
   - `vla_bridge.safety_validator.validate_action`
   - `vla_bridge.io_logger.IOLogger`
@@ -47,6 +49,7 @@ from typing import Protocol
 import cv2
 import detect_devices
 
+import start_pose
 from keyboard_joint_control import move_to_positions, read_positions
 from vla_bridge import action_contract, robot_client, safety_validator
 from vla_bridge.backends import BACKEND_REGISTRY, GRPC_BRIDGE_BACKENDS, get_backend_names
@@ -167,7 +170,7 @@ class ActionSource(Protocol):
     Optional duck-typed attribute `episode_complete_reason` (not part of the
     Protocol signature, read with getattr): None, or a non-empty string that
     `run_episode()` uses as the termination reason, ending the episode after
-    the tick on which it became set (return-to-start still runs). MLLM sources
+    the tick on which it became set (the return to the home pose still runs). MLLM sources
     use "task_complete" and "mllm_backend_failed". Any other value, including
     a non-string, is ignored.
     """
@@ -227,6 +230,29 @@ def _write_termination(out_dir: Path, reason: str, steps_completed: int) -> None
     )
 
 
+def _write_start_pose_record(
+    out_dir: Path,
+    target: dict[str, float],
+    reached: dict[str, float],
+    missed: dict[str, float | None],
+    tolerance: float,
+) -> None:
+    """Writes `<out>/start_pose.json`: the home target, the joints actually
+    reached, per-joint error and whether the arm arrived (quick 261025-wbw)."""
+    record = {
+        "target": dict(target),
+        "reached": dict(reached),
+        "error": {
+            joint: (reached[joint] - value if joint in reached else None)
+            for joint, value in target.items()
+        },
+        "tolerance": tolerance,
+        "arrived": not missed,
+        "missed_joints": [joint for joint in action_contract.JOINT_ORDER if joint in missed],
+    }
+    (out_dir / "start_pose.json").write_text(json.dumps(record, indent=2))
+
+
 def run_episode(
     robot,
     caps: dict[int, "cv2.VideoCapture"],
@@ -241,14 +267,33 @@ def run_episode(
     execution_hz: float = 100.0,
     depth_client=None,
     depth_every_n_steps: int = 10,
+    home_pose: dict[str, float] | None = None,
 ) -> None:
     """Main control loop -- one iteration per step, up to `max_steps`.
 
-    Every write path to `robot.send_action()` passes through
+    Every policy write path to `robot.send_action()` passes through
     `safety_validator.validate_action()` first (VLAHW-02's core
-    acceptance criterion). The e-stop (KeyboardInterrupt) always triggers a
-    return-to-start move BEFORE disconnect, in every exit path (max-steps,
-    interrupt, or any other exception via the caller's `finally`).
+    acceptance criterion).
+
+    Always-home start (quick 261025-wbw): before the first
+    `action_source.get_action()`, the arm is moved to the one committed home
+    pose and every joint is checked against `start_pose.START_POSE_TOLERANCE`.
+    The target, reached joints and per-joint error go to `<out>/start_pose.json`
+    either way. If any joint missed, the episode is refused: no `get_action`
+    call is made, termination reason is `"start_pose_not_reached"` and
+    `StartPoseNotReachedError` propagates (the caller still disconnects).
+
+    Once the arm has reached home, every exit path (max steps, task complete,
+    KeyboardInterrupt e-stop, any exception) moves it back to the HOME pose
+    strictly before disconnect (which happens in the caller's `finally`). If
+    home was never reached (the start move missed, raised or was
+    Ctrl-C'd), no return move is made: that move WAS the move home, and
+    repeating it would override the operator's stop or the same failure.
+
+    `home_pose` defaults to `None`, which loads and validates the committed
+    `start_pose.json`; callers that already loaded it (`main()`,
+    `tune_execution_hz.py`) pass it in, and it is re-validated against
+    `joint_limits_deg` here before any motion.
 
     `joint_limits_deg` is loaded once at startup by the caller (`main()`,
     via `action_contract.load_joint_limits_deg()`) and passed in here rather
@@ -281,17 +326,46 @@ def run_episode(
     """
     if control_hz <= 0 or execution_hz <= 0 or depth_every_n_steps < 1 or max_steps < 1:
         raise ValueError("rates, depth cadence and max_steps must be positive")
-    depth_recorder = DepthRecorder(depth_client, io_logger) if depth_client is not None else None
+    # Validate the home pose before ANY motion (quick 261025-wbw).
+    if home_pose is None:
+        home_pose = start_pose.load_start_pose(joint_limits_deg)
+    else:
+        home_pose = start_pose.validate_start_pose(home_pose, joint_limits_deg)
+    # Built only once home is verified, so a refused start never spawns a
+    # depth thread or prints a misleading depth failure.
+    depth_recorder = None
     control_period = 1.0 / control_hz
     execution_period = 1.0 / execution_hz
     num_substeps = max(1, round(control_period / execution_period))
     final_sleep = max(0.0, control_period - execution_period * (num_substeps - 1))
-    start_positions = read_positions(robot)
     last_sent_action: dict[str, float] | None = None
     steps_completed = 0
     reason = "max_steps_reached"
+    at_home = False
 
     try:
+        # Harness move, not a policy action: targets only the validated home
+        # pose via P-control (LeRobot's max_relative_target still applies).
+        move_to_positions(
+            robot,
+            home_pose,
+            kp=start_pose.START_POSE_KP,
+            control_freq=start_pose.START_POSE_CONTROL_HZ,
+            max_seconds=start_pose.START_POSE_MOVE_SECONDS,
+            label="Moving to start pose",
+        )
+        reached = read_positions(robot)
+        missed = start_pose.joints_out_of_tolerance(home_pose, reached, start_pose.START_POSE_TOLERANCE)
+        _write_start_pose_record(io_logger.out_dir, home_pose, reached, missed, start_pose.START_POSE_TOLERANCE)
+        if missed:
+            raise start_pose.StartPoseNotReachedError(
+                home_pose, reached, missed, start_pose.START_POSE_TOLERANCE
+            )
+        at_home = True
+        max_error = max((abs(reached[j] - v) for j, v in home_pose.items()), default=0.0)
+        print(f"At start pose (max error {max_error:.2f}) -- starting episode")
+        depth_recorder = DepthRecorder(depth_client, io_logger) if depth_client is not None else None
+
         for i in range(max_steps):
             if depth_recorder is not None:
                 depth_recorder.drain()
@@ -410,18 +484,33 @@ def run_episode(
         # print can raise BrokenPipeError and would otherwise lose the reason.
         reason = "keyboard_interrupt"
         try:
-            print("Interrupted -- returning to start position...")
+            if at_home:
+                print("Interrupted -- returning to home pose...")
+            else:
+                print("Interrupted before reaching the start pose -- not moving further.")
         except BrokenPipeError:
             pass
+    except start_pose.StartPoseNotReachedError:
+        reason = "start_pose_not_reached"
+        raise
     except Exception:
         reason = "exception"
         raise
     finally:
-        # E-stop (D-03): return-to-start strictly before disconnect, in every
-        # exit path -- max-steps, KeyboardInterrupt, or any other exception
-        # (disconnect() itself happens in main()'s outer try/finally).
+        # E-stop (D-03): return to the HOME pose strictly before disconnect, in
+        # every exit path once home was reached -- max-steps, task complete,
+        # KeyboardInterrupt, or any other exception (disconnect() itself
+        # happens in main()'s outer try/finally). No label: a progress print
+        # can raise BrokenPipeError after Ctrl-C and abort the move.
         try:
-            move_to_positions(robot, start_positions, kp=0.2, control_freq=30, max_seconds=5.0)
+            if at_home:
+                move_to_positions(
+                    robot,
+                    home_pose,
+                    kp=start_pose.START_POSE_KP,
+                    control_freq=start_pose.START_POSE_CONTROL_HZ,
+                    max_seconds=start_pose.START_POSE_MOVE_SECONDS,
+                )
         finally:
             try:
                 if depth_recorder is not None:
@@ -652,6 +741,12 @@ def main():
     camera_names = _build_camera_names(args.camera)
 
     joint_limits_deg = action_contract.load_joint_limits_deg()
+    # Pre-flight (quick 261025-wbw): a missing or invalid home pose fails here,
+    # before any backend build touches the robot or Colab.
+    try:
+        home_pose = start_pose.load_start_pose(joint_limits_deg)
+    except start_pose.StartPoseError as e:
+        parser.error(str(e))
 
     handles = None
     caps: dict[int, "cv2.VideoCapture"] = {}
@@ -700,7 +795,10 @@ def main():
                 execution_hz=args.execution_hz,
                 depth_client=depth_client,
                 depth_every_n_steps=args.depth_every_n_steps,
+                home_pose=home_pose,
             )
+    except start_pose.StartPoseNotReachedError as e:
+        raise SystemExit(f"REFUSED TO START EPISODE: {e}") from e
     finally:
         for cap in caps.values():
             cap.release()
