@@ -11,6 +11,7 @@ import pytest
 
 import run_vla_episode
 import detect_devices
+import start_pose
 from run_vla_episode import (
     ScriptedActionSource,
     _build_camera_names,
@@ -46,13 +47,17 @@ class FakeCamera:
 
 CAMERA_NAMES = {0: "wrist", 1: "overhead"}
 
+# main() now validates the committed home pose against these limits before any
+# backend build (quick 261025-wbw); an empty dict would make every pose invalid.
+PERMISSIVE_JOINT_LIMITS_DEG = {joint: (-100.0, 100.0) for joint in action_contract.JOINT_ORDER}
+
 
 def _run_resolved_bridge_main(monkeypatch, tmp_path, resolver, cli_args=()):
     device_map = {"cameras": {"wrist": 3, "stereo_overhead": 4}}
     calls = {}
     monkeypatch.setattr(run_vla_episode, "_load_device_map", lambda: device_map)
     monkeypatch.setattr(detect_devices, "resolve_camera_identifier", resolver)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", _TrackingCapture)
     _TrackingCapture.constructed_indices = []
 
@@ -300,6 +305,7 @@ def test_keyboard_interrupt_triggers_return_to_start_before_disconnect(
     mock_robot.disconnect()  # simulate main()'s outer finally calling disconnect after run_episode
 
     assert call_order.index("move_to_positions") < call_order.index("disconnect")
+    assert call_order[-2:] == ["move_to_positions", "disconnect"]
 
     termination = json.loads((tmp_path / "termination.json").read_text())
     assert termination["reason"] == "keyboard_interrupt"
@@ -433,7 +439,7 @@ def test_run_vla_episode_selects_bridge_source_when_server_address_given(monkeyp
     monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(robot_client, "BridgeActionSource", FakeBridgeActionSource)
     monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
     monkeypatch.setattr(
         "sys.argv",
@@ -502,7 +508,7 @@ def test_stereo_camera_index_flag_threads_through_to_connect_bridge(monkeypatch,
     monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
     monkeypatch.setattr(
         "sys.argv",
@@ -550,7 +556,7 @@ def _run_main_capturing_camera_map(monkeypatch, tmp_path, extra_argv):
     monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
     monkeypatch.setattr(
         "sys.argv",
@@ -643,7 +649,7 @@ def test_wrist_camera_index_threads_through_from_camera_names(monkeypatch, tmp_p
     monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
     monkeypatch.setattr(
         "sys.argv",
@@ -691,7 +697,7 @@ def test_bridge_unreachable_writes_termination_reason_without_driving_robot(monk
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
     monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge_returns_none)
     monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
     monkeypatch.setattr(
         "sys.argv",
@@ -790,7 +796,7 @@ def test_device_map_supplies_port_robot_id_camera_defaults_when_cli_args_omitted
     monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
     monkeypatch.setattr(
         "sys.argv",
@@ -864,7 +870,7 @@ def test_device_map_prefers_stereo_overhead_name_over_numeric_index_when_present
     monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
     monkeypatch.setattr(
         "sys.argv",
@@ -934,7 +940,7 @@ def test_explicit_cli_args_override_device_map_json(monkeypatch, tmp_path):
     monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
     monkeypatch.setattr(
         "sys.argv",
@@ -1055,7 +1061,7 @@ def test_server_address_never_opens_overhead_camera_index_while_wrist_still_does
     monkeypatch.setattr(robot_client, "connect_bridge", fake_connect_bridge)
     monkeypatch.setattr(robot_client, "BridgeActionSource", lambda *a, **k: None)
     monkeypatch.setattr(run_vla_episode, "run_episode", lambda *a, **k: None)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", _TrackingCapture)
     monkeypatch.setattr(
         "sys.argv",
@@ -1483,7 +1489,7 @@ def test_main_constructs_and_threads_depth_client_when_both_depth_flags_given(mo
     monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
     monkeypatch.setattr(run_vla_episode, "load_calibration", fake_load_calibration)
     monkeypatch.setattr(run_vla_episode, "DepthCameraClient", FakeDepthCameraClient)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", lambda idx: _NeverOpensCapture())
     monkeypatch.setattr(
         "sys.argv",
@@ -1614,15 +1620,16 @@ def _fake_builder(built, name, handles="default"):
     return build
 
 
-def _dispatch_main(monkeypatch, tmp_path, cli_args, builders):
+def _dispatch_main(monkeypatch, tmp_path, cli_args, builders, run_episode_impl=None):
     """Run main() with every external seam faked. `builders` maps a backend
     name to a fake build(), installed into the real BACKEND_REGISTRY for this
-    test only (monkeypatch.setitem restores it afterwards)."""
+    test only (monkeypatch.setitem restores it afterwards). `run_episode_impl`,
+    when given, replaces the default recording fake run_episode."""
     calls = {"run_episode_called": False}
     _point_device_map_at_nonexistent_path(monkeypatch, tmp_path)
     for name, build in builders.items():
         monkeypatch.setitem(vla_backends.BACKEND_REGISTRY, name, build)
-    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: {})
+    monkeypatch.setattr(action_contract, "load_joint_limits_deg", lambda: dict(PERMISSIVE_JOINT_LIMITS_DEG))
     monkeypatch.setattr(run_vla_episode.cv2, "VideoCapture", _TrackingCapture)
     _TrackingCapture.constructed_indices = []
 
@@ -1634,9 +1641,10 @@ def _dispatch_main(monkeypatch, tmp_path, cli_args, builders):
             action_source=action_source,
             stereo_camera=kwargs.get("stereo_camera"),
             depth_client=kwargs.get("depth_client"),
+            home_pose=kwargs.get("home_pose"),
         )
 
-    monkeypatch.setattr(run_vla_episode, "run_episode", fake_run_episode)
+    monkeypatch.setattr(run_vla_episode, "run_episode", run_episode_impl or fake_run_episode)
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -1891,7 +1899,8 @@ def test_run_episode_ends_when_source_sets_episode_complete_reason(
     assert len(records) == 2
     assert termination == {"reason": "task_complete", "steps_completed": 2}
     assert source.calls == 2
-    assert len(returned) == 1  # the return-to-start finally block still ran
+    assert len(returned) == 2  # the start move, then the return-home finally block
+    assert returned == [{joint: 0.0 for joint in action_contract.JOINT_ORDER}] * 2
 
 
 @pytest.mark.parametrize(
@@ -2047,3 +2056,262 @@ def test_mllm_backend_still_requires_depth_flags_together(monkeypatch, tmp_path,
                        {FAKE_MLLM: build})
     assert built == []
     assert "must be given together" in capsys.readouterr().err
+
+
+# --- Fixed start (home) pose (quick 261025-wbw) ---
+
+
+HOME = {
+    "shoulder_pan": 10.0,
+    "shoulder_lift": -20.0,
+    "elbow_flex": 15.0,
+    "wrist_flex": 2.0,
+    "wrist_roll": 0.0,
+    "gripper": 30.0,
+}
+
+
+def _write_home(path, joints):
+    path.write_text(json.dumps({"captured_at": "2026-10-25T12:00:00Z", "joints": dict(joints)}))
+
+
+def _teleporting_move(events):
+    """A move_to_positions stand-in that records the call and puts the mock
+    robot exactly at the target (the real P-loop never moves a MockRobot)."""
+
+    def move(robot, targets, **kwargs):
+        events.append(("move", dict(targets), kwargs))
+        robot._positions.update(targets)
+
+    return move
+
+
+def _non_moving_move(events):
+    def move(robot, targets, **kwargs):
+        events.append(("move", dict(targets), kwargs))
+
+    return move
+
+
+class _RecordingSource:
+    """Records every get_action call into the shared events list. If `drive`
+    is given, it overrides those MockRobot positions on every call (moving the
+    arm away from home); `raise_on` raises `error` on that call number."""
+
+    def __init__(self, events, robot=None, drive=None, raise_on=None, error=None):
+        self.events = events
+        self.robot = robot
+        self.drive = drive or {}
+        self.raise_on = raise_on
+        self.error = error
+        self.calls = 0
+
+    def get_action(self, joint_state, instruction):
+        self.calls += 1
+        self.events.append(("get_action", dict(joint_state)))
+        if self.robot is not None:
+            self.robot._positions.update(self.drive)
+        if self.calls == self.raise_on:
+            raise self.error
+        return dict(joint_state), "fake-recording"
+
+
+def _home_episode(tmp_path, robot, limits, source, max_steps=3, **kwargs):
+    with IOLogger(tmp_path, CAMERA_NAMES) as io_logger:
+        run_episode(
+            robot,
+            _fake_caps(),
+            CAMERA_NAMES,
+            io_logger,
+            source,
+            instruction="Pick up the pen",
+            max_steps=max_steps,
+            control_hz=100.0,
+            joint_limits_deg=limits,
+            **kwargs,
+        )
+
+
+def _episode_records(tmp_path):
+    path = tmp_path / "episode.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def test_run_episode_moves_to_the_committed_home_pose_before_the_first_get_action(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch, start_pose_file
+):
+    _write_home(start_pose_file, HOME)
+    events = []
+    monkeypatch.setattr(run_vla_episode, "move_to_positions", _teleporting_move(events))
+    limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+
+    _home_episode(tmp_path, mock_robot, limits, _RecordingSource(events))
+
+    kind, target, kwargs = events[0]
+    assert (kind, target) == ("move", HOME)
+    assert kwargs == {
+        "kp": start_pose.START_POSE_KP,
+        "control_freq": start_pose.START_POSE_CONTROL_HZ,
+        "max_seconds": start_pose.START_POSE_MOVE_SECONDS,
+        "label": "Moving to start pose",
+    }
+    assert events[1] == ("get_action", HOME)
+
+    record = json.loads((tmp_path / "start_pose.json").read_text())
+    assert record["target"] == HOME
+    assert record["reached"] == HOME
+    assert record["error"] == {joint: 0.0 for joint in action_contract.JOINT_ORDER}
+    assert record["arrived"] is True
+    assert record["missed_joints"] == []
+    assert record["tolerance"] == 5.0
+
+
+def test_run_episode_refuses_to_start_when_home_is_not_reached(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch
+):
+    events = []
+    monkeypatch.setattr(run_vla_episode, "move_to_positions", _non_moving_move(events))
+    limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    source = _RecordingSource(events)
+
+    with pytest.raises(start_pose.StartPoseNotReachedError) as excinfo:
+        _home_episode(tmp_path, mock_robot, limits, source, home_pose=HOME)
+
+    missed = ["shoulder_pan", "shoulder_lift", "elbow_flex", "gripper"]
+    assert list(excinfo.value.missed) == missed
+    message = str(excinfo.value)
+    for joint in missed:
+        assert joint in message
+    assert "wrist_flex" not in message
+    assert source.calls == 0
+    assert [event[0] for event in events] == ["move"]  # no return move
+    termination = json.loads((tmp_path / "termination.json").read_text())
+    assert termination == {"reason": "start_pose_not_reached", "steps_completed": 0}
+    record = json.loads((tmp_path / "start_pose.json").read_text())
+    assert record["arrived"] is False
+    assert record["missed_joints"] == missed
+    assert record["reached"] == {joint: 0.0 for joint in action_contract.JOINT_ORDER}
+    assert record["error"]["shoulder_pan"] == -10.0
+    assert _episode_records(tmp_path) == []
+    assert mock_robot.sent_actions == []
+
+
+@pytest.mark.parametrize(
+    "exit_path, raise_on, error, reason",
+    [
+        ("max_steps", None, None, "max_steps_reached"),
+        ("keyboard_interrupt", 2, KeyboardInterrupt(), "keyboard_interrupt"),
+        ("exception", 2, RuntimeError("policy blew up"), "exception"),
+    ],
+    ids=["max_steps", "keyboard_interrupt", "exception"],
+)
+def test_run_episode_returns_to_home_not_the_startup_pose_on_every_exit_path(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch, exit_path, raise_on, error, reason
+):
+    events = []
+    monkeypatch.setattr(run_vla_episode, "move_to_positions", _teleporting_move(events))
+    limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    source = _RecordingSource(events, robot=mock_robot, drive={"shoulder_pan": 40.0},
+                              raise_on=raise_on, error=error)
+
+    if exit_path == "exception":
+        with pytest.raises(RuntimeError, match="policy blew up"):
+            _home_episode(tmp_path, mock_robot, limits, source, home_pose=HOME)
+    else:
+        _home_episode(tmp_path, mock_robot, limits, source, home_pose=HOME)
+
+    moves = [event for event in events if event[0] == "move"]
+    assert len(moves) == 2
+    assert events[-1][0] == "move"
+    _, last_target, last_kwargs = events[-1]
+    assert last_target == HOME
+    assert last_target != {joint: 0.0 for joint in action_contract.JOINT_ORDER}
+    assert "label" not in last_kwargs or not last_kwargs["label"]
+    assert last_kwargs["max_seconds"] == start_pose.START_POSE_MOVE_SECONDS
+    assert mock_robot._positions == HOME
+    termination = json.loads((tmp_path / "termination.json").read_text())
+    assert termination["reason"] == reason
+
+
+def test_run_episode_rejects_an_invalid_explicit_home_pose_before_any_move(
+    tmp_path, mock_robot, mock_calibration_file
+):
+    limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    with pytest.raises(start_pose.StartPoseError, match="shoulder_pan"):
+        _home_episode(tmp_path, mock_robot, limits, ScriptedActionSource(),
+                      home_pose=dict(HOME, shoulder_pan=500.0))
+    assert mock_robot.sent_actions == []
+
+
+def test_run_episode_refuses_a_missing_default_pose_file_before_any_move(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch
+):
+    monkeypatch.setattr(start_pose, "START_POSE_PATH", tmp_path / "missing" / "start_pose.json")
+    limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    with pytest.raises(start_pose.StartPoseError, match="python start_pose.py"):
+        _home_episode(tmp_path, mock_robot, limits, ScriptedActionSource())
+    assert mock_robot.sent_actions == []
+
+
+def test_interrupt_before_reaching_home_makes_no_return_move(
+    tmp_path, mock_robot, mock_calibration_file, monkeypatch
+):
+    events = []
+
+    def interrupted_move(robot, targets, **kwargs):
+        events.append(("move", dict(targets), kwargs))
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_vla_episode, "move_to_positions", interrupted_move)
+    limits = action_contract.load_joint_limits_deg(mock_calibration_file)
+    source = _RecordingSource(events)
+    _home_episode(tmp_path, mock_robot, limits, source, home_pose=HOME)
+
+    assert [event[0] for event in events] == ["move"]
+    assert source.calls == 0
+    termination = json.loads((tmp_path / "termination.json").read_text())
+    assert termination == {"reason": "keyboard_interrupt", "steps_completed": 0}
+
+
+@pytest.mark.parametrize("pose_file", ["missing", "invalid"])
+def test_main_refuses_a_missing_or_invalid_pose_file_before_any_backend_build(
+    monkeypatch, tmp_path, capsys, start_pose_file, pose_file
+):
+    if pose_file == "missing":
+        monkeypatch.setattr(start_pose, "START_POSE_PATH", tmp_path / "nope" / "start_pose.json")
+    else:
+        _write_home(start_pose_file, dict(HOME, shoulder_pan=500.0))
+    built = []
+    with pytest.raises(SystemExit):
+        _dispatch_main(monkeypatch, tmp_path, [], {"scripted": _fake_builder(built, "scripted")})
+    assert built == []
+    assert "python start_pose.py" in capsys.readouterr().err
+
+
+def test_main_passes_the_committed_home_pose_to_run_episode(monkeypatch, tmp_path, start_pose_file):
+    _write_home(start_pose_file, HOME)
+    built = []
+    calls = _dispatch_main(monkeypatch, tmp_path, [], {"scripted": _fake_builder(built, "scripted")})
+    assert calls["home_pose"] == HOME
+
+
+def test_main_exits_loudly_but_still_disconnects_when_home_is_not_reached(monkeypatch, tmp_path):
+    robot = _FakeBackendRobot()
+    built = []
+    handles = BackendHandles(action_source=_ClosableActionSource(), robot=robot)
+
+    def refusing_run_episode(*args, **kwargs):
+        raise start_pose.StartPoseNotReachedError(
+            target=HOME, reached={}, missed={"shoulder_pan": None, "gripper": None}, tolerance=5.0,
+        )
+
+    with pytest.raises(SystemExit) as excinfo:
+        _dispatch_main(monkeypatch, tmp_path, ["--backend", "fake-http"],
+                       {"fake-http": _fake_builder(built, "fake-http", handles=handles)},
+                       run_episode_impl=refusing_run_episode)
+    message = str(excinfo.value)
+    assert message.startswith("REFUSED TO START EPISODE")
+    assert "shoulder_pan" in message and "gripper" in message
+    assert robot.disconnected is True
