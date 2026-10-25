@@ -335,7 +335,7 @@ def test_full_mocked_round_trip_returns_a_validated_finite_er_conversion_action(
     assert request.url.path == "/v1beta/interactions"
     body = json.loads(request.content)
     assert body["model"] == PUBLIC_ER_MODEL
-    assert body["generation_config"]["thinking_level"] == "medium"
+    assert body["generation_config"]["thinking_level"] == "low"
     assert "pick up the red cube" in request.content.decode()
     # The key travels only in the auth header, never in the body or the logged details.
     assert request.headers["x-goog-api-key"] == SECRET

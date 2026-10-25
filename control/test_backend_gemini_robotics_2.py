@@ -272,7 +272,7 @@ def test_both_backends_resolve_to_identical_builder_calls_except_the_label(build
     assert pos1[2] == "gemini-robotics" and pos2[2] == "gemini-robotics-2"
     assert pos1[:2] + pos1[3:] == pos2[:2] + pos2[3:]
     kw1.pop("convert_fn"), kw2.pop("convert_fn")
-    assert kw1 == kw2 and kw2["thinking_level"] == "medium"
+    assert kw1 == kw2 and kw2["thinking_level"] == "low"
 
 
 def test_module_identity_constants_are_distinct_from_vlab01():
@@ -373,7 +373,7 @@ def test_full_mocked_round_trip_returns_a_validated_finite_er_conversion_action(
     assert request.url.path == "/v1beta/interactions"
     body = json.loads(request.content)
     assert body["model"] == PUBLIC_ER_MODEL
-    assert body["generation_config"]["thinking_level"] == "medium"
+    assert body["generation_config"]["thinking_level"] == "low"
     assert "pick up the red cube" in request.content.decode()
     # The key travels only in the auth header, never in the body or the logged details.
     assert request.headers["x-goog-api-key"] == SECRET

@@ -1,12 +1,12 @@
 {
   "model": "gemini-robotics-er-2-preview",
   "api_key_env": "GEMINI_API_KEY",
-  "thinking_level": "medium",
+  "thinking_level": "low",
   "timeout_s": 10.0,
   "requirement": "VLAB-01",
   "product_name": "Gemini Robotics",
   "action_path": "gemini-robotics-er embodied-reasoning points + local bounded visual-servo conversion (er_conversion); not native VLA action output",
   "native_vla_model": null,
   "model_verified": "2026-10-01: ai.google.dev/gemini-api/docs/robotics-overview (Last updated 2026-09-23) names gemini-robotics-er-2-preview (request/response) and gemini-robotics-er-2-streaming-preview (Live API only); /deprecations (Last updated 2026-10-01) lists gemini-robotics-er-1.5-preview shut down 2026-04-30 and gemini-robotics-er-1.6-preview shut down 2026-08-31, both replaced by gemini-robotics-er-2-preview.",
-  "notes": "VLAB-01 per 14-CONTEXT.md D-02 supersession: the native Gemini Robotics / Gemini Robotics 2 VLAs are trusted-tester waitlist only (deepmind.google/models/gemini-robotics), so native_vla_model is null. This backend and gemini-robotics-2 (VLAB-02) deliberately call the SAME single public ER model with the same prompt, thinking level and conversion; they differ only in --backend name, checkpoint_label/model_version prefix, config file and their independent live-hardware episodes. api_key_env names the environment variable holding a RESTRICTED Gemini API key (unrestricted keys get 403); never put the key itself in this file. thinking_level/timeout_s mirror base_gemini's defaults; try thinking_level 'low' if step latency is too high. See vla_bridge/backends/gemini_robotics.py and .planning/phases/14-vla-style-pipeline-backends/14-14-SUMMARY.md."
+  "notes": "VLAB-01 per 14-CONTEXT.md D-02 supersession: the native Gemini Robotics / Gemini Robotics 2 VLAs are trusted-tester waitlist only (deepmind.google/models/gemini-robotics), so native_vla_model is null. This backend and gemini-robotics-2 (VLAB-02) deliberately call the SAME single public ER model with the same prompt, thinking level and conversion; they differ only in --backend name, checkpoint_label/model_version prefix, config file and their independent live-hardware episodes. api_key_env names the environment variable holding a RESTRICTED Gemini API key (unrestricted keys get 403); never put the key itself in this file. timeout_s mirrors base_gemini's default. thinking_level is 'low' (base_gemini default 'medium') by user decision 2026-10-25: the live smokes took 8.45 s and 8.67 s against the 10 s timeout at 'medium', and one call timed out (14-LIVE-RESULTS.md finding 10). See vla_bridge/backends/gemini_robotics.py and .planning/phases/14-vla-style-pipeline-backends/14-14-SUMMARY.md."
 }
