@@ -145,6 +145,7 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 | fast | Drop literal <port> <robot_id> placeholders from diffusion/groot-n17 notebook episode commands | 2026-10-18 | 27714b8 | — |
 | fast | Pin openvla-oft venv deps (numpy<2, protobuf 3.20.3, tensorflow-metadata 1.14.0, wandb 0.16.6, opencv-headless 4.11.0.86) so tensorflow 2.15 imports on fresh Colab | 2026-10-25 | 3d8adda | — |
 | fast | Record Phase 14 live backend smoke results (10 PASS, 4 deferred) in 14-LIVE-RESULTS.md; refresh phase 14 handoff | 2026-10-25 | bc83e8a | — |
+| fast | Gemini Robotics thinking_level medium -> low in both backend configs (user decision; smoke latency 8.45/8.67 s vs 10 s timeout) | 2026-10-25 | 0c7843b | — |
 
 ## Deferred Items
 
