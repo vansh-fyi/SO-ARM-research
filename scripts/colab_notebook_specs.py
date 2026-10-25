@@ -570,10 +570,18 @@ same way as the resident depth service (`fastfs_depth.ipynb`): it loads once, wa
 It does not use the gRPC PolicyServer lane.
 
 **Status:** these cells were written from upstream source (github.com/moojink/openvla-oft
-@ `e4287e9`, `SETUP.md` + `vla-scripts/deploy.py`) and have **not yet been run on
-Colab**. The package-legitimacy human check in 14-03-SUMMARY.md must pass before
-the clone and install cell runs. `pip install -e .` pulls two more GitHub-source
-forks, `moojink/transformers-openvla-oft` and `moojink/dlimp_openvla`.
+@ `e4287e9`, `SETUP.md` + `vla-scripts/deploy.py`) and were verified live on Colab
+(L4) on 2026-10-25 (backend smoke PASS). The package-legitimacy human check in
+14-03-SUMMARY.md must pass before the clone and install cell runs. `pip install -e .`
+pulls two more GitHub-source forks, `moojink/transformers-openvla-oft` and
+`moojink/dlimp_openvla`.
+
+openvla-oft leaves `protobuf`, `wandb`, `tensorflow_metadata` and `numpy` unpinned, and
+their current releases no longer import under `tensorflow==2.15.0` (numpy 2 breaks
+`ml_dtypes`; tensorflow-metadata >1.14 needs protobuf >=5.26 `runtime_version`; wandb
+>=0.28 needs protobuf >=5). The install cell pins the 2023-era set that works:
+`numpy<2`, `protobuf==3.20.3`, `tensorflow-metadata==1.14.0`, `wandb==0.16.6`, and
+`opencv-python-headless==4.11.0.86` (the last opencv that accepts numpy 1.x).
 
 Requirements: an A100 or L4 runtime (a 7B model in bf16 needs about 16 GB of VRAM).
 openvla-oft pins `torch==2.2.0` and `tensorflow==2.15.0`, so it needs Python 3.10
@@ -590,8 +598,14 @@ subprocess.run(['git', '-C', str(OFT_DIR), 'checkout', OFT_COMMIT], check=True)
 if not Path(OFT_PYTHON).exists():
     subprocess.run([sys.executable, '-m', 'pip', 'install', 'uv'], check=True)
     subprocess.run(['uv', 'venv', '--python', '3.10', '--seed', OFT_VENV], check=True)
-subprocess.run(['uv', 'pip', 'install', '--python', OFT_PYTHON, '-e', str(OFT_DIR)], check=True)
-subprocess.run(['uv', 'pip', 'install', '--python', OFT_PYTHON, 'flask', 'opencv-python-headless'], check=True)''')],
+# Pins keep tensorflow==2.15.0 importable (numpy 1.x, protobuf 3.x); see the note above.
+OFT_PINS = ['numpy<2', 'protobuf==3.20.3', 'tensorflow-metadata==1.14.0', 'wandb==0.16.6']
+subprocess.run(['uv', 'pip', 'install', '--python', OFT_PYTHON, '-e', str(OFT_DIR), *OFT_PINS], check=True)
+subprocess.run(['uv', 'pip', 'install', '--python', OFT_PYTHON, 'flask',
+                'opencv-python-headless==4.11.0.86', *OFT_PINS], check=True)
+subprocess.run([OFT_PYTHON, '-c', 'import experiments.robot.openvla_utils, numpy, google.protobuf, wandb; '
+                'print("IMPORT OK numpy", numpy.__version__, "protobuf", google.protobuf.__version__, '
+                '"wandb", wandb.__version__)'], cwd=str(OFT_DIR), check=True)''')],
     launch_notes=http_launch_notes("openvla_oft_server.py", r"""On first start
 it downloads the pinned checkpoint revision
 (`moojink/openvla-7b-oft-finetuned-libero-object@4c89574e1c53`, about 15 GB). `/health`
