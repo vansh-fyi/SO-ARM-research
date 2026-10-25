@@ -1,8 +1,12 @@
 """Shared pytest fixtures for every `control/test_*.py` file this phase adds.
 
-Both fixtures exist so tests can exercise `control/vla_bridge/` code
+These fixtures exist so tests can exercise `control/vla_bridge/` code
 deterministically, without touching real hardware or the real
 `~/.cache/huggingface/...` calibration file.
+
+The autouse `start_pose_file` fixture (quick 261025-wbw) also repoints
+`start_pose.START_POSE_PATH` at a temp all-zero home pose for EVERY test, so
+no test can ever read or write the real `control/start_pose.json`.
 """
 
 import json
@@ -47,6 +51,25 @@ class _MockBus:
 
     def write_calibration(self, calibration) -> None:
         pass
+
+
+@pytest.fixture(autouse=True)
+def start_pose_file(tmp_path_factory, monkeypatch):
+    """Point `start_pose.START_POSE_PATH` at a temp all-zero home pose (the
+    default `MockRobot` starting positions) and return that path, so tests can
+    request it by name and overwrite it. Written under tmp_path_factory, never
+    tmp_path: some tests assert their tmp_path stays empty."""
+    # Lazy import: start_pose pulls lerobot in via keyboard_joint_control, and
+    # importing it here keeps conftest's own module import light.
+    import start_pose
+
+    path = tmp_path_factory.mktemp("start_pose") / "start_pose.json"
+    path.write_text(json.dumps({
+        "captured_at": "2026-01-01T00:00:00Z",
+        "joints": {joint: 0.0 for joint in JOINT_ORDER},
+    }))
+    monkeypatch.setattr(start_pose, "START_POSE_PATH", path)
+    return path
 
 
 @pytest.fixture
