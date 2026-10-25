@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 Phase: 16 — Cross-Backend Pen Transfer Benchmark
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-10-25 - Recorded Phase 14 live backend smokes (10 PASS, 4 deferred) in 14-LIVE-RESULTS.md; next /gsd-verify-work 14 Test 1
+Last activity: 2026-10-26 - Completed quick task 261025-wbw: every real-robot episode starts at the committed home pose and returns to it
 
 Plan execution: [██████████] 100% — phase acceptance pending
 
@@ -146,6 +146,7 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 | fast | Pin openvla-oft venv deps (numpy<2, protobuf 3.20.3, tensorflow-metadata 1.14.0, wandb 0.16.6, opencv-headless 4.11.0.86) so tensorflow 2.15 imports on fresh Colab | 2026-10-25 | 3d8adda | — |
 | fast | Record Phase 14 live backend smoke results (10 PASS, 4 deferred) in 14-LIVE-RESULTS.md; refresh phase 14 handoff | 2026-10-25 | bc83e8a | — |
 | fast | Gemini Robotics thinking_level medium -> low in both backend configs (user decision; smoke latency 8.45/8.67 s vs 10 s timeout) | 2026-10-25 | 0c7843b | — |
+| 261025-wbw | Every real-robot episode moves to one committed home pose (control/start_pose.json, captured with `python start_pose.py`) before the first model call, refuses to start if not reached within 5, and returns there on every exit; tune_execution_hz aligned; COMMANDS.md documented | 2026-10-26 | 552efd1 | [261025-wbw-fixed-start-pose-for-every-episode](./quick/261025-wbw-fixed-start-pose-for-every-episode/) |
 
 ## Deferred Items
 
