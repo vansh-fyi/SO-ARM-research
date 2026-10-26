@@ -1,0 +1,19 @@
+{
+  "captured_at": "2026-10-26T11:14:35Z",
+  "units": {
+    "shoulder_pan": "degrees",
+    "shoulder_lift": "degrees",
+    "elbow_flex": "degrees",
+    "wrist_flex": "degrees",
+    "wrist_roll": "degrees",
+    "gripper": "percent_0_100"
+  },
+  "joints": {
+    "shoulder_pan": 2.55,
+    "shoulder_lift": -102.73,
+    "elbow_flex": 95.47,
+    "wrist_flex": 44.53,
+    "wrist_roll": -11.91,
+    "gripper": 64.47
+  }
+}
