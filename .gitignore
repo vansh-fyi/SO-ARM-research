@@ -33,3 +33,6 @@ experiment-design/
 control/vla_bridge/weights/
 logs/
 docs/
+# Local-only archive (e.g. the retired policy_server.ipynb working copy with
+# Colab outputs and ngrok endpoints) -- never committed.
+archive/
