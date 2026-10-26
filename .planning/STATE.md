@@ -152,6 +152,7 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 | 261026-h12 | Docs refresh for Phase 14 UAT readiness: 14-UAT.md home-pose precondition + per-backend notebooks + current checkpoints, live-results finding 10, handoff, STATE/README, codebase map | 2026-10-26 | 153ff56 | [261026-h12-docs-refresh-for-phase-14-uat-readiness](./quick/261026-h12-docs-refresh-for-phase-14-uat-readiness/) |
 | fast | Ignore local-only archive/ (holds the retired policy_server.ipynb working copy with Colab outputs) | 2026-10-26 | 71b46fb | — |
 | fast | Fix homing stall: move_to_positions sends the target itself within 10 deg so loaded joints stop stalling short of home (14-UAT test 1 gap; hardware re-run pending) | 2026-10-26 | 4d60cef | — |
+| fast | Pin diffusers==0.39.0 in every gRPC Colab notebook (smolvla/pi0/pi05/act crashed with torchao FqnToConfig ImportError); builder, tests and notebooks regenerated | 2026-10-26 | f12cf4b | — |
 
 ## Deferred Items
 
