@@ -42,6 +42,7 @@ All backends implement one `ActionSource` protocol (`get_action(joint_state, ins
 ```text
 control/                  Real-hardware harness, teleop, recording, tests
   run_vla_episode.py      Episode entry point (--backend)
+  start_pose.py           Home-pose capture CLI; writes start_pose.json (committed)
   vla_bridge/
     backends/             One module per backend + base_*.py lane helpers + action conversions
     backend_configs/      <backend>.json (checkpoint, endpoint, action space, camera map)
@@ -49,7 +50,7 @@ control/                  Real-hardware harness, teleop, recording, tests
     *_server.py           Colab model servers and patched gRPC launchers
     colab_server_utils.py Colab process/port/diagnostics helper
     backend_smoke.py      Robot-free live check of a backend
-  test_*.py               pytest suite (~1.7k tests)
+  test_*.py               pytest suite (~1.8k tests, 1790 collected)
 scripts/                  Colab notebook generator, URDF conversion/verification
 diagnostics/              Servo bring-up, stereo calibration, UAT material
 So-101/                   SO-101 URDF + meshes
@@ -81,6 +82,8 @@ Gated checkpoints need an HF token that has accepted the licence (`google/palige
 
 ### Running a backend
 
+Once, before the first episode: place the arm in the home pose and run `.venv/bin/python start_pose.py` from `control/` (it only reads the arm, never moves it; `--force` overwrites), then commit `control/start_pose.json`. Episodes refuse to run without it (details in `control/COMMANDS.md`).
+
 From `control/`, smoke-test the backend without the robot, then run an episode:
 
 ```bash
@@ -91,7 +94,7 @@ From `control/`, smoke-test the backend without the robot, then run an episode:
     --server-address <ngrok-host:port> --instruction "pick up the pen"
 ```
 
-`Ctrl+C` is the e-stop; every exit path returns the arm to its start pose before disconnecting.
+`Ctrl+C` is the e-stop. Every episode first moves the arm to the home pose (refusing to start if any joint misses it by more than 5 deg/%, recorded in `<out>/start_pose.json`), and every exit path returns it to the home pose before disconnecting.
 
 ### Changing a Colab notebook
 
@@ -104,8 +107,8 @@ python scripts/build_colab_notebooks.py --check  # drift check (also run by cont
 
 ## Status
 
-- Phases 1–7 (simulation, fine-tuning, depth), 10 (digital twin), 11–12 (hardware bridge), 14 (VLA-style backends) and 15 (MLLM backends) are built. Phase 14 backends are live smoke-tested on Colab; hardware UAT is in progress.
-- Next: Phase 16 (cross-backend Pen Transfer benchmark), then Phase 17 (re-tightening safety-validator soft caps).
+- Phases 1–7 (simulation, fine-tuning, depth), 10 (digital twin), 11–12 (hardware bridge), 14 (VLA-style backends) and 15 (MLLM backends) are built. Phase 14 backends are live smoke-tested on Colab (10 PASS, 4 deferred).
+- Next: the Phase 14 hardware UAT (with the open Phase 13 camera UAT) via `/gsd-verify-work`, then Phase 16 (cross-backend Pen Transfer benchmark), then Phase 17 (re-tightening safety-validator soft caps).
 - Sim benchmark phases 8–9 are paused.
 
 Roadmap and history: `.planning/ROADMAP.md`. Codebase reference docs: `.planning/codebase/` (stack, architecture, structure, conventions, testing, integrations, concerns).
