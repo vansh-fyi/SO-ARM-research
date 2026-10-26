@@ -46,7 +46,8 @@ call the Gemini Robotics-ER API directly from the laptop.
 - **transformers pin.** Colab ships `transformers` 5.13.1. Since 5.9, `create_causal_mask`
   no longer takes `cache_position`, which lerobot 0.6.1's `pi_gemma` passes, so pi0/pi05
   fail every inference. Every gRPC notebook installs lerobot 0.6.1, then pins
-  `transformers==5.5.4` (diffusion and groot-n17 also pin `diffusers==0.39.0`), and fails if
+  `transformers==5.5.4` and `diffusers==0.39.0` (Colab's newer diffusers fails to import against its
+  torchao with `cannot import name 'FqnToConfig'`, even on servers that never use it), and fails if
   pip changed `torch` (verified with `2.11.0+cu128`).
 - **pi0 without torch.compile.** The pi0 checkpoint ships `compile_model: true`
   (max-autotune): a 465 s first inference, then `beginAllocateToPool: already recording to

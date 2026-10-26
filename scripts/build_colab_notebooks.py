@@ -308,9 +308,7 @@ else:
 
 
 def versions_after(spec):
-    expected = {"transformers": "5.5.4", "lerobot": "0.6.1"}
-    if spec["install"].get("diffusers"):
-        expected["diffusers"] = "0.39.0"
+    expected = {"transformers": "5.5.4", "lerobot": "0.6.1", "diffusers": "0.39.0"}
     return f'''# Fresh interpreter: this kernel may still hold pre-install packages in memory.
 import json
 import subprocess
@@ -359,8 +357,12 @@ def grpc_install_cells(spec):
     pin = ("# Pin transformers AFTER lerobot: Colab's 5.13.1 breaks lerobot 0.6.1 (see above).\n"
            "!pip install 'transformers==5.5.4'")
     if spec["install"].get("diffusers"):
-        pin += ("\n# lerobot's `diffusion` extra (diffusers>=0.38.0,<0.40.0), pinned.\n"
-                "!pip install 'diffusers==0.39.0'")
+        pin += "\n# lerobot's `diffusion` extra (diffusers>=0.38.0,<0.40.0), pinned."
+    else:
+        pin += ("\n# Every gRPC notebook pins diffusers: lerobot.policies imports groot -> diffusers, and\n"
+                "# Colab's newer diffusers needs a torchao.quantization.FqnToConfig its torchao lacks\n"
+                "# (ImportError at PolicyServer launch). 0.39.0 only imports quantize_ from torchao.")
+    pin += "\n!pip install 'diffusers==0.39.0'"
     return [
         md("install-heading", "## Install lerobot 0.6.1 and pin transformers\n\n" + GRPCIO_NOTE
            + "\n\n" + TRANSFORMERS_NOTE),
@@ -630,7 +632,8 @@ call the Gemini Robotics-ER API directly from the laptop.
 - **transformers pin.** Colab ships `transformers` 5.13.1. Since 5.9, `create_causal_mask`
   no longer takes `cache_position`, which lerobot 0.6.1's `pi_gemma` passes, so pi0/pi05
   fail every inference. Every gRPC notebook installs lerobot 0.6.1, then pins
-  `transformers==5.5.4` (diffusion and groot-n17 also pin `diffusers==0.39.0`), and fails if
+  `transformers==5.5.4` and `diffusers==0.39.0` (Colab's newer diffusers fails to import against its
+  torchao with `cannot import name 'FqnToConfig'`, even on servers that never use it), and fails if
   pip changed `torch` (verified with `2.11.0+cu128`).
 - **pi0 without torch.compile.** The pi0 checkpoint ships `compile_model: true`
   (max-autotune): a 465 s first inference, then `beginAllocateToPool: already recording to

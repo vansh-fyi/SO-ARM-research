@@ -168,12 +168,24 @@ def test_grpc_notebooks_pin_transformers_after_lerobot(notebooks):
         assert "'transformers': '5.5.4'" in texts[after], name
 
 
-def test_patched_grpc_notebooks_pin_diffusers(notebooks):
+def test_every_grpc_notebook_pins_diffusers_after_lerobot(notebooks):
+    # lerobot.policies imports groot -> diffusers even on servers that never use it, and
+    # Colab's newer diffusers fails against its torchao (FqnToConfig ImportError at launch).
+    for name, notebook in notebooks.items():
+        if not name.startswith("grpc_"):
+            continue
+        texts = [_text(cell) for cell in _code_cells(notebook)]
+        lerobot = next(i for i, text in enumerate(texts) if "!pip install 'lerobot[async" in text)
+        pin = next(i for i, text in enumerate(texts) if "!pip install 'diffusers==0.39.0'" in text)
+        assert pin > lerobot, name
+        after = next(i for i, text in enumerate(texts) if "VERIFIED_TORCH" in text)
+        assert after > pin, name
+        assert "'diffusers': '0.39.0'" in texts[after], name
+
+
+def test_patched_grpc_notebooks_install_their_extras(notebooks):
     groot = "\n".join(_text(cell) for cell in _code_cells(notebooks["grpc_groot_n17"]))
-    diffusion = "\n".join(_text(cell) for cell in _code_cells(notebooks["grpc_diffusion"]))
     assert "!pip install 'lerobot[async,groot]==0.6.1'" in groot
-    assert "!pip install 'diffusers==0.39.0'" in groot
-    assert "!pip install 'diffusers==0.39.0'" in diffusion
 
 
 def test_pi0_serves_a_no_compile_copy_at_the_verified_revision(notebooks):
