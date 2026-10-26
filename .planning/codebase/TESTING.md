@@ -7,14 +7,14 @@
 **Runner:**
 - pytest 8.3.4 (pinned in `control/requirements.txt`)
 - Config: none (no `pytest.ini`/`pyproject.toml`); shared fixtures in `control/conftest.py`
-- 45 test files `control/test_*.py`, plus `scripts/test_calibration_utils.py`, `scripts/test_verify_urdf.py`, `diagnostics/test_coppelia_alignment.py`
+- 46 test files `control/test_*.py` (incl. `control/test_start_pose.py`), plus `scripts/test_calibration_utils.py`, `scripts/test_verify_urdf.py`, `diagnostics/test_coppelia_alignment.py`
 
 **Assertion Library:**
 - Plain `assert` with pytest rewriting; `pytest.raises` for errors
 
 **Run Commands:**
 ```bash
-cd control && .venv/bin/python -m pytest              # Run all control tests (1729 tests collected, ~5s collection)
+cd control && .venv/bin/python -m pytest              # Run all control tests (1790 tests collected, ~5s collection)
 cd control && .venv/bin/python -m pytest test_backend_pi0.py -q   # Single file
 cd control && .venv/bin/python -m pytest test_colab_notebooks.py test_colab_server_utils.py -q  # Notebook drift + Colab helper
 python scripts/build_colab_notebooks.py               # Regenerate notebooks when drift tests fail (repo root)
@@ -35,7 +35,7 @@ No watch mode or coverage tooling configured.
 **Structure:**
 ```
 control/
-├── conftest.py          # MockRobot, mock_calibration_file fixtures
+├── conftest.py          # MockRobot, mock_calibration_file, autouse start_pose_file fixtures
 ├── fake_providers.py    # shared MLLM fakes (not collected)
 ├── test_*.py
 └── vla_bridge/          # code under test
@@ -81,7 +81,7 @@ def _record_grpc_build(monkeypatch):
 - `ScriptedAdapter` raises `AssertionError` when its script runs out, so unexpected paid API calls fail loudly
 
 **What to Mock:**
-- Robot hardware (`MockRobot` in `control/conftest.py`), serial bus, cameras (`cv2.VideoCapture`), gRPC/HTTP clients, vendor LLM SDKs, calibration cache file
+- Robot hardware (`MockRobot` in `control/conftest.py`), serial bus, cameras (`cv2.VideoCapture`), gRPC/HTTP clients, vendor LLM SDKs, calibration cache file, the real `control/start_pose.json` (autouse `start_pose_file` fixture)
 
 **What NOT to Mock:**
 - Pure logic: action contract, safety validator, schema/prompt building, registry; and the installed `lerobot` constants (tests import `SUPPORTED_POLICIES` directly to pin compatibility)
@@ -124,6 +124,8 @@ def make_step(base: float, step: float, k: int) -> dict:  # fake_providers.py
 
 **Location:**
 - `control/conftest.py`, `control/fake_providers.py`; per-file fixtures (`fake_policy`, `config_dir`, `builder_spy`, `scripts`/`children`/`marker`); local Flask test double in `control/test_depth_pipeline.py`
+
+**Home pose (autouse):** the `start_pose_file` fixture in `control/conftest.py` writes an all-zero home pose under `tmp_path_factory` (never `tmp_path`, since some tests assert `tmp_path` stays empty) and patches `start_pose.START_POSE_PATH`, so no test reads or writes the real `control/start_pose.json`. `MockRobot.send_action` only records actions and never changes positions, so tests that call `run_episode` pass `home_pose=` equal to the mock's positions (all zero).
 
 ## Coverage
 

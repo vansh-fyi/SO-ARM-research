@@ -53,8 +53,8 @@ gRPC notebooks use port 5173 over an ngrok TCP tunnel (strip `tcp://`); HTTP ada
 | octo | HTTP | 11 (also needs 3, 5) | `sapanostic/octo-so101-3hz-finetune` (octo.json, revision a45ff970, step 10000, eef_delta) | `octo_server.py` (Flask, port 3004) | `http_octo.ipynb` | any Colab GPU (notebook octo-tier-c-intro: Octo-Base 93M params) | JAX/Flax in its own Python 3.10 venv (jax[cuda11_pip]==0.4.20, flax 0.7.5). Primary camera defaults to overhead_left. Teardown octo-teardown |
 | rdt1b | HTTP | 12 | `robotics-diffusion-transformer/rdt-1b` (rdt1b.json, revision eb09036, joint_position, state_indices [0,1,2,3,4,10]) | `rdt1b_server.py` (Flask, port 3005) | `http_rdt1b.ipynb` | A100 runtime, Colab Pro (notebook rdt1b-tier-c-intro: bf16, ~13 GB VRAM; below 24 GB e.g. L4 it offloads T5 blocks 12-23) | ~55 GB free disk (T5-XXL fp32 is 44.5 GB; ~51 GB first download). Own Python 3.10 venv, torch 2.1.0. Base checkpoint never saw SO-101: the run proves the pipeline, not the task. Teardown rdt1b-teardown |
 | groot-n15 | HTTP | 13 | `quangnd58/GR00T-N1.5-3B-so101-multitask` (groot_n15.json, revision 488f3b6, absolute_joint degrees) | `groot_n15_server.py` (Flask, port 3006) | `http_groot_n15.ipynb` | L4 or A100, Ampere+ for flash-attn 2 (notebook groot-n15-tier-c-intro: ~6 GB VRAM) | ~10 GB free disk. Isaac-GR00T at n1.5-release (4af2b62) in its own Python 3.10 venv with flash-attn 2.7.1.post4. Separate code path from groot-n17. Teardown groot-n15-teardown |
-| gemini-robotics | Gemini | 14 (also 16, 17 on hardware) | n/a: model `gemini-robotics-er-2-preview` (gemini_robotics.json; thinking_level medium, timeout_s 10.0) | none (direct HTTPS to the Gemini API via google-genai 2.25.0) | none: no Colab, no tunnel | none (cloud API) | Export a RESTRICTED key under `GEMINI_API_KEY` (the config's api_key_env) in the local shell; unrestricted keys get 403. Each `--steps` is one paid call. ER points + local bounded conversion, not a native VLA (base_gemini docstring) |
-| gemini-robotics-2 | Gemini | 15 (also 16, 17 on hardware) | n/a: model `gemini-robotics-er-2-preview` (gemini_robotics_2.json; thinking_level medium, timeout_s 10.0) | none (direct HTTPS to the Gemini API) | none: no Colab, no tunnel | none (cloud API) | Same key rule as gemini-robotics; run as a separate smoke and a separate UAT episode (14-UAT test 15) |
+| gemini-robotics | Gemini | 14 (also 16, 17 on hardware) | n/a: model `gemini-robotics-er-2-preview` (gemini_robotics.json; thinking_level low since 2026-10-25 (medium during the smokes), timeout_s 10.0) | none (direct HTTPS to the Gemini API via google-genai 2.25.0) | none: no Colab, no tunnel | none (cloud API) | Export a RESTRICTED key under `GEMINI_API_KEY` (the config's api_key_env) in the local shell; unrestricted keys get 403. Each `--steps` is one paid call. ER points + local bounded conversion, not a native VLA (base_gemini docstring) |
+| gemini-robotics-2 | Gemini | 15 (also 16, 17 on hardware) | n/a: model `gemini-robotics-er-2-preview` (gemini_robotics_2.json; thinking_level low since 2026-10-25 (medium during the smokes), timeout_s 10.0) | none (direct HTTPS to the Gemini API) | none: no Colab, no tunnel | none (cloud API) | Same key rule as gemini-robotics; run as a separate smoke and a separate UAT episode (14-UAT test 15) |
 
 ## 2. Smoke results
 
@@ -129,7 +129,9 @@ behaviour is judged in the 14-UAT hardware tests.
    under tensorflow 2.15; pinned in commit 3d8adda (see the openvla-oft row).
 9. **Licensing (14-UAT test 5):** the user accepted `toasta18/openvla-so101-cylinder` (no licence)
    for UAT on 2026-10-18. `sapanostic/octo-so101-3hz-finetune` is still undecided (octo deferred).
-10. **Gemini latency:** 8.45 s and 8.67 s against a 10 s client timeout, plus one 10.32 s timeout.
-    Lowering `thinking_level` from medium to low is pending a user decision before tests 14-17.
+10. **Gemini latency:** 8.45 s and 8.67 s against a 10 s client timeout at `thinking_level` medium,
+    plus one 10.32 s timeout. Decided by the user on 2026-10-25: `thinking_level` is now low in
+    `gemini_robotics.json` and `gemini_robotics_2.json` (commit 0c7843b), before tests 14-17. The
+    smokes were not re-run at low, so latency is judged in the hardware tests.
 11. **HTTP repeat actions:** openvla and openvla-oft returned identical actions on all 3 steps,
     which is expected from deterministic decoding of the same synthetic input.

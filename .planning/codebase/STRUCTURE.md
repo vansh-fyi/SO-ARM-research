@@ -8,11 +8,13 @@
 SoARM-Research/
 ├── control/                    # Real-hardware harness, teleop, recording, tests (active core)
 │   ├── run_vla_episode.py      # Episode harness entry point (--backend)
+│   ├── start_pose.py           # Home-pose capture CLI + validate/load library
+│   ├── start_pose.json         # Committed home pose (created by `python start_pose.py`; not yet captured)
 │   ├── record_episode.py, joint_jog.py, keyboard_joint_control.py, tune_execution_hz.py
 │   ├── render_depth_heatmaps.py, detect_devices.py, calibrate_with_preview.py, ...
 │   ├── stereo_calibration.json # AR0144 stereo calibration (input to depth pipeline)
 │   ├── fake_providers.py       # Shared MLLM test doubles (not collected by pytest)
-│   ├── conftest.py             # MockRobot and shared fixtures
+│   ├── conftest.py             # MockRobot, shared fixtures, autouse temp home pose (start_pose_file)
 │   ├── test_*.py               # pytest suite (flat, next to sources)
 │   ├── COMMANDS.md, requirements.txt, .envrc
 │   ├── vla_bridge/             # Bridge package
@@ -42,7 +44,7 @@ SoARM-Research/
 
 **`control/`:**
 - Purpose: Everything that drives the physical SO-ARM101
-- Key files: `run_vla_episode.py`, `record_episode.py`, `keyboard_joint_control.py`, `joint_jog.py`, `tune_execution_hz.py`, `render_depth_heatmaps.py`, `detect_devices.py`, `stereo_calibration.json`, `COMMANDS.md`
+- Key files: `run_vla_episode.py`, `start_pose.py`, `start_pose.json`, `record_episode.py`, `keyboard_joint_control.py`, `joint_jog.py`, `tune_execution_hz.py`, `render_depth_heatmaps.py`, `detect_devices.py`, `stereo_calibration.json`, `COMMANDS.md`
 
 **`control/vla_bridge/`:**
 - Purpose: Policy bridge package (imported as top-level `vla_bridge` from `control/`)

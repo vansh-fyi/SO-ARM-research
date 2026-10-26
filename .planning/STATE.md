@@ -6,9 +6,9 @@ current_phase: 16
 current_phase_name: Cross-Backend Pen Transfer Benchmark
 status: verifying
 stopped_at: Completed 15-10-PLAN.md
-last_updated: "2026-10-03T07:07:41.525Z"
-last_activity: 2026-10-03
-last_activity_desc: Phase 15 complete, transitioned to Phase 16
+last_updated: "2026-10-26T07:00:22.575Z"
+last_activity: 2026-10-26
+last_activity_desc: "Completed quick task 261025-wbw: every real-robot episode starts at the committed home pose and returns to it"
 progress:
   total_phases: 17
   completed_phases: 13
@@ -24,13 +24,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** A researcher types a task prompt and watches SOARM execute it in a LIBERO simulation — the loop from language to embodied action.
-**Current focus:** Phase 15 — mllm-style-pipeline-backends
+**Current focus:** Phase 14 hardware UAT (/gsd-verify-work 14, resumes at Test 1) and the open Phase 13 camera UAT (/gsd-verify-work 13), both before Phase 16
 
 ## Current Position
 
 Phase: 16 — Cross-Backend Pen Transfer Benchmark
 Plan: Not started
-Status: Phase complete — ready for verification
+Status: Awaiting hardware UAT verification: Phase 14 (/gsd-verify-work 14) and the open Phase 13 (/gsd-verify-work 13), before Phase 16
 Last activity: 2026-10-26 - Completed quick task 261025-wbw: every real-robot episode starts at the committed home pose and returns to it
 
 Plan execution: [██████████] 100% — phase acceptance pending
@@ -115,6 +115,8 @@ Recent decisions affecting current work:
 - [Phase 15]: 15-10 (Rule 1 fix 9ac4472): run_vla_episode.py sets termination reason keyboard_interrupt before a guarded print, because Ctrl-C also kills a piped reader (| grep -v objc) and the print raised BrokenPipeError first, recording max_steps_reached. Live re-test: keyboard_interrupt. Separately 3f4d5e1 scoped the section-6 test parser to the smoke table — Found in Task 3 step D run 1 on mllm-hf-deepseek; regression test test_keyboard_interrupt_reason_survives_broken_stdout_pipe; full suite 1604 passed
 
 ### Pending Todos
+
+Phase 14: capture and commit the home pose (`.venv/bin/python start_pose.py` in control/ -> control/start_pose.json), restore http_openvla_oft.ipynb with `git checkout` once the user closes the VS Code tab, then run the hardware UAT with `/gsd-verify-work 14` (20 tests pending, resumes at Test 1; see 14-UAT.md and the phase's .continue-here.md).
 
 Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and automated verification complete.
 
@@ -203,4 +205,4 @@ All work is committed and pushed to `origin/master`/`origin/main`. Phases
 8-9 remain paused. Keep safety-cap re-tightening last in v2.1 per the
 existing resequencing decision.
 
-Next: `/gsd-verify-work 13` — fresh live episode must confirm overhead and wrist views; see `13-UAT.md`. Phase 13 remains incomplete until this passes.
+Next: capture and commit the home pose (`.venv/bin/python start_pose.py` in control/), then `/gsd-verify-work 14` (Phase 14 hardware UAT, resumes at Test 1) and `/gsd-verify-work 13` (open Phase 13 camera UAT; can share the hardware session; see `13-UAT.md`). Phase 16 follows. Phase 13 stays incomplete until its UAT passes.
