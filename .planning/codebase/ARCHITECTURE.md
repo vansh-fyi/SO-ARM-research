@@ -50,7 +50,8 @@
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| Episode harness | Control loop, camera open, waypoint interpolation, e-stop, return-to-start, termination record | `control/run_vla_episode.py` |
+| Episode harness | Control loop, camera open, waypoint interpolation, e-stop, always-home start + return to the home pose, termination record | `control/run_vla_episode.py` |
+| Home (start) pose | One committed home pose, validated against the safety limits; capture CLI (reads only); arrival check +/-5 deg/% and `StartPoseNotReachedError` | `control/start_pose.py`, `control/start_pose.json` |
 | Backend registry | Auto-discover backend modules, `@register`/`@register_grpc_backend`, load per-backend JSON config | `control/vla_bridge/backends/__init__.py` |
 | Backend configs | Per-backend checkpoint/endpoint/action-space/camera_map | `control/vla_bridge/backend_configs/*.json` |
 | Backend smoke | Robot-free live check: runs the real registered factory + `get_action()` on synthetic frames | `control/vla_bridge/backend_smoke.py`, `control/vla_bridge/mllm_smoke.py` |
@@ -67,7 +68,7 @@
 | Colab model servers | Resident HTTP servers (OpenVLA, OFT, Octo, GR00T N1.5, RDT, WallX, FastFS) and patched gRPC launchers (Diffusion, GR00T N1.7) | `control/vla_bridge/*_server.py` |
 | Colab process helper | Stop stale servers, start subprocess, wait for port ownership, log/GPU/health reports | `control/vla_bridge/colab_server_utils.py` |
 | Notebook generator | Render 13 per-backend Colab notebooks + README from specs; `--check` drift gate | `scripts/build_colab_notebooks.py`, `scripts/colab_notebook_specs.py`, `control/test_colab_notebooks.py` |
-| Hardware teleop/record/tuning | Jog, keyboard control, calibration, episode recording, `--execution-hz` tuning | `control/joint_jog.py`, `control/keyboard_joint_control.py`, `control/record_episode.py`, `control/tune_execution_hz.py` |
+| Hardware teleop/record/tuning | Jog, keyboard control, calibration, episode recording, `--execution-hz` tuning (tune_execution_hz sweeps around the home pose) | `control/joint_jog.py`, `control/keyboard_joint_control.py`, `control/record_episode.py`, `control/tune_execution_hz.py` |
 | Diagnostics | Servo bring-up, stereo calibration, CoppeliaSim/MuJoCo alignment, UAT | `diagnostics/` |
 | URDF tooling | MJCF to URDF, URDF verification, calibration utils | `scripts/mjcf_to_urdf.py`, `scripts/verify_urdf.py`, `scripts/calibration_utils.py` |
 | LIBERO sim | BDDL tasks, MuJoCo envs, SOARM robot model, lifelong training | `LIBERO/libero/` |
@@ -91,8 +92,8 @@
 **Harness layer:**
 - Purpose: Orchestrate one episode on real hardware
 - Location: `control/run_vla_episode.py`
-- Contains: `ActionSource` Protocol (`:159`), `run_episode()` (`:230`), `main()` CLI (`:436`), camera/device-map helpers, `_interpolate_waypoints()` (`:125`)
-- Depends on: `vla_bridge.backends`, `safety_validator`, `io_logger`, `keyboard_joint_control`, `detect_devices`
+- Contains: `ActionSource` Protocol (`:162`), `run_episode()` (`:256`), `main()` CLI (`:525`), camera/device-map helpers, `_interpolate_waypoints()` (`:128`)
+- Depends on: `vla_bridge.backends`, `safety_validator`, `io_logger`, `keyboard_joint_control`, `detect_devices`, `start_pose`
 - Used by: Researcher CLI, `control/tune_execution_hz.py`, `control/test_run_vla_episode.py`
 
 **Backend layer:**
@@ -124,12 +125,13 @@
 
 ### Primary Request Path (real-hardware episode)
 
-1. CLI parses args, loads joint limits via `action_contract.load_joint_limits_deg()` (`control/run_vla_episode.py:436`)
+1. CLI parses args, loads joint limits via `action_contract.load_joint_limits_deg()` (`control/run_vla_episode.py:525`), then pre-flight `start_pose.load_start_pose()` (`:747`); a missing/invalid `control/start_pose.json` -> `parser.error` before any backend is built
 2. Backend built from `BACKEND_REGISTRY[--backend]`, returns `BackendHandles(action_source, robot, stereo_camera, skip_camera_names, shutdown)` (`control/vla_bridge/backends/__init__.py:57`)
-3. Loop: read joint state, `action_source.get_action(joint_state, instruction)` (`control/run_vla_episode.py:159`)
-4. `safety_validator.validate_action()` clamps/holds (`control/vla_bridge/safety_validator.py:58`)
-5. Waypoint interpolation at `--execution-hz` and `robot.send_action()`; observations/actions logged as JSON Lines by `IOLogger` (`control/vla_bridge/io_logger.py`)
-6. Termination (max steps, KeyboardInterrupt e-stop, `episode_complete_reason`) then return-to-start, `_shutdown_backend()` (`:710`), `_write_termination()` (`:224`)
+3. `run_episode()` (`:256`) moves the arm home (`move_to_positions`, 15 s, kp 0.2, 30 Hz), reads positions and writes `<out>/start_pose.json`; any joint more than 5 deg/% off -> `StartPoseNotReachedError`, termination reason `start_pose_not_reached`, no `get_action` call, `main()` exits `REFUSED TO START EPISODE`
+4. Loop: read joint state, `action_source.get_action(joint_state, instruction)` (`control/run_vla_episode.py:162`)
+5. `safety_validator.validate_action()` clamps/holds (`control/vla_bridge/safety_validator.py:58`)
+6. Waypoint interpolation at `--execution-hz` and `robot.send_action()`; observations/actions logged as JSON Lines by `IOLogger` (`control/vla_bridge/io_logger.py`)
+7. Termination (max steps, KeyboardInterrupt e-stop, `episode_complete_reason`) then return to the home pose (only if home was reached), `_shutdown_backend()` (`:808`), `_write_termination()` (`:227`)
 
 ### Colab Server Bring-up Path
 
@@ -181,6 +183,7 @@
 ## Entry Points
 
 **Episode harness:** `control/run_vla_episode.py` — `.venv/bin/python run_vla_episode.py --out outputs/run --backend <name> ...` (run from `control/`)
+**Home pose capture:** `control/start_pose.py` (`.venv/bin/python start_pose.py [PORT] [ROBOT_ID] [--force]`, from control/)
 **Backend smoke:** `python -m vla_bridge.backend_smoke --backend <name> --server-address ...` (from `control/`)
 **Recording / teleop / tuning:** `control/record_episode.py`, `control/keyboard_joint_control.py`, `control/joint_jog.py`, `control/tune_execution_hz.py`
 **Depth tooling:** `control/vla_bridge/stereo_calibration.py`, `control/vla_bridge/depth_camera.py` (`main()`), `control/render_depth_heatmaps.py`
@@ -233,7 +236,7 @@
 **Patterns:**
 - Invalid/NaN actions become holds in `safety_validator.py`; servers map bad input to 400 and model failures to 500 so clients hold.
 - Config loading warns and returns `None` (`load_backend_config()`), falling back to CLI args.
-- Every exit path runs return-to-start before disconnect.
+- A missing/invalid `start_pose.json` or a missed start refuses the episode; once the arm reached the home pose, every exit path (max steps, task complete, Ctrl-C, exception) returns it to the home pose before disconnect.
 - Colab launch failures surface via `log_report()` error-pattern scan rather than silent hangs.
 
 ## Cross-Cutting Concerns
