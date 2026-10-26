@@ -150,6 +150,7 @@ Phase 13: run fresh live camera UAT (`/gsd-verify-work 13`); implementation and 
 | fast | Gemini Robotics thinking_level medium -> low in both backend configs (user decision; smoke latency 8.45/8.67 s vs 10 s timeout) | 2026-10-25 | 0c7843b | — |
 | 261025-wbw | Every real-robot episode moves to one committed home pose (control/start_pose.json, captured with `python start_pose.py`) before the first model call, refuses to start if not reached within 5, and returns there on every exit; tune_execution_hz aligned; COMMANDS.md documented | 2026-10-26 | 552efd1 | [261025-wbw-fixed-start-pose-for-every-episode](./quick/261025-wbw-fixed-start-pose-for-every-episode/) |
 | 261026-h12 | Docs refresh for Phase 14 UAT readiness: 14-UAT.md home-pose precondition + per-backend notebooks + current checkpoints, live-results finding 10, handoff, STATE/README, codebase map | 2026-10-26 | 153ff56 | [261026-h12-docs-refresh-for-phase-14-uat-readiness](./quick/261026-h12-docs-refresh-for-phase-14-uat-readiness/) |
+| fast | Ignore local-only archive/ (holds the retired policy_server.ipynb working copy with Colab outputs) | 2026-10-26 | 71b46fb | — |
 
 ## Deferred Items
 
