@@ -401,3 +401,35 @@ def test_cli_errors_without_args_or_device_map(cli, start_pose_file, monkeypatch
         cli("--force")
     assert "detect_devices.py" in capsys.readouterr().err
     assert _CountingRobot.constructed == 0
+
+
+class _SteppingRobot:
+    """Moves each joint to whatever goal it is sent, so sent goals can be inspected."""
+
+    def __init__(self, positions):
+        self.positions = dict(positions)
+        self.goals = []
+
+    def get_observation(self):
+        return {f"{joint}.pos": value for joint, value in self.positions.items()}
+
+    def send_action(self, action):
+        self.goals.append(dict(action))
+        for key, value in action.items():
+            self.positions[key.removesuffix(".pos")] = value
+
+
+def test_move_to_positions_sends_the_target_itself_once_within_direct_range():
+    from keyboard_joint_control import move_to_positions
+
+    robot = _SteppingRobot({"wrist_flex": 49.8})
+    move_to_positions(robot, {"wrist_flex": 44.5}, kp=0.2, control_freq=1000, max_seconds=0.01)
+    assert robot.goals[0] == {"wrist_flex.pos": 44.5}
+
+
+def test_move_to_positions_keeps_the_kp_step_when_far_from_the_target():
+    from keyboard_joint_control import move_to_positions
+
+    robot = _SteppingRobot({"wrist_flex": 64.5})
+    move_to_positions(robot, {"wrist_flex": 44.5}, kp=0.2, control_freq=1000, max_seconds=0.001)
+    assert robot.goals[0] == {"wrist_flex.pos": pytest.approx(60.5)}

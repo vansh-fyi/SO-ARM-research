@@ -3,15 +3,15 @@ status: testing
 phase: 14-vla-style-pipeline-backends
 source: [14-VERIFICATION.md]
 started: 2026-10-02T06:22:01Z
-updated: 2026-10-26T06:58:50Z
+updated: 2026-10-26T12:00:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: SmolVLA regression on hardware (server: grpc_smolvla.ipynb): run_vla_episode.py --server-address HOST:PORT --checkpoint victorvanhalst/smolvla_so101_cube --out <new dir> (no --backend), then repeat with --backend smolvla
+number: 2
+name: OpenVLA-OFT live (VLAB-07): run control/vla_bridge/notebooks/http_openvla_oft.ipynb top to bottom (it prints the smoke + episode commands), /health ready, then run_vla_episode.py --backend openvla-oft --server-address https://<ngrok> --max-steps 20
 expected: |
-  Arm first moves to the home pose (`<out>/start_pose.json` shows arrived true), then the same behavior as before Phase 14: robot moves, episode.jsonl has wrist + overhead_left/right frames, Ctrl-C returns to the home pose and disconnects cleanly; wrist camera gives frames to both camera1 and IOLogger (open order changed: bridge now opens first)
+  At least one validated, non-held action; robot visibly moves
 awaiting: user response
 
 ## Preconditions (read before Test 1)
@@ -25,7 +25,9 @@ awaiting: user response
 
 ### 1. SmolVLA regression on hardware (server: grpc_smolvla.ipynb): run_vla_episode.py --server-address HOST:PORT --checkpoint victorvanhalst/smolvla_so101_cube --out <new dir> (no --backend), then repeat with --backend smolvla
 expected: Arm first moves to the home pose (`<out>/start_pose.json` shows arrived true), then the same behavior as before Phase 14: robot moves, episode.jsonl has wrist + overhead_left/right frames, Ctrl-C returns to the home pose and disconnects cleanly; wrist camera gives frames to both camera1 and IOLogger (open order changed: bridge now opens first)
-result: [pending]
+result: issue
+reported: "Run 1 passed (arrived, errors < 1 deg). Run 2 (--backend smolvla) was refused twice: wrist_flex +5.45 and +5.27 over the 5.0 tolerance (shoulder_lift ~+3.9), after Run 1; the arm stalls short of home when it starts near it. Ctrl-C return not yet exercised."
+severity: major
 
 ### 2. OpenVLA-OFT live (VLAB-07): run control/vla_bridge/notebooks/http_openvla_oft.ipynb top to bottom (it prints the smoke + episode commands), /health ready, then run_vla_episode.py --backend openvla-oft --server-address https://<ngrok> --max-steps 20
 expected: At least one validated, non-held action; robot visibly moves
@@ -107,9 +109,25 @@ result: [pending]
 
 total: 20
 passed: 0
-issues: 0
-pending: 20
+issues: 1
+pending: 19
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+- truth: "Every episode homes to the start pose before the first model call, including a back-to-back run that starts near home"
+  status: failed
+  reason: "User reported: Run 2 (--backend smolvla) refused twice, wrist_flex +5.45 and +5.27 over 5.0 tolerance, after Run 1 passed"
+  severity: major
+  test: 1
+  root_cause: "move_to_positions() sent current + 0.2*(target-current), about 1 deg past the present position near home; with the follower's soft servo gain (P_Coefficient 16) that torque only balances gravity/friction on loaded joints, so the arm stalled ~5.3 deg short (wrist_flex) and ~3.9 deg (shoulder_lift) and run_vla_episode.py refused to start. Run 1 passed only because it started far from home."
+  artifacts:
+    - path: "control/keyboard_joint_control.py"
+      issue: "move_to_positions() relative kp step too weak near the target"
+    - path: "control/outputs/smolvla_t1_b/start_pose.json, control/outputs/smolvla_t1_b2/start_pose.json"
+      issue: "recorded refusals"
+  missing:
+    - "FIXED in code (move_to_positions sends the target itself within 10 deg, tests in test_start_pose.py); still needs hardware re-run of Test 1 Run 2 (new --out dir) arriving with errors near 1 deg, then flip Test 1 to pass"
+  debug_session: ""
+

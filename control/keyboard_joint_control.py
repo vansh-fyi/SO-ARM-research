@@ -76,7 +76,8 @@ def read_positions(robot, retries=5, backoff=0.05):
     raise last_error
 
 
-def move_to_positions(robot, targets, kp, control_freq, max_seconds, stop_error=2.0, label=""):
+def move_to_positions(robot, targets, kp, control_freq, max_seconds, stop_error=2.0, label="",
+                      direct_within=10.0):
     control_period = 1.0 / control_freq
     max_steps = int(max_seconds * control_freq)
     for step in range(max_steps):
@@ -93,7 +94,14 @@ def move_to_positions(robot, targets, kp, control_freq, max_seconds, stop_error=
                 continue
             error = target - current[joint]
             total_error += abs(error)
-            action[f"{joint}.pos"] = current[joint] + kp * error
+            # Within `direct_within` a kp-scaled step is only ~1 deg past the present
+            # position, too little torque from the soft position servo (P=16) to beat gravity
+            # and friction: gravity-loaded joints stalled ~5 deg short of home. Send the
+            # target itself so the servo sees the full error (max_relative_target still clips).
+            if abs(error) <= direct_within:
+                action[f"{joint}.pos"] = target
+            else:
+                action[f"{joint}.pos"] = current[joint] + kp * error
         if action:
             try:
                 robot.send_action(action)
